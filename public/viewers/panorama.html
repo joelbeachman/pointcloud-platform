@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Panorama Viewer – Point Cloud Platform</title>
+  <link rel="stylesheet" href="/css/portal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #0d1117; }
+    #panorama {
+      position: absolute; inset: 0; top: 100px;
+      width: 100%; height: calc(100vh - 100px);
+    }
+    .toolbar-label { color: #8b949e; font-size: 0.8rem; }
+    #scan-nav {
+      position: absolute;
+      bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: rgba(22,27,34,0.9);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      display: flex; gap: 0.5rem; align-items: center;
+      z-index: 20;
+    }
+    #scan-nav button {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      padding: 0.3rem 0.75rem;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    #scan-nav button:hover { background: #30363d; }
+    #scan-nav button.active { border-color: #f0883e; color: #f0883e; }
+    #scan-label { color: #8b949e; font-size: 0.8rem; margin: 0 0.5rem; }
+    #no-pano {
+      position: absolute; inset: 0; top: 100px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #8b949e;
+    }
+    #no-pano h3 { color: #e6edf3; margin-bottom: 0.5rem; }
+    #pano-info {
+      position: absolute;
+      left: 12px; top: 112px;
+      background: rgba(22,27,34,0.88);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 0.6rem 0.9rem;
+      font-size: 0.8rem;
+      color: #8b949e;
+      z-index: 20;
+    }
+    #pano-info strong { color: #f0883e; display: block; margin-bottom: 0.2rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <span class="logo-icon">&#9729;</span>
+      <span class="logo-text">Point Cloud Platform</span>
+    </div>
+    <nav>
+      <a href="/">Datasets</a>
+      <a href="/viewers/potree.html">Potree</a>
+      <a href="/viewers/cesium.html">Cesium</a>
+      <a href="/viewers/splat.html">Splat</a>
+      <a href="/viewers/panorama.html" class="active">Panorama</a>
+    </nav>
+  </header>
+
+  <div class="viewer-toolbar">
+    <span class="viewer-title">Panorama Viewer</span>
+    <span class="toolbar-label">Dataset:</span>
+    <select id="dataset-select"><option value="">Loading...</option></select>
+    <a id="potree-link" href="#" style="display:none; font-size:0.8rem; color:#58a6ff; padding:0.25rem 0.75rem; border:1px solid #30363d; border-radius:5px; text-decoration:none; margin-left:0.5rem;">
+      View in Potree
+    </a>
+  </div>
+
+  <div id="panorama"></div>
+  <div id="pano-info" style="display:none">
+    <strong id="pano-name"></strong>
+    <span id="pano-coords"></span>
+  </div>
+
+  <div id="scan-nav" style="display:none">
+    <button id="btn-prev">&#8592; Prev</button>
+    <span id="scan-label">Scan 1 / 1</span>
+    <button id="btn-next">Next &#8594;</button>
+  </div>
+
+  <div id="no-pano">
+    <h3>No panorama selected</h3>
+    <p>Select a dataset with panoramas above, or <a href="/" style="color:#58a6ff;">add one from the dashboard</a>.</p>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const datasetId = params.get('id');
+    const posId = params.get('pos');
+    const select = document.getElementById('dataset-select');
+    const noPano = document.getElementById('no-pano');
+    const scanNav = document.getElementById('scan-nav');
+    const scanLabel = document.getElementById('scan-label');
+    const panoInfo = document.getElementById('pano-info');
+    const potreeLink = document.getElementById('potree-link');
+
+    let pannellumViewer = null;
+    let panoramas = [];
+    let currentIdx = 0;
+
+    async function loadDatasets() {
+      const res = await fetch('/api/datasets');
+      const datasets = await res.json();
+      const compatible = datasets.filter(d => d.type === 'panorama' || d.type === 'e57' || (d.panoramas && d.panoramas.length > 0));
+      select.innerHTML = '<option value="">-- select dataset --</option>' +
+        compatible.map(d => `<option value="${d.id}" ${d.id === datasetId ? 'selected' : ''}>${d.name}</option>`).join('');
+      if (compatible.length === 0) {
+        select.innerHTML = '<option value="">No panorama datasets</option>';
+      }
+      if (datasetId) {
+        const ds = compatible.find(d => d.id === datasetId);
+        if (ds) loadPanoramas(ds);
+        else showNone();
+      } else {
+        showNone();
+      }
+    }
+
+    function showNone() {
+      noPano.style.display = 'flex';
+      scanNav.style.display = 'none';
+    }
+
+    select.addEventListener('change', async () => {
+      const id = select.value;
+      if (!id) { showNone(); return; }
+      const res = await fetch(`/api/datasets/${id}`);
+      const ds = await res.json();
+      history.pushState({}, '', `?id=${id}`);
+      loadPanoramas(ds);
+    });
+
+    function loadPanoramas(ds) {
+      panoramas = ds.panoramas || [];
+      if (panoramas.length === 0) {
+        showNone();
+        noPano.innerHTML = `<h3>No panoramas in this dataset</h3><p>This dataset has no linked panoramic images.</p>`;
+        return;
+      }
+      noPano.style.display = 'none';
+      scanNav.style.display = 'flex';
+
+      // Link to Potree if source is pointcloud or e57
+      if (ds.type === 'e57' || ds.type === 'pointcloud') {
+        potreeLink.style.display = 'inline-block';
+        potreeLink.href = `/viewers/potree.html?id=${ds.id}`;
+      }
+
+      // Find initial position
+      const startIdx = posId ? panoramas.findIndex(p => p.id === posId) : 0;
+      currentIdx = startIdx >= 0 ? startIdx : 0;
+      showPanorama(currentIdx);
+    }
+
+    function showPanorama(idx) {
+      currentIdx = idx;
+      const p = panoramas[idx];
+      scanLabel.textContent = `Scan ${idx + 1} / ${panoramas.length}`;
+      panoInfo.style.display = 'block';
+      document.getElementById('pano-name').textContent = p.label || `Scan ${idx + 1}`;
+      document.getElementById('pano-coords').textContent = p.x !== undefined
+        ? `X: ${p.x.toFixed(2)}  Y: ${p.y.toFixed(2)}  Z: ${p.z.toFixed(2)}`
+        : '';
+
+      // Build hotspots to adjacent positions
+      const hotspots = [];
+      if (idx > 0) {
+        hotspots.push({
+          type: 'scene', pitch: -5, yaw: -30,
+          sceneId: `pano_${idx - 1}`,
+          text: panoramas[idx-1].label || `Scan ${idx}`,
+          cssClass: 'custom-hotspot',
+        });
+      }
+      if (idx < panoramas.length - 1) {
+        hotspots.push({
+          type: 'scene', pitch: -5, yaw: 30,
+          sceneId: `pano_${idx + 1}`,
+          text: panoramas[idx+1].label || `Scan ${idx + 2}`,
+          cssClass: 'custom-hotspot',
+        });
+      }
+
+      if (pannellumViewer) {
+        pannellumViewer.destroy();
+        pannellumViewer = null;
+      }
+
+      pannellumViewer = pannellum.viewer('panorama', {
+        type: 'equirectangular',
+        panorama: p.path,
+        autoLoad: true,
+        autoRotate: 0,
+        compass: true,
+        northOffset: p.northOffset || 0,
+        hfov: 100,
+        minHfov: 30,
+        maxHfov: 150,
+        hotSpots: hotspots,
+        showControls: true,
+        showZoomCtrl: true,
+        showFullscreenCtrl: true,
+        uiText: { loadButtonLabel: 'Load Panorama' },
+      });
+    }
+
+    document.getElementById('btn-prev').addEventListener('click', () => {
+      if (currentIdx > 0) showPanorama(currentIdx - 1);
+    });
+    document.getElementById('btn-next').addEventListener('click', () => {
+      if (currentIdx < panoramas.length - 1) showPanorama(currentIdx + 1);
+    });
+
+    loadDatasets();
+  </script>
+</body>
+</html>

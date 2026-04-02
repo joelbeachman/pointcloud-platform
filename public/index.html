@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Point Cloud Platform</title>
+  <link rel="stylesheet" href="/css/portal.css">
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <span class="logo-icon">&#9729;</span>
+      <span class="logo-text">Point Cloud Platform</span>
+    </div>
+    <nav>
+      <a href="/" class="active">Datasets</a>
+      <a href="/viewers/potree.html">Potree</a>
+      <a href="/viewers/cesium.html">Cesium</a>
+      <a href="/viewers/splat.html">Gaussian Splat</a>
+      <a href="/viewers/panorama.html">Panorama</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Multi-Source Point Cloud Viewer</h1>
+      <p>Manage and explore LiDAR scans, photogrammetry, aerial surveys, and Gaussian splats — all from one platform.</p>
+    </section>
+
+    <section class="viewer-cards">
+      <h2>Available Viewers</h2>
+      <div class="card-grid">
+        <a href="/viewers/potree.html" class="viewer-card potree">
+          <div class="card-icon">&#9632;</div>
+          <h3>Potree</h3>
+          <p>Large-scale point clouds from LiDAR &amp; photogrammetry. Octree streaming, measurement tools, scan positions.</p>
+          <span class="tag">LAS / LAZ / E57</span>
+        </a>
+        <a href="/viewers/cesium.html" class="viewer-card cesium">
+          <div class="card-icon">&#9679;</div>
+          <h3>Cesium</h3>
+          <p>Georeferenced 3D point clouds on a globe. Ideal for aerial surveys and large-area coverage.</p>
+          <span class="tag">3D Tiles</span>
+        </a>
+        <a href="/viewers/splat.html" class="viewer-card splat">
+          <div class="card-icon">&#10022;</div>
+          <h3>Gaussian Splat</h3>
+          <p>Neural radiance field-style reconstruction. Photo-realistic rendering from photogrammetry.</p>
+          <span class="tag">.splat / .ply</span>
+        </a>
+        <a href="/viewers/panorama.html" class="viewer-card panorama">
+          <div class="card-icon">&#9900;</div>
+          <h3>Panoramas</h3>
+          <p>360° panoramic images linked to scan positions. Navigate from scan station to scan station.</p>
+          <span class="tag">Equirectangular / E57</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="datasets-section">
+      <div class="datasets-header">
+        <h2>Datasets</h2>
+        <button id="btn-add" class="btn-primary">+ Add Dataset</button>
+      </div>
+      <div id="datasets-list" class="datasets-list">
+        <div class="loading">Loading datasets...</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Add Dataset Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Add Dataset</h3>
+      <form id="add-form">
+        <label>Name <input type="text" name="name" required placeholder="My LiDAR Scan"></label>
+        <label>Type
+          <select name="type">
+            <option value="pointcloud">Point Cloud (LAS/LAZ)</option>
+            <option value="cesium">Cesium 3D Tiles</option>
+            <option value="splat">Gaussian Splat</option>
+            <option value="panorama">Panorama</option>
+            <option value="e57">E57 (with panoramas)</option>
+          </select>
+        </label>
+        <label>Source <input type="text" name="source" placeholder="photogrammetry / lidar / aerial"></label>
+        <label>Data Path <input type="text" name="path" placeholder="/data/pointclouds/my-scan/metadata.json"></label>
+        <label>Description <textarea name="description" rows="2" placeholder="Optional notes"></textarea></label>
+        <div class="form-actions">
+          <button type="button" id="btn-cancel">Cancel</button>
+          <button type="submit" class="btn-primary">Add</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/portal.js"></script>
+</body>
+</html>

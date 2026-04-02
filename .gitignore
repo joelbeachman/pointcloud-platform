@@ -1,0 +1,8 @@
+node_modules/
+.env
+data/pointclouds/
+data/cesium/
+data/splats/
+data/panoramas/
+*.log
+.DS_Store
