@@ -11546,8 +11546,8 @@
                     if (controls) {
                         controls.listenToKeyEvents(window);
                         controls.rotateSpeed = 0.5;
-                        controls.maxPolarAngle = Math.PI * .75;
-                        controls.minPolarAngle = 0.1;
+                        controls.maxPolarAngle = Math.PI;
+                        controls.minPolarAngle = 0;
                         controls.enableDamping = true;
                         controls.dampingFactor = 0.05;
                         controls.target.copy(this.initialCameraLookAt);
