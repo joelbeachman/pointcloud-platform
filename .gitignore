@@ -6,3 +6,4 @@ data/splats/
 data/panoramas/
 *.log
 .DS_Store
+.claude/

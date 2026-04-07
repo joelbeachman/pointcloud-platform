@@ -111,6 +111,7 @@
         compatible.map(d => `<option value="${d.id}" ${d.id === datasetId ? 'selected' : ''}>${d.name}</option>`).join('');
       if (compatible.length === 0) {
         select.innerHTML = '<option value="">No Cesium datasets — add from dashboard</option>';
+        return;
       }
       if (datasetId) {
         const ds = compatible.find(d => d.id === datasetId);
@@ -129,22 +130,24 @@
 
     async function loadTileset(ds) {
       if (currentTileset) viewer.scene.primitives.remove(currentTileset);
+      document.getElementById('info-panel').innerHTML = `<h4 style="color:#58a6ff">Loading...</h4><p style="color:#8b949e">${ds.name}</p>`;
       try {
-        currentTileset = viewer.scene.primitives.add(
-          new Cesium.Cesium3DTileset({ url: ds.path })
-        );
-        await currentTileset.readyPromise;
-        viewer.zoomTo(currentTileset, new Cesium.HeadingPitchRange(0, -Math.PI / 4, currentTileset.boundingSphere.radius * 2));
+        // Support both absolute URLs and server-relative paths
+        const url = ds.path.startsWith('http') ? ds.path : window.location.origin + ds.path;
+        currentTileset = await Cesium.Cesium3DTileset.fromUrl(url);
+        viewer.scene.primitives.add(currentTileset);
+        await viewer.zoomTo(currentTileset, new Cesium.HeadingPitchRange(0, -Math.PI / 4, currentTileset.boundingSphere.radius * 2.5));
         document.getElementById('info-panel').innerHTML = `
           <h4>${ds.name}</h4>
           <p style="color:#8b949e">Source: ${ds.source || 'unknown'}</p>
-          <p style="margin-top:0.4rem">${ds.description || '3D Tiles point cloud loaded.'}</p>
+          <p style="margin-top:0.4rem">${ds.description || '3D Tiles loaded.'}</p>
         `;
       } catch(e) {
         console.error('Tileset load error:', e);
         document.getElementById('info-panel').innerHTML = `
           <h4 style="color:#f85149">Load Error</h4>
           <p style="color:#8b949e">${e.message}</p>
+          <p style="margin-top:0.3rem;font-size:0.75rem">Path: ${ds.path}</p>
         `;
       }
     }

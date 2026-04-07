@@ -6,56 +6,45 @@
   <link rel="stylesheet" href="/css/portal.css">
   <style>
     body { margin: 0; overflow: hidden; background: #0d1117; }
-    #splat-canvas {
+    #splat-container {
       position: absolute; inset: 0; top: 100px;
       width: 100%; height: calc(100vh - 100px);
-      display: block;
     }
     .toolbar-label { color: #8b949e; font-size: 0.8rem; }
     #hud {
-      position: absolute; right: 16px; top: 116px;
-      background: rgba(22,27,34,0.92);
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 0.75rem 1rem;
-      color: #e6edf3;
-      font-size: 0.8rem;
-      z-index: 20; min-width: 180px;
+      position: absolute; right: 12px; top: 112px;
+      background: rgba(22,27,34,0.9); border: 1px solid #30363d;
+      border-radius: 8px; padding: 0.6rem 0.9rem;
+      font-size: 0.8rem; color: #8b949e; z-index: 20;
     }
-    #hud h4 { margin-bottom: 0.4rem; color: #a371f7; }
-    #status { color: #8b949e; margin-top: 0.25rem; }
-    #fps { font-family: monospace; }
+    #hud strong { color: #a371f7; display: block; margin-bottom: 0.3rem; }
+    #overlay {
+      position: absolute; inset: 0; top: 100px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #e6edf3; z-index: 30; pointer-events: none;
+    }
+    #overlay h3 { margin-bottom: 0.5rem; }
+    #overlay p { color: #8b949e; font-size: 0.875rem; text-align: center; max-width: 400px; }
+    .progress-wrap { width: 260px; height: 3px; background: #21262d; border-radius: 2px; margin-top: 1rem; }
+    .progress-fill { height: 3px; background: #a371f7; border-radius: 2px; transition: width 0.3s; }
     #controls-hint {
-      position: absolute; left: 16px; bottom: 16px;
-      background: rgba(22,27,34,0.85);
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      padding: 0.5rem 0.75rem;
-      font-size: 0.75rem;
-      color: #8b949e;
+      position: absolute; left: 12px; bottom: 12px;
+      background: rgba(22,27,34,0.85); border: 1px solid #30363d;
+      border-radius: 6px; padding: 0.4rem 0.7rem;
+      font-size: 0.75rem; color: #8b949e; z-index: 20; pointer-events: none;
     }
-    #loading-msg {
-      position: absolute; left: 50%; top: 50%;
-      transform: translate(-50%, -50%);
-      color: #e6edf3;
-      text-align: center;
-    }
-    #loading-msg h3 { margin-bottom: 0.5rem; }
-    #loading-msg p { color: #8b949e; font-size: 0.875rem; }
   </style>
 </head>
 <body>
   <header>
-    <div class="logo">
-      <span class="logo-icon">&#9729;</span>
-      <span class="logo-text">Point Cloud Platform</span>
-    </div>
+    <div class="logo"><span class="logo-icon">&#9729;</span><span class="logo-text">Point Cloud Platform</span></div>
     <nav>
       <a href="/">Datasets</a>
-      <a href="/viewers/potree.html">Potree</a>
+      <a href="/viewers/potree.html">Point Cloud</a>
       <a href="/viewers/cesium.html">Cesium</a>
       <a href="/viewers/splat.html" class="active">Splat</a>
       <a href="/viewers/panorama.html">Panorama</a>
+      <a href="/viewers/compare.html">Compare</a>
     </nav>
   </header>
 
@@ -63,111 +52,53 @@
     <span class="viewer-title">Gaussian Splat Viewer</span>
     <span class="toolbar-label">Dataset:</span>
     <select id="dataset-select"><option value="">Loading...</option></select>
-    <span class="toolbar-label" style="margin-left:1rem;">Splat count limit:</span>
-    <select id="splat-limit">
-      <option value="500000">500k</option>
-      <option value="1000000" selected>1M</option>
-      <option value="2000000">2M</option>
-    </select>
   </div>
 
-  <canvas id="splat-canvas"></canvas>
+  <div id="splat-container"></div>
 
   <div id="hud">
-    <h4>Gaussian Splat</h4>
-    <div id="status">Ready</div>
-    <div id="fps"></div>
+    <strong id="hud-name">No dataset loaded</strong>
+    <div id="hud-status"></div>
+  </div>
+  <div id="controls-hint">Left drag: orbit &nbsp;|&nbsp; Scroll: zoom &nbsp;|&nbsp; Right drag: pan</div>
+
+  <div id="overlay">
+    <h3 id="overlay-title">Gaussian Splat Viewer</h3>
+    <p id="overlay-msg">Select a splat dataset above to begin.</p>
+    <div class="progress-wrap"><div class="progress-fill" id="progress" style="width:0%"></div></div>
   </div>
 
-  <div id="controls-hint">
-    Drag to orbit &nbsp;|&nbsp; Scroll to zoom &nbsp;|&nbsp; Right-drag to pan
-  </div>
+  <!-- Load GaussianSplats3D as UMD via script tag -->
+  <script src="https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.3/build/gaussian-splats-3d.umd.cjs"></script>
 
-  <div id="loading-msg">
-    <h3>Gaussian Splat Viewer</h3>
-    <p>Select a .splat dataset above or <a href="/" style="color:#a371f7;">add one from the dashboard</a>.</p>
-  </div>
-
-  <!-- Three.js and gaussian-splats-3d via CDN -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
-  <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
-    const canvas = document.getElementById('splat-canvas');
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setClearColor(0x0d1117);
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 1000);
-    camera.position.set(0, 0, 3);
-
-    const controls = new OrbitControls(camera, canvas);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-
-    function resize() {
-      const w = canvas.clientWidth, h = canvas.clientHeight;
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    }
-    window.addEventListener('resize', resize);
-    resize();
-
-    let frameCount = 0, lastTime = performance.now();
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-      frameCount++;
-      const now = performance.now();
-      if (now - lastTime > 1000) {
-        document.getElementById('fps').textContent = `${frameCount} fps`;
-        frameCount = 0;
-        lastTime = now;
-      }
-    }
-    animate();
-
-    // Load Gaussian splat using GaussianSplats3D
-    // We'll load it dynamically from CDN
-    const GS_CDN = 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.3.8/build/gaussian-splats-3d.module.js';
-
+  <script>
+    const select = document.getElementById('dataset-select');
+    const overlay = document.getElementById('overlay');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayMsg = document.getElementById('overlay-msg');
+    const progress = document.getElementById('progress');
+    const hudName = document.getElementById('hud-name');
+    const hudStatus = document.getElementById('hud-status');
     const params = new URLSearchParams(location.search);
     const datasetId = params.get('id');
-    const select = document.getElementById('dataset-select');
-    const statusEl = document.getElementById('status');
-    const loadingMsg = document.getElementById('loading-msg');
 
-    let GaussianSplats3D = null;
-    let currentSplatMesh = null;
+    let currentViewer = null;
 
-    async function initSplatLib() {
-      if (GaussianSplats3D) return;
-      statusEl.textContent = 'Loading splat library...';
-      const mod = await import(GS_CDN);
-      GaussianSplats3D = mod;
-      statusEl.textContent = 'Ready';
+    function showOverlay(title, msg, pct) {
+      overlay.style.display = 'flex';
+      overlayTitle.textContent = title;
+      overlayMsg.textContent = msg;
+      progress.style.width = (pct ?? 0) + '%';
     }
+    function hideOverlay() { overlay.style.display = 'none'; }
 
     async function loadDatasets() {
       const res = await fetch('/api/datasets');
       const datasets = await res.json();
       const compatible = datasets.filter(d => d.type === 'splat');
       select.innerHTML = '<option value="">-- select dataset --</option>' +
-        compatible.map(d => `<option value="${d.id}" ${d.id === datasetId ? 'selected':''}>${d.name}</option>`).join('');
-      if (compatible.length === 0) {
-        select.innerHTML = '<option value="">No splat datasets — add from dashboard</option>';
-      }
+        compatible.map(d => `<option value="${d.id}" ${d.id === datasetId ? 'selected' : ''}>${d.name}</option>`).join('');
+      if (!compatible.length) select.innerHTML = '<option>No splat datasets — add from dashboard</option>';
       if (datasetId) {
         const ds = compatible.find(d => d.id === datasetId);
         if (ds) loadSplat(ds);
@@ -175,8 +106,7 @@
     }
 
     select.addEventListener('change', async () => {
-      const id = select.value;
-      if (!id) return;
+      const id = select.value; if (!id) return;
       const res = await fetch(`/api/datasets/${id}`);
       const ds = await res.json();
       history.pushState({}, '', `?id=${id}`);
@@ -184,36 +114,50 @@
     });
 
     async function loadSplat(ds) {
-      loadingMsg.style.display = 'none';
-      statusEl.textContent = `Loading ${ds.name}...`;
-
-      await initSplatLib();
-
-      if (currentSplatMesh) {
-        scene.remove(currentSplatMesh);
-        currentSplatMesh.dispose && currentSplatMesh.dispose();
-        currentSplatMesh = null;
+      // Destroy previous viewer
+      if (currentViewer) {
+        try { currentViewer.dispose(); } catch(e) {}
+        document.getElementById('splat-container').innerHTML = '';
+        currentViewer = null;
       }
 
+      hudName.textContent = ds.name;
+      hudStatus.textContent = 'Loading…';
+      showOverlay('Loading splat', ds.name + '…', 20);
+
       try {
-        const viewer = new GaussianSplats3D.Viewer({
-          renderer, camera, scene,
-          selfDrivenMode: false,
+        // Check GaussianSplats3D is available
+        if (typeof GaussianSplats3D === 'undefined') {
+          throw new Error('GaussianSplats3D library failed to load from CDN');
+        }
+
+        showOverlay('Loading splat', 'Initializing viewer…', 40);
+
+        currentViewer = new GaussianSplats3D.Viewer({
+          rootElement: document.getElementById('splat-container'),
+          sharedMemoryForWorkers: false,
           dynamicScene: false,
-          useBuiltInControls: false,
-        });
-        await viewer.loadFile(ds.path, {
-          splatAlphaRemovalThreshold: 5,
+          gpuAcceleratedSort: true,
           halfPrecisionCovariancesOnGPU: true,
         });
-        viewer.addSplatSceneToScene();
-        controls.reset();
-        statusEl.textContent = `Loaded: ${ds.name}`;
+
+        showOverlay('Loading splat', 'Downloading and decompressing…', 60);
+
+        // addSplatScene is the correct API in v0.4.x
+        await currentViewer.addSplatScene(ds.path, {
+          splatAlphaRemovalThreshold: 5,
+        });
+
+        showOverlay('Loading splat', 'Starting renderer…', 90);
+        currentViewer.start();
+        hideOverlay();
+        hudStatus.textContent = 'Loaded';
+
       } catch (e) {
-        console.error(e);
-        statusEl.textContent = `Error: ${e.message}`;
-        loadingMsg.innerHTML = `<h3 style="color:#f85149">Load Error</h3><p style="color:#8b949e">${e.message}</p>`;
-        loadingMsg.style.display = 'block';
+        console.error('Splat load error:', e);
+        hudStatus.textContent = 'Error';
+        showOverlay('Load error', e.message, 0);
+        overlay.style.pointerEvents = 'none';
       }
     }
 

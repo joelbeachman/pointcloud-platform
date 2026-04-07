@@ -2,173 +2,243 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Potree Viewer – Point Cloud Platform</title>
+  <title>Point Cloud Viewer – Point Cloud Platform</title>
   <link rel="stylesheet" href="/css/portal.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
-  <!-- Potree loaded from CDN-style bundle via unpkg/jsdelivr fallback -->
   <style>
-    body { margin: 0; overflow: hidden; }
-    #potree_render_area { position: absolute; inset: 0; top: 100px; }
-    #potree_sidebar_container { position: absolute; left: 0; top: 100px; height: calc(100vh - 100px); z-index: 10; }
+    body { margin: 0; overflow: hidden; background: #0d1117; }
+    #canvas { position: absolute; inset: 0; top: 100px; width: 100%; height: calc(100vh - 100px); display: block; }
     .toolbar-label { color: #8b949e; font-size: 0.8rem; }
-    #loading-overlay {
-      position: absolute; inset: 0; top: 100px;
-      background: rgba(13,17,23,0.92);
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      z-index: 50; color: #e6edf3;
+    #hud {
+      position: absolute; right: 12px; top: 112px;
+      background: rgba(22,27,34,0.9); border: 1px solid #30363d;
+      border-radius: 8px; padding: 0.6rem 0.9rem;
+      font-size: 0.8rem; color: #8b949e; z-index: 20; min-width: 160px;
     }
-    #loading-overlay h2 { margin-bottom: 0.5rem; }
-    #loading-overlay p { color: #8b949e; font-size: 0.875rem; }
-    .progress-bar-wrap { width: 280px; height: 4px; background: #21262d; border-radius: 2px; margin-top: 1rem; }
-    .progress-bar { height: 4px; background: #58a6ff; border-radius: 2px; transition: width 0.3s; width: 0%; }
-    #no-data {
+    #hud strong { color: #58a6ff; display: block; margin-bottom: 0.3rem; font-size: 0.85rem; }
+    #overlay {
       position: absolute; inset: 0; top: 100px;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      color: #8b949e; display: none;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #e6edf3; z-index: 30; background: rgba(13,17,23,0.92);
     }
-    #no-data h3 { color: #e6edf3; margin-bottom: 0.5rem; }
+    #overlay h3 { margin-bottom: 0.5rem; }
+    #overlay p { color: #8b949e; font-size: 0.875rem; }
+    .progress-wrap { width: 260px; height: 3px; background: #21262d; border-radius: 2px; margin-top: 1rem; }
+    .progress-fill { height: 3px; background: #58a6ff; border-radius: 2px; transition: width 0.2s; width: 0%; }
+    #controls-hint {
+      position: absolute; left: 12px; bottom: 12px;
+      background: rgba(22,27,34,0.85); border: 1px solid #30363d;
+      border-radius: 6px; padding: 0.4rem 0.7rem;
+      font-size: 0.75rem; color: #8b949e; z-index: 20;
+    }
+    #pano-link { display: none; margin-left: 0.5rem; font-size: 0.8rem; color: #f0883e; padding: 0.25rem 0.6rem; border: 1px solid #30363d; border-radius: 5px; text-decoration: none; }
   </style>
 </head>
 <body>
   <header>
-    <div class="logo">
-      <span class="logo-icon">&#9729;</span>
-      <span class="logo-text">Point Cloud Platform</span>
-    </div>
+    <div class="logo"><span class="logo-icon">&#9729;</span><span class="logo-text">Point Cloud Platform</span></div>
     <nav>
       <a href="/">Datasets</a>
-      <a href="/viewers/potree.html" class="active">Potree</a>
+      <a href="/viewers/potree.html" class="active">Point Cloud</a>
       <a href="/viewers/cesium.html">Cesium</a>
       <a href="/viewers/splat.html">Splat</a>
       <a href="/viewers/panorama.html">Panorama</a>
+      <a href="/viewers/compare.html">Compare</a>
     </nav>
   </header>
 
   <div class="viewer-toolbar">
-    <span class="viewer-title">Potree Viewer</span>
+    <span class="viewer-title">Point Cloud Viewer</span>
     <span class="toolbar-label">Dataset:</span>
     <select id="dataset-select"><option value="">Loading...</option></select>
-    <a id="pano-link" href="#" style="display:none; font-size:0.8rem; color:#f0883e; padding:0.25rem 0.75rem; border:1px solid #30363d; border-radius:5px; text-decoration:none;">
-      View Panoramas
-    </a>
+    <a id="pano-link" href="#">View Panoramas</a>
+    <span class="toolbar-label" style="margin-left:1rem;">Point size:</span>
+    <input id="point-size" type="range" min="1" max="5" step="0.5" value="2" style="width:80px">
   </div>
 
-  <div id="loading-overlay">
-    <h2>Loading Potree</h2>
-    <p id="loading-msg">Initializing viewer...</p>
-    <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+  <canvas id="canvas"></canvas>
+
+  <div id="hud">
+    <strong id="hud-name">No dataset loaded</strong>
+    <div id="hud-points"></div>
+    <div id="hud-fps"></div>
+  </div>
+  <div id="controls-hint">Left drag: rotate &nbsp;|&nbsp; Right drag: pan &nbsp;|&nbsp; Scroll: zoom</div>
+  <div id="overlay">
+    <h3 id="overlay-title">Point Cloud Viewer</h3>
+    <p id="overlay-msg">Select a dataset above to begin.</p>
+    <div class="progress-wrap"><div class="progress-fill" id="progress"></div></div>
   </div>
 
-  <div id="no-data">
-    <h3>No point cloud selected</h3>
-    <p>Select a dataset from the dropdown above, or <a href="/" style="color:#58a6ff;">add one on the dashboard</a>.</p>
-  </div>
+  <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-  <div id="potree_render_area"></div>
-  <div id="potree_sidebar_container"></div>
+    const canvas = document.getElementById('canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x0d1117);
 
-  <!-- Potree 1.8 from GitHub Pages CDN -->
-  <link rel="stylesheet" type="text/css" href="https://potree.github.io/potree/build/potree/potree.css">
-  <script src="https://potree.github.io/potree/libs/jquery/jquery-3.1.1.min.js"></script>
-  <script src="https://potree.github.io/potree/libs/spectrum/spectrum.js"></script>
-  <script src="https://potree.github.io/potree/libs/vue/vue.min.js"></script>
-  <script src="https://potree.github.io/potree/build/potree/potree.js"></script>
-  <script src="https://potree.github.io/potree/libs/plasio/js/laslaz.js"></script>
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 10000);
+    camera.position.set(0, -20, 15);
 
-  <script>
-    // Potree viewer init
-    const viewer = new Potree.Viewer(document.getElementById('potree_render_area'));
-    viewer.setEDLEnabled(true);
-    viewer.setFOV(60);
-    viewer.setPointBudget(1_500_000);
-    viewer.setBackground('gradient');
-    viewer.loadSettingsFromURL();
-    viewer.setDescription('Point Cloud Platform');
-    viewer.loadGUI(() => {
-      viewer.setLanguage('en');
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+
+    function resize() {
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    let frameCount = 0, lastFpsTime = performance.now();
+    let currentCloud = null;
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime > 1000) {
+        document.getElementById('hud-fps').textContent = frameCount + ' fps';
+        frameCount = 0; lastFpsTime = now;
+      }
+    }
+    animate();
+
+    // Point size slider
+    document.getElementById('point-size').addEventListener('input', e => {
+      if (currentCloud) currentCloud.material.size = parseFloat(e.target.value) * 0.02;
     });
 
     const params = new URLSearchParams(location.search);
     const datasetId = params.get('id');
     const select = document.getElementById('dataset-select');
-    const overlay = document.getElementById('loading-overlay');
-    const msg = document.getElementById('loading-msg');
-    const bar = document.getElementById('progress-bar');
-    const noData = document.getElementById('no-data');
+    const overlay = document.getElementById('overlay');
+    const overlayTitle = document.getElementById('overlay-title');
+    const overlayMsg = document.getElementById('overlay-msg');
+    const progress = document.getElementById('progress');
     const panoLink = document.getElementById('pano-link');
+
+    function showOverlay(title, msg, pct = 0) {
+      overlay.style.display = 'flex';
+      overlayTitle.textContent = title;
+      overlayMsg.textContent = msg;
+      progress.style.width = pct + '%';
+    }
+    function hideOverlay() { overlay.style.display = 'none'; }
 
     async function loadDatasets() {
       const res = await fetch('/api/datasets');
       const datasets = await res.json();
-      const compatible = datasets.filter(d => ['pointcloud','e57'].includes(d.type));
+      const compatible = datasets.filter(d => d.type === 'pointcloud' || d.type === 'e57');
       select.innerHTML = '<option value="">-- select dataset --</option>' +
         compatible.map(d => `<option value="${d.id}" ${d.id === datasetId ? 'selected' : ''}>${d.name}</option>`).join('');
+      if (!compatible.length) select.innerHTML = '<option>No point cloud datasets</option>';
       if (datasetId) {
         const ds = compatible.find(d => d.id === datasetId);
-        if (ds) loadCloud(ds);
-        else showNoData();
-      } else {
-        showNoData();
+        if (ds) loadCloud(ds); else showOverlay('Not found', 'Dataset not found.');
       }
-    }
-
-    function showNoData() {
-      overlay.style.display = 'none';
-      noData.style.display = 'flex';
     }
 
     select.addEventListener('change', async () => {
-      const id = select.value;
-      if (!id) { showNoData(); return; }
+      const id = select.value; if (!id) return;
       const res = await fetch(`/api/datasets/${id}`);
-      const ds = await res.json();
+      loadCloud(await res.json());
       history.pushState({}, '', `?id=${id}`);
-      loadCloud(ds);
     });
 
-    function loadCloud(ds) {
-      noData.style.display = 'none';
-      overlay.style.display = 'flex';
-      msg.textContent = `Loading ${ds.name}...`;
-      bar.style.width = '10%';
+    async function loadCloud(ds) {
+      showOverlay('Loading', ds.name + '…', 10);
+      document.getElementById('hud-name').textContent = ds.name;
+      document.getElementById('hud-points').textContent = '';
+      if (currentCloud) { scene.remove(currentCloud); currentCloud.geometry.dispose(); currentCloud.material.dispose(); currentCloud = null; }
 
-      // Check for panoramas
-      if (ds.panoramas && ds.panoramas.length > 0) {
+      if (ds.panoramas && ds.panoramas.length) {
         panoLink.style.display = 'inline-block';
         panoLink.href = `/viewers/panorama.html?id=${ds.id}`;
-      } else {
-        panoLink.style.display = 'none';
-      }
+      } else { panoLink.style.display = 'none'; }
 
-      Potree.loadPointCloud(ds.path, ds.name, e => {
-        bar.style.width = '80%';
-        const pointCloud = e.pointcloud;
-        const material = pointCloud.material;
-        material.size = 1;
-        material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
-        material.shape = Potree.PointShape.SQUARE;
-        viewer.scene.addPointCloud(pointCloud);
-        viewer.fitToScreen(0.5);
-        bar.style.width = '100%';
-        msg.textContent = 'Loaded!';
-        setTimeout(() => { overlay.style.display = 'none'; }, 600);
-
-        // Add scan position annotations if available
-        if (ds.scanPositions) {
-          ds.scanPositions.forEach(sp => {
-            const el = document.createElement('div');
-            el.innerHTML = `<div style="background:#f0883e;color:#000;padding:2px 6px;border-radius:3px;font-size:11px;cursor:pointer;" onclick="window.location='/viewers/panorama.html?id=${ds.id}&pos=${sp.id}'">📷 ${sp.label}</div>`;
-            const annotation = new Potree.Annotation({
-              position: new THREE.Vector3(sp.x, sp.y, sp.z),
-              title: sp.label,
-              element: el,
-            });
-            viewer.scene.annotations.add(annotation);
-          });
+      try {
+        const path = ds.path;
+        if (path.endsWith('.xyz')) {
+          await loadXYZ(ds, path);
+        } else if (path.endsWith('.laz') || path.endsWith('.las')) {
+          showOverlay('Conversion required', 'LAZ/LAS files must be converted to Potree octree format using PotreeConverter before viewing here. The file is stored at: ' + path, 100);
+          document.getElementById('overlay').style.background = 'rgba(13,17,23,0.97)';
+          return;
+        } else {
+          showOverlay('Unknown format', 'Unsupported file: ' + path, 0);
         }
+      } catch (e) {
+        showOverlay('Error', e.message, 0);
+        console.error(e);
+      }
+    }
+
+    async function loadXYZ(ds, path) {
+      showOverlay('Downloading', ds.name, 20);
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${path}`);
+      const text = await res.text();
+      showOverlay('Parsing', 'Building point cloud…', 60);
+
+      await new Promise(r => setTimeout(r, 10)); // allow repaint
+
+      const lines = text.trim().split('\n');
+      const n = lines.length;
+      const positions = new Float32Array(n * 3);
+      const colors = new Float32Array(n * 3);
+
+      let minX = Infinity, minY = Infinity, minZ = Infinity;
+      let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+      // First pass: parse + find bounds
+      const parsed = lines.map(line => {
+        const p = line.trim().split(/\s+/);
+        const x = parseFloat(p[0]), y = parseFloat(p[1]), z = parseFloat(p[2]);
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+        return { x, y, z, r: parseInt(p[3]) || 128, g: parseInt(p[4]) || 128, b: parseInt(p[5]) || 128 };
       });
+
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+      const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+
+      parsed.forEach((p, i) => {
+        positions[i*3]   = p.x - cx;
+        positions[i*3+1] = p.y - cy;
+        positions[i*3+2] = p.z - cz;
+        colors[i*3]   = p.r / 255;
+        colors[i*3+1] = p.g / 255;
+        colors[i*3+2] = p.b / 255;
+      });
+
+      showOverlay('Building', 'Uploading to GPU…', 85);
+      await new Promise(r => setTimeout(r, 10));
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      const material = new THREE.PointsMaterial({ size: 0.04, vertexColors: true, sizeAttenuation: true });
+      currentCloud = new THREE.Points(geometry, material);
+      scene.add(currentCloud);
+
+      // Fit camera
+      camera.position.set(0, -span * 1.2, span * 0.8);
+      controls.target.set(0, 0, 0);
+      controls.update();
+
+      document.getElementById('hud-points').textContent = n.toLocaleString() + ' points';
+      hideOverlay();
     }
 
     loadDatasets();

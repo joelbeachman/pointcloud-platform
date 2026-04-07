@@ -4,8 +4,8 @@
     "name": "Demo Sphere (Synthetic)",
     "type": "pointcloud",
     "source": "generated",
-    "path": "/data/pointclouds/demo-sphere/metadata.json",
-    "description": "50k-point synthetic sphere + ground plane for testing the Potree viewer",
+    "path": "/data/pointclouds/demo-sphere/points.xyz",
+    "description": "50k-point synthetic sphere + ground plane",
     "createdAt": "2026-04-07T00:00:00.000Z"
   },
   {
@@ -14,7 +14,7 @@
     "type": "pointcloud",
     "source": "lidar",
     "path": "/data/pointclouds/sample-las/autzen.laz",
-    "description": "Classic open LiDAR dataset — Autzen Stadium, Eugene OR. Source: PDAL test data.",
+    "description": "Classic open LiDAR dataset — Autzen Stadium, Eugene OR.",
     "createdAt": "2026-04-07T00:00:00.000Z"
   },
   {
@@ -23,7 +23,29 @@
     "type": "splat",
     "source": "photogrammetry",
     "path": "/data/splats/nike.splat",
-    "description": "Open Gaussian splat scene. Source: huggingface.co/cakewalk/splat-data",
+    "description": "Open Gaussian splat scene.",
+    "createdAt": "2026-04-07T00:00:00.000Z"
+  },
+  {
+    "id": "cesium-dragon",
+    "name": "Dragon (3D Tiles)",
+    "type": "cesium",
+    "source": "photogrammetry",
+    "path": "/data/cesium/TilesetWithDiscreteLOD/tileset.json",
+    "description": "CesiumGS sample 3D Tiles dataset — Stanford Dragon with discrete LOD.",
+    "createdAt": "2026-04-07T00:00:00.000Z"
+  },
+  {
+    "id": "demo-panoramas",
+    "name": "Demo Site (Panoramas)",
+    "type": "e57",
+    "source": "lidar",
+    "path": "/data/panoramas/demo-site/metadata.json",
+    "description": "Synthetic demo panoramas with 2 linked scan positions.",
+    "panoramas": [
+      {"id": "scan_000", "label": "Scan Position 1", "path": "/data/panoramas/demo-site/scan_000.jpg", "x": 0.0, "y": 0.0, "z": 1.5, "northOffset": 0},
+      {"id": "scan_001", "label": "Scan Position 2", "path": "/data/panoramas/demo-site/scan_001.jpg", "x": 3.0, "y": 1.5, "z": 1.5, "northOffset": 0}
+    ],
     "createdAt": "2026-04-07T00:00:00.000Z"
   }
 ]
