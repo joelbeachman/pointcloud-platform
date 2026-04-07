@@ -1,0 +1,29 @@
+[
+  {
+    "id": "demo-sphere",
+    "name": "Demo Sphere (Synthetic)",
+    "type": "pointcloud",
+    "source": "generated",
+    "path": "/data/pointclouds/demo-sphere/metadata.json",
+    "description": "50k-point synthetic sphere + ground plane for testing the Potree viewer",
+    "createdAt": "2026-04-07T00:00:00.000Z"
+  },
+  {
+    "id": "autzen-las",
+    "name": "Autzen Stadium (LiDAR)",
+    "type": "pointcloud",
+    "source": "lidar",
+    "path": "/data/pointclouds/sample-las/autzen.laz",
+    "description": "Classic open LiDAR dataset — Autzen Stadium, Eugene OR. Source: PDAL test data.",
+    "createdAt": "2026-04-07T00:00:00.000Z"
+  },
+  {
+    "id": "nike-splat",
+    "name": "Nike (Gaussian Splat)",
+    "type": "splat",
+    "source": "photogrammetry",
+    "path": "/data/splats/nike.splat",
+    "description": "Open Gaussian splat scene. Source: huggingface.co/cakewalk/splat-data",
+    "createdAt": "2026-04-07T00:00:00.000Z"
+  }
+]

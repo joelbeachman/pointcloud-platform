@@ -18,6 +18,7 @@
       <a href="/viewers/cesium.html">Cesium</a>
       <a href="/viewers/splat.html">Gaussian Splat</a>
       <a href="/viewers/panorama.html">Panorama</a>
+      <a href="/viewers/compare.html">Compare</a>
     </nav>
   </header>
 
@@ -60,6 +61,15 @@
     <section class="datasets-section">
       <div class="datasets-header">
         <h2>Datasets</h2>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex:1;margin:0 1rem;">
+          <input id="search-input" type="text" placeholder="Search datasets..." style="flex:1;background:#21262d;border:1px solid #30363d;border-radius:6px;padding:0.35rem 0.75rem;color:#e6edf3;font-size:0.85rem;">
+          <button class="layout-btn active" data-filter="all">All</button>
+          <button class="layout-btn" data-filter="pointcloud">Point Cloud</button>
+          <button class="layout-btn" data-filter="cesium">Cesium</button>
+          <button class="layout-btn" data-filter="splat">Splat</button>
+          <button class="layout-btn" data-filter="panorama">Panorama</button>
+          <button class="layout-btn" data-filter="e57">E57</button>
+        </div>
         <button id="btn-add" class="btn-primary">+ Add Dataset</button>
       </div>
       <div id="datasets-list" class="datasets-list">

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Compare Viewers – Point Cloud Platform</title>
+  <link rel="stylesheet" href="/css/portal.css">
+  <style>
+    body { margin: 0; overflow: hidden; }
+    .viewer-toolbar { gap: 0.5rem; flex-wrap: wrap; height: auto; min-height: 44px; padding: 0.4rem 1rem; }
+    #split-container {
+      position: absolute; inset: 0; top: 100px;
+      display: flex;
+    }
+    .split-pane {
+      flex: 1;
+      position: relative;
+      border-right: 2px solid #30363d;
+    }
+    .split-pane:last-child { border-right: none; }
+    .pane-label {
+      position: absolute; top: 8px; left: 8px;
+      background: rgba(22,27,34,0.9);
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #e6edf3;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .split-pane iframe {
+      width: 100%; height: 100%;
+      border: none;
+      display: block;
+    }
+    #divider {
+      width: 6px;
+      background: #30363d;
+      cursor: col-resize;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 20;
+      transition: background 0.15s;
+    }
+    #divider:hover, #divider.dragging { background: #58a6ff; }
+    .layout-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .layout-btn.active { border-color: #58a6ff; color: #58a6ff; }
+    .toolbar-label { color: #8b949e; font-size: 0.8rem; }
+    select.small {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <span class="logo-icon">&#9729;</span>
+      <span class="logo-text">Point Cloud Platform</span>
+    </div>
+    <nav>
+      <a href="/">Datasets</a>
+      <a href="/viewers/potree.html">Potree</a>
+      <a href="/viewers/cesium.html">Cesium</a>
+      <a href="/viewers/splat.html">Splat</a>
+      <a href="/viewers/panorama.html">Panorama</a>
+      <a href="/viewers/compare.html" class="active">Compare</a>
+    </nav>
+  </header>
+
+  <div class="viewer-toolbar">
+    <span class="viewer-title">Side-by-Side Compare</span>
+    <span class="toolbar-label">Left:</span>
+    <select id="left-viewer" class="small">
+      <option value="/viewers/potree.html">Potree</option>
+      <option value="/viewers/cesium.html">Cesium</option>
+      <option value="/viewers/splat.html">Splat</option>
+      <option value="/viewers/panorama.html">Panorama</option>
+    </select>
+    <span class="toolbar-label">Right:</span>
+    <select id="right-viewer" class="small">
+      <option value="/viewers/cesium.html">Cesium</option>
+      <option value="/viewers/potree.html">Potree</option>
+      <option value="/viewers/splat.html">Splat</option>
+      <option value="/viewers/panorama.html">Panorama</option>
+    </select>
+    <button class="layout-btn active" id="btn-split-h">&#8942; Split H</button>
+    <button class="layout-btn" id="btn-split-v">&#8286; Split V</button>
+    <button class="layout-btn" id="btn-fullscreen-l">L Full</button>
+    <button class="layout-btn" id="btn-fullscreen-r">R Full</button>
+  </div>
+
+  <div id="split-container">
+    <div class="split-pane" id="left-pane">
+      <div class="pane-label" id="left-label">Potree</div>
+      <iframe id="left-frame" src="/viewers/potree.html" title="Left viewer"></iframe>
+    </div>
+    <div id="divider"></div>
+    <div class="split-pane" id="right-pane">
+      <div class="pane-label" id="right-label">Cesium</div>
+      <iframe id="right-frame" src="/viewers/cesium.html" title="Right viewer"></iframe>
+    </div>
+  </div>
+
+  <script>
+    const container = document.getElementById('split-container');
+    const leftPane = document.getElementById('left-pane');
+    const rightPane = document.getElementById('right-pane');
+    const divider = document.getElementById('divider');
+    const leftFrame = document.getElementById('left-frame');
+    const rightFrame = document.getElementById('right-frame');
+    const leftLabel = document.getElementById('left-label');
+    const rightLabel = document.getElementById('right-label');
+
+    // Viewer select
+    document.getElementById('left-viewer').addEventListener('change', e => {
+      leftFrame.src = e.target.value;
+      leftLabel.textContent = e.target.options[e.target.selectedIndex].text;
+    });
+    document.getElementById('right-viewer').addEventListener('change', e => {
+      rightFrame.src = e.target.value;
+      rightLabel.textContent = e.target.options[e.target.selectedIndex].text;
+    });
+
+    // Layout buttons
+    document.getElementById('btn-split-h').addEventListener('click', () => {
+      container.style.flexDirection = 'row';
+      divider.style.display = 'block';
+      leftPane.style.flex = '1'; rightPane.style.flex = '1';
+      setActive('btn-split-h');
+    });
+    document.getElementById('btn-split-v').addEventListener('click', () => {
+      container.style.flexDirection = 'column';
+      divider.style.display = 'block';
+      leftPane.style.flex = '1'; rightPane.style.flex = '1';
+      setActive('btn-split-v');
+    });
+    document.getElementById('btn-fullscreen-l').addEventListener('click', () => {
+      leftPane.style.flex = '1'; rightPane.style.flex = '0';
+      rightPane.style.display = 'none'; divider.style.display = 'none';
+      setActive('btn-fullscreen-l');
+    });
+    document.getElementById('btn-fullscreen-r').addEventListener('click', () => {
+      rightPane.style.flex = '1'; leftPane.style.flex = '0';
+      leftPane.style.display = 'none'; divider.style.display = 'none';
+      setActive('btn-fullscreen-r');
+    });
+
+    function setActive(id) {
+      ['btn-split-h','btn-split-v','btn-fullscreen-l','btn-fullscreen-r'].forEach(b => {
+        document.getElementById(b).classList.toggle('active', b === id);
+        // Re-show panes when switching to split
+        if (b === 'btn-split-h' || b === 'btn-split-v') {
+          if (id === b) {
+            leftPane.style.display = '';
+            rightPane.style.display = '';
+            divider.style.display = '';
+          }
+        }
+      });
+    }
+
+    // Drag to resize
+    let dragging = false, startX, startY, startLeftW, startLeftH;
+    divider.addEventListener('mousedown', e => {
+      dragging = true;
+      startX = e.clientX; startY = e.clientY;
+      startLeftW = leftPane.offsetWidth;
+      startLeftH = leftPane.offsetHeight;
+      divider.classList.add('dragging');
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const isVertical = container.style.flexDirection === 'column';
+      if (!isVertical) {
+        const dx = e.clientX - startX;
+        const total = container.offsetWidth - divider.offsetWidth;
+        const newL = Math.max(200, Math.min(total - 200, startLeftW + dx));
+        leftPane.style.flex = `0 0 ${newL}px`;
+        rightPane.style.flex = '1';
+      } else {
+        const dy = e.clientY - startY;
+        const total = container.offsetHeight - divider.offsetHeight;
+        const newT = Math.max(100, Math.min(total - 100, startLeftH + dy));
+        leftPane.style.flex = `0 0 ${newT}px`;
+        rightPane.style.flex = '1';
+      }
+    });
+    document.addEventListener('mouseup', () => {
+      dragging = false;
+      divider.classList.remove('dragging');
+    });
+  </script>
+</body>
+</html>

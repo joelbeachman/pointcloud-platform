@@ -1,3 +1,37 @@
+// Search + filter state
+let allDatasets = [];
+let filterType = 'all';
+let searchQuery = '';
+
+function applyFilter() {
+  let filtered = allDatasets;
+  if (filterType !== 'all') filtered = filtered.filter(d => d.type === filterType);
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(d =>
+      (d.name || '').toLowerCase().includes(q) ||
+      (d.source || '').toLowerCase().includes(q) ||
+      (d.description || '').toLowerCase().includes(q)
+    );
+  }
+  renderDatasets(filtered);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Search bar
+  const searchEl = document.getElementById('search-input');
+  if (searchEl) searchEl.addEventListener('input', e => { searchQuery = e.target.value; applyFilter(); });
+  // Filter buttons
+  document.querySelectorAll('[data-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterType = btn.dataset.filter;
+      document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyFilter();
+    });
+  });
+});
+
 const VIEWER_MAP = {
   pointcloud: '/viewers/potree.html',
   e57: '/viewers/potree.html',
@@ -22,20 +56,13 @@ const BADGE_CLASS = {
   e57: 'badge-e57',
 };
 
-async function loadDatasets() {
+function renderDatasets(datasets) {
   const container = document.getElementById('datasets-list');
-  try {
-    const res = await fetch('/api/datasets');
-    const datasets = await res.json();
-    if (datasets.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <h3>No datasets yet</h3>
-          <p>Add a dataset to start visualizing point clouds.</p>
-        </div>`;
-      return;
-    }
-    container.innerHTML = datasets.map(d => `
+  if (datasets.length === 0) {
+    container.innerHTML = `<div class="empty-state"><h3>No datasets found</h3><p>Try a different filter or <a href="#" onclick="document.getElementById('btn-add').click();return false;">add a dataset</a>.</p></div>`;
+    return;
+  }
+  container.innerHTML = datasets.map(d => `
       <div class="dataset-row" data-id="${d.id}">
         <div class="dataset-badge ${BADGE_CLASS[d.type] || 'badge-pointcloud'}">
           <span>${ICONS[d.type] || '&#9632;'}</span>
@@ -53,6 +80,22 @@ async function loadDatasets() {
         </div>
       </div>
     `).join('');
+}
+
+async function loadDatasets() {
+  const container = document.getElementById('datasets-list');
+  try {
+    const res = await fetch('/api/datasets');
+    allDatasets = await res.json();
+    if (allDatasets.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <h3>No datasets yet</h3>
+          <p>Add a dataset to start visualizing point clouds.</p>
+        </div>`;
+      return;
+    }
+    applyFilter();
   } catch (e) {
     container.innerHTML = `<div class="loading">Error loading datasets: ${e.message}</div>`;
   }

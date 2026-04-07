@@ -272,6 +272,21 @@ h2 {
   cursor: pointer;
 }
 
+/* Filter buttons (reused from compare page) */
+.layout-btn {
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.layout-btn:hover { background: #30363d; color: #e6edf3; }
+.layout-btn.active { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,0.08); }
+
 /* Viewer pages */
 .viewer-frame {
   width: 100%;
