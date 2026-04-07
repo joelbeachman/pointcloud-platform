@@ -154,11 +154,17 @@
         showOverlay('Loading splat', 'Starting renderer…', 90);
         currentViewer.start();
         // Override the library's hardcoded polar limits (max=135°, min=~6°)
-        // to allow full vertical orbit around the splat
-        if (currentViewer.controls) {
-          currentViewer.controls.minPolarAngle = 0;
-          currentViewer.controls.maxPolarAngle = Math.PI;
+        // to allow full vertical orbit. Patch all three control refs and
+        // also apply after a delay in case addSplatScene triggers re-init.
+        function unlockOrbit() {
+          for (const c of [currentViewer.controls,
+                           currentViewer.perspectiveControls,
+                           currentViewer.orthographicControls]) {
+            if (c) { c.minPolarAngle = 0; c.maxPolarAngle = Math.PI; }
+          }
         }
+        unlockOrbit();
+        setTimeout(unlockOrbit, 500);
         hideOverlay();
         hudStatus.textContent = 'Loaded';
 
