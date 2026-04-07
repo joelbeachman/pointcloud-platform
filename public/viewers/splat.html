@@ -60,7 +60,7 @@
     <strong id="hud-name">No dataset loaded</strong>
     <div id="hud-status"></div>
   </div>
-  <div id="controls-hint">Left drag: orbit &nbsp;|&nbsp; Scroll: zoom &nbsp;|&nbsp; Right drag: pan</div>
+  <div id="controls-hint">Left drag: rotate freely &nbsp;|&nbsp; Right drag: pan &nbsp;|&nbsp; Scroll: zoom</div>
 
   <div id="overlay">
     <h3 id="overlay-title">Gaussian Splat Viewer</h3>
@@ -68,7 +68,7 @@
     <div class="progress-wrap"><div class="progress-fill" id="progress" style="width:0%"></div></div>
   </div>
 
-  <!-- Three.js required by GaussianSplats3D UMD (r160 matches the build version) -->
+  <!-- Three.js required by GaussianSplats3D UMD (r149 has working global build) -->
   <script src="/libs/three.min.js"></script>
   <!-- Load GaussianSplats3D from local copy (avoids CDN MIME type issues) -->
   <script src="/libs/gaussian-splats-3d.umd.js"></script>
@@ -86,6 +86,7 @@
     const datasetId = params.get('id');
 
     let currentViewer = null;
+    let tbCleanup = null;
 
     function showOverlay(title, msg, pct) {
       overlay.style.display = 'flex';
@@ -94,6 +95,98 @@
       progress.style.width = (pct ?? 0) + '%';
     }
     function hideOverlay() { overlay.style.display = 'none'; }
+
+    // ── Trackball controls ───────────────────────────────────────────────────
+    // Quaternion-based free rotation — no polar walls, no gimbal lock.
+    // Left-drag: rotate, Right-drag: pan, Scroll: zoom.
+    function attachTrackball(camera, domEl) {
+      if (tbCleanup) { tbCleanup(); tbCleanup = null; }
+
+      const target = new THREE.Vector3();
+
+      // Try to centre on the splat bounding sphere
+      if (currentViewer && currentViewer.splatMesh) {
+        const bs = currentViewer.splatMesh.boundingSphere;
+        if (bs) {
+          target.copy(bs.center);
+          const dist = bs.radius * 3;
+          camera.position.copy(target).add(new THREE.Vector3(0, 0, dist));
+          camera.lookAt(target);
+        }
+      }
+
+      let dragging = false, btn = -1, lastX = 0, lastY = 0;
+
+      function rotate(dx, dy) {
+        // Axis is perpendicular to mouse delta in camera space → world space
+        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+        const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+        const axis  = new THREE.Vector3()
+          .addScaledVector(right, dy * 0.005)
+          .addScaledVector(up,   -dx * 0.005);
+        const angle = axis.length();
+        if (angle < 1e-10) return;
+        const q = new THREE.Quaternion().setFromAxisAngle(axis.normalize(), angle);
+        const offset = camera.position.clone().sub(target);
+        offset.applyQuaternion(q);
+        camera.position.copy(target).add(offset);
+        camera.up.applyQuaternion(q);   // allows full roll — no poles
+        camera.lookAt(target);
+      }
+
+      function pan(dx, dy) {
+        const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+        const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+        const scale = camera.position.distanceTo(target) * 0.001;
+        const delta = new THREE.Vector3()
+          .addScaledVector(right, -dx * scale)
+          .addScaledVector(up,     dy * scale);
+        camera.position.add(delta);
+        target.add(delta);
+      }
+
+      function zoom(factor) {
+        const offset = camera.position.clone().sub(target);
+        const newLen = Math.max(0.1, offset.length() * factor);
+        camera.position.copy(target).add(offset.normalize().multiplyScalar(newLen));
+      }
+
+      function onDown(e) {
+        if (e.button > 2) return;
+        dragging = true; btn = e.button;
+        lastX = e.clientX; lastY = e.clientY;
+        domEl.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      }
+      function onMove(e) {
+        if (!dragging) return;
+        const dx = e.clientX - lastX, dy = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        if (btn === 0) rotate(dx, dy);
+        else if (btn === 2) pan(dx, dy);
+        e.preventDefault();
+      }
+      function onUp()  { dragging = false; }
+      function onWheel(e) { zoom(e.deltaY > 0 ? 1.1 : 0.9); e.preventDefault(); }
+      function onCtx(e) { e.preventDefault(); }
+
+      domEl.addEventListener('pointerdown',  onDown);
+      domEl.addEventListener('pointermove',  onMove);
+      domEl.addEventListener('pointerup',    onUp);
+      domEl.addEventListener('pointercancel',onUp);
+      domEl.addEventListener('wheel',        onWheel, { passive: false });
+      domEl.addEventListener('contextmenu',  onCtx);
+
+      tbCleanup = () => {
+        domEl.removeEventListener('pointerdown',  onDown);
+        domEl.removeEventListener('pointermove',  onMove);
+        domEl.removeEventListener('pointerup',    onUp);
+        domEl.removeEventListener('pointercancel',onUp);
+        domEl.removeEventListener('wheel',        onWheel);
+        domEl.removeEventListener('contextmenu',  onCtx);
+      };
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     async function loadDatasets() {
       const res = await fetch('/api/datasets');
@@ -117,21 +210,20 @@
     });
 
     async function loadSplat(ds) {
-      // Destroy previous viewer
       if (currentViewer) {
         try { currentViewer.dispose(); } catch(e) {}
         document.getElementById('splat-container').innerHTML = '';
         currentViewer = null;
       }
+      if (tbCleanup) { tbCleanup(); tbCleanup = null; }
 
       hudName.textContent = ds.name;
       hudStatus.textContent = 'Loading…';
       showOverlay('Loading splat', ds.name + '…', 20);
 
       try {
-        // Check GaussianSplats3D is available
         if (typeof GaussianSplats3D === 'undefined') {
-          throw new Error('GaussianSplats3D library failed to load from CDN');
+          throw new Error('GaussianSplats3D library failed to load');
         }
 
         showOverlay('Loading splat', 'Initializing viewer…', 40);
@@ -142,29 +234,24 @@
           dynamicScene: false,
           gpuAcceleratedSort: true,
           halfPrecisionCovariancesOnGPU: true,
+          useBuiltInControls: false,   // use our trackball instead
         });
 
         showOverlay('Loading splat', 'Downloading and decompressing…', 60);
 
-        // addSplatScene is the correct API in v0.4.x
         await currentViewer.addSplatScene(ds.path, {
           splatAlphaRemovalThreshold: 5,
         });
 
         showOverlay('Loading splat', 'Starting renderer…', 90);
         currentViewer.start();
-        // Override the library's hardcoded polar limits (max=135°, min=~6°)
-        // to allow full vertical orbit. Patch all three control refs and
-        // also apply after a delay in case addSplatScene triggers re-init.
-        function unlockOrbit() {
-          for (const c of [currentViewer.controls,
-                           currentViewer.perspectiveControls,
-                           currentViewer.orthographicControls]) {
-            if (c) { c.minPolarAngle = 0; c.maxPolarAngle = Math.PI; }
-          }
-        }
-        unlockOrbit();
-        setTimeout(unlockOrbit, 500);
+
+        // Attach trackball to the viewer's own camera + container
+        attachTrackball(
+          currentViewer.camera,
+          document.getElementById('splat-container')
+        );
+
         hideOverlay();
         hudStatus.textContent = 'Loaded';
 
