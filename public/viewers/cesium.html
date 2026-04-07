@@ -24,9 +24,11 @@
       pointer-events: none;
     }
     #info-panel h4 { margin-bottom: 0.3rem; color: #3fb950; }
-    /* Push Cesium's own toolbar away from our header */
-    .cesium-viewer-toolbar { top: 8px !important; right: 8px !important; }
-    .cesium-viewer-geocoderContainer { top: 8px !important; right: 52px !important; }
+    /* Shift Cesium's widgets down so they don't sit behind our header */
+    .cesium-viewer-toolbar,
+    .cesium-viewer-geocoderContainer,
+    .cesium-navigation-help-button,
+    .cesium-viewer-animationContainer { margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -41,6 +43,7 @@
       <a href="/viewers/cesium.html" class="active">Cesium</a>
       <a href="/viewers/splat.html">Splat</a>
       <a href="/viewers/panorama.html">Panorama</a>
+      <a href="/viewers/compare.html">Compare</a>
     </nav>
   </header>
 
@@ -48,43 +51,35 @@
     <span class="viewer-title">Cesium Viewer</span>
     <span class="toolbar-label">Dataset:</span>
     <select id="dataset-select"><option value="">Loading...</option></select>
-    <span class="toolbar-label" style="margin-left:1rem;">Terrain:</span>
-    <select id="terrain-select">
-      <option value="none">None</option>
-      <option value="cesium" selected>Cesium World Terrain</option>
-    </select>
   </div>
 
   <div id="cesiumContainer"></div>
   <div id="info-panel">
     <h4>Cesium Viewer</h4>
-    <p>Visualize georeferenced 3D Tiles point clouds on a globe. Select a dataset above or add one from the <a href="/" style="color:#58a6ff;">dashboard</a>.</p>
+    <p>Select a dataset above to load a 3D Tiles model.</p>
   </div>
 
   <script>
-    // Cesium Ion token — uses default for open datasets
-    // Replace with your own token from cesium.com/ion for full access
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlYWE1OWUxNy1mMWZiLTQzYjYtYTQ0OS1kMWFjYmFkNjc4ZDkiLCJpZCI6NTc3MzMsImlhdCI6MTYyNzg0NTE4Mn0.XcKpgANiY19MC4bdFUXMVEBToBmqS8kuYpUlxJHYZxk';
 
     const viewer = new Cesium.Viewer('cesiumContainer', {
-      terrainProvider: new Cesium.CesiumTerrainProvider({
-        url: Cesium.IonResource.fromAssetId(1),
-      }),
       animation: false,
       baseLayerPicker: false,
       fullscreenButton: false,
       vrButton: false,
       geocoder: true,
       homeButton: true,
-      infoBox: true,
+      infoBox: false,
       sceneModePicker: true,
-      selectionIndicator: true,
+      selectionIndicator: false,
       timeline: false,
       navigationHelpButton: true,
       scene3DOnly: false,
+      // Disable terrain so local (non-georeferenced) tilesets sit correctly
+      terrainProvider: new Cesium.EllipsoidTerrainProvider(),
     });
 
-    // Dark sky
+    // Dark background
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0d1117');
     viewer.scene.skyBox = undefined;
     viewer.scene.sun = undefined;
@@ -94,16 +89,33 @@
     const params = new URLSearchParams(location.search);
     const datasetId = params.get('id');
     const select = document.getElementById('dataset-select');
-    const terrainSelect = document.getElementById('terrain-select');
     let currentTileset = null;
 
-    terrainSelect.addEventListener('change', () => {
-      if (terrainSelect.value === 'cesium') {
-        viewer.terrainProvider = new Cesium.CesiumTerrainProvider({
-          url: Cesium.IonResource.fromAssetId(1),
-        });
-      } else {
-        viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+    // Helper: fly camera to show the current tileset properly
+    function flyToTileset() {
+      if (!currentTileset) return;
+      const sphere = currentTileset.boundingSphere;
+      const offset = new Cesium.HeadingPitchRange(
+        Cesium.Math.toRadians(45),
+        Cesium.Math.toRadians(-30),
+        sphere.radius * 3.0
+      );
+      viewer.camera.flyToBoundingSphere(sphere, { offset, duration: 1.5 });
+    }
+
+    // Override home button to fly to the loaded tileset instead of Earth
+    viewer.homeButton.viewModel.command.beforeExecute.addEventListener(e => {
+      if (currentTileset) {
+        e.cancel = true;
+        flyToTileset();
+      }
+    });
+
+    // Re-zoom to tileset after 2D ↔ 3D ↔ Columbus mode transitions
+    viewer.scene.morphComplete.addEventListener(() => {
+      if (currentTileset) {
+        // Short delay lets Cesium finish the transition first
+        setTimeout(flyToTileset, 300);
       }
     });
 
@@ -112,14 +124,19 @@
       const datasets = await res.json();
       const compatible = datasets.filter(d => d.type === 'cesium');
       select.innerHTML = '<option value="">-- select dataset --</option>' +
-        compatible.map(d => `<option value="${d.id}" ${d.id === datasetId ? 'selected' : ''}>${d.name}</option>`).join('');
-      if (compatible.length === 0) {
-        select.innerHTML = '<option value="">No Cesium datasets — add from dashboard</option>';
+        compatible.map(d =>
+          `<option value="${d.id}" ${d.id === datasetId ? 'selected' : ''}>${d.name}</option>`
+        ).join('');
+      if (!compatible.length) {
+        select.innerHTML = '<option value="">No Cesium datasets</option>';
         return;
       }
-      if (datasetId) {
-        const ds = compatible.find(d => d.id === datasetId);
-        if (ds) loadTileset(ds);
+      // Auto-load first dataset if none specified
+      const id = datasetId || compatible[0].id;
+      const ds = compatible.find(d => d.id === id);
+      if (ds) {
+        if (!datasetId) select.value = ds.id;
+        loadTileset(ds);
       }
     }
 
@@ -127,54 +144,43 @@
       const id = select.value;
       if (!id) return;
       const res = await fetch(`/api/datasets/${id}`);
-      const ds = await res.json();
       history.pushState({}, '', `?id=${id}`);
-      loadTileset(ds);
+      loadTileset(await res.json());
     });
 
     async function loadTileset(ds) {
-      if (currentTileset) viewer.scene.primitives.remove(currentTileset);
-      document.getElementById('info-panel').innerHTML = `<h4 style="color:#58a6ff">Loading...</h4><p style="color:#8b949e">${ds.name}</p>`;
+      if (currentTileset) {
+        viewer.scene.primitives.remove(currentTileset);
+        currentTileset = null;
+      }
+      document.getElementById('info-panel').innerHTML =
+        `<h4 style="color:#58a6ff">Loading…</h4><p style="color:#8b949e">${ds.name}</p>`;
       try {
-        // Support both absolute URLs and server-relative paths
-        const url = ds.path.startsWith('http') ? ds.path : window.location.origin + ds.path;
+        const url = ds.path.startsWith('http')
+          ? ds.path
+          : window.location.origin + ds.path;
+
         currentTileset = await Cesium.Cesium3DTileset.fromUrl(url);
         viewer.scene.primitives.add(currentTileset);
-        await viewer.zoomTo(currentTileset, new Cesium.HeadingPitchRange(0, -Math.PI / 4, currentTileset.boundingSphere.radius * 2.5));
+
+        // Initial fly-to
+        flyToTileset();
+
         document.getElementById('info-panel').innerHTML = `
           <h4>${ds.name}</h4>
-          <p style="color:#8b949e">Source: ${ds.source || 'unknown'}</p>
-          <p style="margin-top:0.4rem">${ds.description || '3D Tiles loaded.'}</p>
+          <p style="color:#8b949e">${ds.source || 'unknown source'}</p>
+          <p style="margin-top:0.3rem">${ds.description || ''}</p>
         `;
-      } catch(e) {
-        console.error('Tileset load error:', e);
+      } catch (e) {
+        console.error(e);
         document.getElementById('info-panel').innerHTML = `
           <h4 style="color:#f85149">Load Error</h4>
           <p style="color:#8b949e">${e.message}</p>
-          <p style="margin-top:0.3rem;font-size:0.75rem">Path: ${ds.path}</p>
         `;
       }
     }
 
-    // Load sample open dataset — Cesium OSM Buildings as demo
-    async function loadDemo() {
-      const osmBuildings = await Cesium.createOsmBuildingsAsync();
-      viewer.scene.primitives.add(osmBuildings);
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(13.404954, 52.520008, 400),
-        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
-        duration: 2,
-      });
-      document.getElementById('info-panel').innerHTML = `
-        <h4>Demo: OSM Buildings</h4>
-        <p style="color:#8b949e">Cesium OSM Buildings (Berlin)</p>
-        <p style="margin-top:0.4rem">Add your own georeferenced 3D Tiles dataset from the <a href="/" style="color:#58a6ff;">dashboard</a>.</p>
-      `;
-    }
-
-    loadDatasets().then(() => {
-      if (!datasetId) loadDemo();
-    });
+    loadDatasets();
   </script>
 </body>
 </html>
