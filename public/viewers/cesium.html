@@ -12,17 +12,21 @@
     .toolbar-label { color: #8b949e; font-size: 0.8rem; }
     #info-panel {
       position: absolute;
-      right: 10px; top: 110px;
-      background: rgba(22,27,34,0.9);
+      left: 10px; bottom: 30px;
+      background: rgba(22,27,34,0.88);
       border: 1px solid #30363d;
       border-radius: 8px;
-      padding: 0.75rem 1rem;
+      padding: 0.6rem 0.9rem;
       color: #e6edf3;
       font-size: 0.8rem;
-      max-width: 220px;
+      max-width: 260px;
       z-index: 20;
+      pointer-events: none;
     }
-    #info-panel h4 { margin-bottom: 0.5rem; color: #3fb950; }
+    #info-panel h4 { margin-bottom: 0.3rem; color: #3fb950; }
+    /* Push Cesium's own toolbar away from our header */
+    .cesium-viewer-toolbar { top: 8px !important; right: 8px !important; }
+    .cesium-viewer-geocoderContainer { top: 8px !important; right: 52px !important; }
   </style>
 </head>
 <body>
@@ -33,7 +37,7 @@
     </div>
     <nav>
       <a href="/">Datasets</a>
-      <a href="/viewers/potree.html">Potree</a>
+      <a href="/viewers/potree.html">Point Cloud</a>
       <a href="/viewers/cesium.html" class="active">Cesium</a>
       <a href="/viewers/splat.html">Splat</a>
       <a href="/viewers/panorama.html">Panorama</a>

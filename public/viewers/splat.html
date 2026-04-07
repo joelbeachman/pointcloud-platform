@@ -68,8 +68,8 @@
     <div class="progress-wrap"><div class="progress-fill" id="progress" style="width:0%"></div></div>
   </div>
 
-  <!-- Load GaussianSplats3D as UMD via script tag -->
-  <script src="https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.3/build/gaussian-splats-3d.umd.cjs"></script>
+  <!-- Load GaussianSplats3D from local copy (avoids CDN MIME type issues) -->
+  <script src="/libs/gaussian-splats-3d.umd.js"></script>
 
   <script>
     const select = document.getElementById('dataset-select');
