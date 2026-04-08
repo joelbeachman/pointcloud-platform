@@ -6,16 +6,20 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// DATA_DIR can be overridden via environment variable so the container
+// can mount asset storage from any host path without rebuilding the image.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Serve data directory (point clouds, splats, panoramas)
-app.use('/data', express.static(path.join(__dirname, 'data')));
+app.use('/data', express.static(DATA_DIR));
 
 // API: list all datasets
 app.get('/api/datasets', (req, res) => {
-  const dbPath = path.join(__dirname, 'data', 'datasets.json');
+  const dbPath = path.join(DATA_DIR, 'datasets.json');
   if (!fs.existsSync(dbPath)) {
     return res.json([]);
   }
@@ -25,7 +29,7 @@ app.get('/api/datasets', (req, res) => {
 
 // API: get single dataset
 app.get('/api/datasets/:id', (req, res) => {
-  const dbPath = path.join(__dirname, 'data', 'datasets.json');
+  const dbPath = path.join(DATA_DIR, 'datasets.json');
   if (!fs.existsSync(dbPath)) return res.status(404).json({ error: 'Not found' });
   const datasets = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
   const dataset = datasets.find(d => d.id === req.params.id);
@@ -35,7 +39,7 @@ app.get('/api/datasets/:id', (req, res) => {
 
 // API: register a dataset
 app.post('/api/datasets', (req, res) => {
-  const dbPath = path.join(__dirname, 'data', 'datasets.json');
+  const dbPath = path.join(DATA_DIR, 'datasets.json');
   const datasets = fs.existsSync(dbPath)
     ? JSON.parse(fs.readFileSync(dbPath, 'utf8'))
     : [];
@@ -47,7 +51,7 @@ app.post('/api/datasets', (req, res) => {
 
 // API: delete a dataset
 app.delete('/api/datasets/:id', (req, res) => {
-  const dbPath = path.join(__dirname, 'data', 'datasets.json');
+  const dbPath = path.join(DATA_DIR, 'datasets.json');
   if (!fs.existsSync(dbPath)) return res.status(404).json({ error: 'Not found' });
   let datasets = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
   datasets = datasets.filter(d => d.id !== req.params.id);

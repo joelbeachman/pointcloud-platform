@@ -1,0 +1,7 @@
+node_modules
+.env
+.git
+.claude
+data
+TASKS.md
+PROGRESS.md

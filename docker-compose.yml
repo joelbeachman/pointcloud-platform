@@ -1,0 +1,22 @@
+services:
+  server:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # DATA_DIR tells the server where to find datasets.json and asset subdirs.
+      # It maps to whatever DATA_DIR is set to on the host (see .env).
+      DATA_DIR: /data
+    volumes:
+      # ── 3D asset storage ──────────────────────────────────────────────────
+      # Set DATA_DIR in .env to any host path, e.g.:
+      #   DATA_DIR=/Volumes/MyDrive/pointcloud-data   (external drive)
+      #   DATA_DIR=/Users/you/pointcloud-data         (home folder)
+      # Defaults to ./data (next to this file) if not set.
+      - ${DATA_DIR:-./data}:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
