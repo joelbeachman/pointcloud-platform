@@ -4,31 +4,180 @@
   <meta charset="UTF-8">
   <title>Cesium Viewer – Point Cloud Platform</title>
   <link rel="stylesheet" href="/css/portal.css">
-  <script src="https://cesium.com/downloads/cesiumjs/releases/1.113/Build/Cesium/Cesium.js"></script>
-  <link href="https://cesium.com/downloads/cesiumjs/releases/1.113/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.140/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.140/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <!-- Three.js + GaussianSplats3D for splat layer overlay -->
+  <script src="/libs/three.min.js"></script>
+  <script src="/libs/gaussian-splats-3d.umd.js"></script>
+  <script>const GaussianSplats3D = window["Gaussian Splats 3D"];</script>
   <style>
     body { margin: 0; overflow: hidden; }
-    #cesiumContainer { position: absolute; inset: 0; top: 100px; width: 100%; height: calc(100vh - 100px); }
-    .toolbar-label { color: #8b949e; font-size: 0.8rem; }
-    #info-panel {
-      position: absolute;
-      left: 10px; bottom: 30px;
-      background: rgba(22,27,34,0.88);
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 0.6rem 0.9rem;
-      color: #e6edf3;
-      font-size: 0.8rem;
-      max-width: 260px;
-      z-index: 20;
-      pointer-events: none;
-    }
-    #info-panel h4 { margin-bottom: 0.3rem; color: #3fb950; }
-    /* Shift Cesium's widgets down so they don't sit behind our header */
+    .cesium-widget-credits { display: none !important; }
     .cesium-viewer-toolbar,
     .cesium-viewer-geocoderContainer,
-    .cesium-navigation-help-button,
-    .cesium-viewer-animationContainer { margin-top: 4px; }
+    .cesium-navigation-help-button { margin-top: 4px; }
+
+    /* ── Main layout ── */
+    #cesiumContainer {
+      position: absolute;
+      top: 100px; bottom: 0; left: 220px; right: 220px;
+    }
+
+    /* ── Sidebars ── */
+    .side-panel {
+      position: absolute;
+      top: 100px; bottom: 0; width: 220px;
+      background: #0d1117;
+      z-index: 20;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    #left-panel  { left: 0;  border-right: 1px solid #30363d; }
+    #right-panel { right: 0; border-left:  1px solid #30363d; }
+
+    /* ── Section headers ── */
+    .sec-hdr {
+      padding: 0.4rem 0.7rem;
+      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.07em;
+      color: #8b949e; border-bottom: 1px solid #21262d;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .sec-hdr button {
+      background: none; border: 1px solid #30363d; color: #8b949e;
+      border-radius: 4px; padding: 0 6px; line-height: 1.6; font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .sec-hdr button:hover { background: #21262d; color: #e6edf3; }
+
+    /* ── Layer list ── */
+    #layer-list {
+      overflow-y: auto; max-height: 190px; flex-shrink: 0;
+    }
+    .layer-item {
+      display: flex; align-items: center; gap: 0.35rem;
+      padding: 0.3rem 0.6rem 0.3rem 0.45rem;
+      border-bottom: 1px solid #161b22;
+    }
+    .layer-item:hover { background: #161b22; }
+    .layer-vis {
+      appearance: none; width: 13px; height: 13px; border-radius: 3px;
+      border: 1px solid #484f58; background: #21262d; cursor: pointer; flex-shrink: 0;
+      position: relative;
+    }
+    .layer-vis:checked { background: var(--lc, #58a6ff); border-color: var(--lc, #58a6ff); }
+    .layer-vis:checked::after {
+      content: ''; position: absolute; left: 3px; top: 1px;
+      width: 5px; height: 8px; border: 1.5px solid white;
+      border-top: none; border-left: none; transform: rotate(45deg);
+    }
+    .layer-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .layer-name { flex: 1; font-size: 0.77rem; color: #e6edf3;
+                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .layer-fly  { background: none; border: none; color: #484f58; cursor: pointer;
+                  font-size: 0.7rem; padding: 0 2px; line-height: 1; }
+    .layer-fly:hover { color: #58a6ff; }
+    .layer-del  { background: none; border: none; color: #484f58; cursor: pointer;
+                  font-size: 0.72rem; padding: 0 3px; line-height: 1; }
+    .layer-del:hover { color: #f85149; }
+    #layer-empty { padding: 0.6rem 0.75rem; font-size: 0.77rem; color: #484f58; }
+
+    /* ── Measure tools ── */
+    #tools-scroll { overflow-y: auto; flex: 1; padding: 0.35rem; }
+    .tool-btn {
+      display: flex; align-items: center; gap: 0.4rem;
+      width: 100%; padding: 0.36rem 0.5rem;
+      background: none; border: 1px solid transparent; border-radius: 5px;
+      color: #c9d1d9; cursor: pointer; font-size: 0.8rem;
+      text-align: left; margin-bottom: 2px;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .tool-btn:hover { background: #21262d; border-color: #30363d; }
+    .tool-btn.active {
+      border-color: var(--tc, #58a6ff);
+      color: var(--tc, #58a6ff);
+      background: color-mix(in srgb, var(--tc, #58a6ff) 10%, transparent);
+    }
+    .tool-btn svg { flex-shrink: 0; }
+    .tool-sep { border: none; border-top: 1px solid #21262d; margin: 0.3rem 0; }
+    .tool-btn.danger { color: #8b949e; }
+    .tool-btn.danger:hover { color: #f85149; background: rgba(248,81,73,0.06); }
+
+    /* ── Measurements list ── */
+    #measure-list { overflow-y: auto; flex: 1; padding: 0.3rem; }
+    .m-item {
+      display: flex; align-items: center; gap: 0.4rem;
+      padding: 0.34rem 0.45rem; border-radius: 5px; margin-bottom: 2px;
+    }
+    .m-item:hover { background: #161b22; }
+    .m-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .m-info { flex: 1; min-width: 0; }
+    .m-val  { font-size: 0.8rem; color: #e6edf3; font-variant-numeric: tabular-nums; }
+    .m-lbl  { font-size: 0.67rem; color: #8b949e; margin-top: 1px; }
+    .m-del  { background: none; border: none; color: #8b949e; cursor: pointer;
+              padding: 1px 3px; border-radius: 3px; font-size: 0.7rem; }
+    .m-del:hover { color: #f85149; }
+    .m-empty { color: #484f58; font-size: 0.77rem; text-align: center; padding: 1rem 0.5rem; }
+
+    /* ── Status bar ── */
+    #status-bar {
+      position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+      background: rgba(13,17,23,0.93); border: 1px solid #30363d;
+      border-bottom: none; border-radius: 6px 6px 0 0;
+      padding: 0.28rem 1rem; font-size: 0.78rem; color: #8b949e;
+      z-index: 30; pointer-events: none; display: none; white-space: nowrap;
+    }
+
+    /* ── Panorama tooltip ── */
+    #pano-tooltip {
+      display: none; position: fixed; z-index: 50;
+      background: rgba(13,17,23,0.96); border: 1px solid #f0883e;
+      border-radius: 7px; padding: 0.42rem 0.75rem;
+      pointer-events: none; font-size: 0.78rem; color: #e6edf3; white-space: nowrap;
+    }
+    #pano-tooltip b { color: #f0883e; display: block; margin-bottom: 0.1rem; }
+    #pano-tooltip span { color: #8b949e; }
+
+    /* ── Add-Layer modal ── */
+    #modal-bg {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.55); z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    #modal-bg.open { display: flex; }
+    #modal-box {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      padding: 1.2rem; width: 340px; max-height: 65vh;
+      display: flex; flex-direction: column; gap: 0.8rem;
+    }
+    #modal-box h4 { margin: 0; font-size: 0.95rem; color: #e6edf3; }
+    #modal-list { overflow-y: auto; flex: 1; }
+    .mds-item {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.48rem 0.6rem; border-radius: 6px; cursor: pointer;
+      border: 1px solid transparent; margin-bottom: 2px;
+    }
+    .mds-item:hover:not(.loaded) { background: #21262d; border-color: #30363d; }
+    .mds-item.loaded { opacity: 0.38; cursor: default; }
+    .mds-name { font-size: 0.85rem; color: #e6edf3; flex: 1; }
+    .mds-badge {
+      font-size: 0.68rem; color: #8b949e;
+      background: #21262d; border-radius: 3px; padding: 1px 5px;
+    }
+    #modal-close {
+      background: none; border: 1px solid #30363d; color: #8b949e;
+      border-radius: 6px; padding: 0.28rem 1rem; cursor: pointer;
+      font-size: 0.83rem; align-self: flex-end;
+    }
+    #modal-close:hover { color: #e6edf3; border-color: #8b949e; }
+
+    /* Toolbar add button */
+    #add-layer-btn {
+      background: none; border: 1px solid #30363d; color: #8b949e;
+      border-radius: 5px; padding: 0.18rem 0.65rem; font-size: 0.82rem; cursor: pointer;
+    }
+    #add-layer-btn:hover { background: #21262d; color: #e6edf3; }
+
+    body.measuring #cesiumContainer { cursor: crosshair; }
   </style>
 </head>
 <body>
@@ -49,137 +198,813 @@
 
   <div class="viewer-toolbar">
     <span class="viewer-title">Cesium Viewer</span>
-    <span class="toolbar-label">Dataset:</span>
-    <select id="dataset-select"><option value="">Loading...</option></select>
+    <button id="add-layer-btn">＋ Add Layer</button>
   </div>
 
   <div id="cesiumContainer"></div>
-  <div id="info-panel">
-    <h4>Cesium Viewer</h4>
-    <p>Select a dataset above to load a 3D Tiles model.</p>
+
+  <!-- ── Left sidebar: Layers + Measure tools ── -->
+  <div id="left-panel" class="side-panel">
+    <div class="sec-hdr">
+      Layers
+      <button id="add-layer-btn2" title="Add layer">＋</button>
+    </div>
+    <div id="layer-list">
+      <div id="layer-empty">No layers loaded.</div>
+    </div>
+
+    <div class="sec-hdr" style="border-top: 1px solid #21262d;">Measurement Tools</div>
+    <div id="tools-scroll">
+      <button class="tool-btn" data-tool="distance" style="--tc:#58a6ff" title="3D straight-line distance">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <line x1="1" y1="8" x2="15" y2="8"/>
+          <line x1="1" y1="5" x2="1" y2="11"/>
+          <line x1="15" y1="5" x2="15" y2="11"/>
+        </svg>
+        Distance
+      </button>
+      <button class="tool-btn" data-tool="horizontal" style="--tc:#3fb950" title="Horizontal plan distance">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <line x1="1" y1="12" x2="15" y2="12"/>
+          <line x1="1" y1="9" x2="1" y2="15"/>
+          <line x1="15" y1="9" x2="15" y2="15"/>
+          <line x1="4" y1="3" x2="12" y2="12" stroke-dasharray="2 2.5"/>
+        </svg>
+        Horizontal
+      </button>
+      <button class="tool-btn" data-tool="vertical" style="--tc:#f0883e" title="Vertical height difference">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <line x1="8" y1="1" x2="8" y2="15"/>
+          <line x1="5" y1="1" x2="11" y2="1"/>
+          <line x1="5" y1="15" x2="11" y2="15"/>
+        </svg>
+        Vertical
+      </button>
+      <button class="tool-btn" data-tool="area" style="--tc:#a371f7" title="Polygon area — right-click to finish">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="8,2 14,6 12,14 4,14 2,6"/>
+        </svg>
+        Area
+      </button>
+      <hr class="tool-sep">
+      <button class="tool-btn danger" id="clear-all-btn">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <polyline points="2,4 14,4"/>
+          <path d="M5,4V2h6v2"/>
+          <path d="M6,7v5M10,7v5"/>
+          <path d="M3,4l1,10h8l1-10"/>
+        </svg>
+        Clear All
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Right sidebar: Measurements results ── -->
+  <div id="right-panel" class="side-panel">
+    <div class="sec-hdr">Measurements</div>
+    <div id="measure-list">
+      <div class="m-empty">No measurements yet.<br>Select a tool to begin.</div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar"></div>
+
+  <!-- Panorama hover tooltip -->
+  <div id="pano-tooltip">
+    <b id="pano-tip-label"></b>
+    <span>Click to open panorama</span>
+  </div>
+
+  <!-- Add Layer modal -->
+  <div id="modal-bg">
+    <div id="modal-box">
+      <h4>Add Layer</h4>
+      <div id="modal-list"></div>
+      <button id="modal-close">Cancel</button>
+    </div>
   </div>
 
   <script>
-    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJlYWE1OWUxNy1mMWZiLTQzYjYtYTQ0OS1kMWFjYmFkNjc4ZDkiLCJpZCI6NTc3MzMsImlhdCI6MTYyNzg0NTE4Mn0.XcKpgANiY19MC4bdFUXMVEBToBmqS8kuYpUlxJHYZxk';
-
+    // ── CesiumJS viewer (open source, Apache 2.0 — no Ion) ────────────────────
     const viewer = new Cesium.Viewer('cesiumContainer', {
-      animation: false,
-      baseLayerPicker: false,
-      fullscreenButton: false,
-      vrButton: false,
-      geocoder: true,
-      homeButton: true,
-      infoBox: false,
-      sceneModePicker: true,
-      selectionIndicator: false,
-      timeline: false,
-      navigationHelpButton: true,
-      scene3DOnly: false,
-      // Disable terrain so local (non-georeferenced) tilesets sit correctly
+      animation: false, baseLayerPicker: false, fullscreenButton: false,
+      vrButton: false, geocoder: true, homeButton: true, infoBox: false,
+      sceneModePicker: true, selectionIndicator: false, timeline: false,
+      navigationHelpButton: true, scene3DOnly: false,
       terrainProvider: new Cesium.EllipsoidTerrainProvider(),
     });
-
-    // Dark background
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0d1117');
-    viewer.scene.skyBox = undefined;
-    viewer.scene.sun = undefined;
-    viewer.scene.moon = undefined;
+    viewer.scene.skyBox        = undefined;
+    viewer.scene.sun           = undefined;
+    viewer.scene.moon          = undefined;
     viewer.scene.skyAtmosphere = undefined;
+    viewer.imageryLayers.removeAll();
+    // Prevent default double-click zoom from interfering with area measurement
+    viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
-    const params = new URLSearchParams(location.search);
-    const datasetId = params.get('id');
-    const select = document.getElementById('dataset-select');
-    let currentTileset = null;
+    // ── Colour palettes ────────────────────────────────────────────────────────
+    const LAYER_COLORS = ['#58a6ff','#3fb950','#f0883e','#a371f7','#e3b341','#79c0ff','#56d364'];
+    const TC = {
+      distance:   { cesium: Cesium.Color.fromCssColorString('#58a6ff'), hex: '#58a6ff', label: 'Distance' },
+      horizontal: { cesium: Cesium.Color.fromCssColorString('#3fb950'), hex: '#3fb950', label: 'Horizontal' },
+      vertical:   { cesium: Cesium.Color.fromCssColorString('#f0883e'), hex: '#f0883e', label: 'Vertical' },
+      area:       { cesium: Cesium.Color.fromCssColorString('#a371f7'), hex: '#a371f7', label: 'Area' },
+    };
 
-    // Helper: fly camera to show the current tileset properly
-    function flyToTileset() {
-      if (!currentTileset) return;
-      const sphere = currentTileset.boundingSphere;
-      const offset = new Cesium.HeadingPitchRange(
-        Cesium.Math.toRadians(45),
-        Cesium.Math.toRadians(-30),
-        sphere.radius * 3.0
+    // ── State ──────────────────────────────────────────────────────────────────
+    let layers       = [];   // { id, dsId, name, color, tileset, panoEnts, visible, isSplat? }
+    let allDatasets  = [];
+    let colorIdx     = 0;
+
+    let activeTool   = null;
+    let curPts       = [];
+    let curEnts      = [];
+    let measurements = [];
+    let allPanoEnts  = [];   // flat list for hit-testing
+
+    // ── Splat overlay state ────────────────────────────────────────────────────
+    let splatGS3DViewer  = null;   // GaussianSplats3D.Viewer
+    let splatThreeCamera = null;   // THREE.PerspectiveCamera (external)
+    let splatThreeRenderer = null; // THREE.WebGLRenderer (alpha:true)
+    let splatOverlayDiv  = null;   // div overlay inside #cesiumContainer
+
+    // Precompute the ENU matrix and its inverse (for camera sync)
+    const ENU_MAT     = Cesium.Transforms.eastNorthUpToFixedFrame(
+      Cesium.Cartesian3.fromDegrees(0, 0, 0)
+    );
+    const ENU_MAT_INV = Cesium.Matrix4.inverseTransformation(ENU_MAT, new Cesium.Matrix4());
+
+    // ── Splat camera sync (called every Cesium frame) ──────────────────────────
+    function syncSplatCamera() {
+      if (!splatThreeCamera || !splatGS3DViewer) return;
+      const cam = viewer.camera;
+
+      // ECEF → local ENU: transform position (full M^-1) and direction/up (rotation only)
+      const lp = Cesium.Matrix4.multiplyByPoint(ENU_MAT_INV, cam.position, new Cesium.Cartesian3());
+
+      const dirPt = new Cesium.Cartesian3(
+        cam.position.x + cam.direction.x,
+        cam.position.y + cam.direction.y,
+        cam.position.z + cam.direction.z
       );
-      viewer.camera.flyToBoundingSphere(sphere, { offset, duration: 1.5 });
+      const ldp = Cesium.Matrix4.multiplyByPoint(ENU_MAT_INV, dirPt, new Cesium.Cartesian3());
+
+      const upPt = new Cesium.Cartesian3(
+        cam.position.x + cam.up.x,
+        cam.position.y + cam.up.y,
+        cam.position.z + cam.up.z
+      );
+      const lup = Cesium.Matrix4.multiplyByPoint(ENU_MAT_INV, upPt, new Cesium.Cartesian3());
+
+      splatThreeCamera.position.set(lp.x, lp.y, lp.z);
+      splatThreeCamera.up.set(lup.x - lp.x, lup.y - lp.y, lup.z - lp.z).normalize();
+      splatThreeCamera.lookAt(ldp.x, ldp.y, ldp.z);
+      splatThreeCamera.updateMatrixWorld(true);
+
+      const cvs = viewer.scene.canvas;
+      splatThreeCamera.aspect = cvs.clientWidth / cvs.clientHeight;
+      splatThreeCamera.fov    = Cesium.Math.toDegrees(cam.frustum?.fovy ?? (Math.PI / 3));
+      splatThreeCamera.updateProjectionMatrix();
+    }
+    viewer.scene.postRender.addEventListener(syncSplatCamera);
+
+    // ── Measurement coordinate helpers (ENU local ↔ ECEF) ─────────────────────
+    function getRefMatrix() {
+      return layers[0]?.tileset?.modelMatrix
+        ?? Cesium.Transforms.eastNorthUpToFixedFrame(Cesium.Cartesian3.fromDegrees(0, 0, 0));
+    }
+    function ecefToLocal(p) {
+      const inv = Cesium.Matrix4.inverseTransformation(getRefMatrix(), new Cesium.Matrix4());
+      return Cesium.Matrix4.multiplyByPoint(inv, p, new Cesium.Cartesian3());
+    }
+    function localToEcef(p) {
+      return Cesium.Matrix4.multiplyByPoint(getRefMatrix(), p, new Cesium.Cartesian3());
+    }
+    function mid(a, b) { return Cesium.Cartesian3.midpoint(a, b, new Cesium.Cartesian3()); }
+    function fmt(m)  { return m >= 1000 ? (m / 1000).toFixed(3) + ' km' : m.toFixed(3) + ' m'; }
+    function fmtA(a) { return a >= 10000 ? (a / 10000).toFixed(3) + ' ha' : a.toFixed(2) + ' m²'; }
+
+    function horizontalArea(positions) {
+      const pts = positions.map(p => ecefToLocal(p));
+      let a = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const j = (i + 1) % pts.length;
+        a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+      }
+      return Math.abs(a) / 2;
     }
 
-    // Override home button to fly to the loaded tileset instead of Earth
-    viewer.homeButton.viewModel.command.beforeExecute.addEventListener(e => {
-      if (currentTileset) {
-        e.cancel = true;
-        flyToTileset();
-      }
+    // ── Entity factories ───────────────────────────────────────────────────────
+    function mkPoint(pos, color, temp = true) {
+      const e = viewer.entities.add({
+        position: pos,
+        point: {
+          pixelSize: 9, color,
+          outlineColor: Cesium.Color.fromCssColorString('#0d1117'), outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+      if (temp) curEnts.push(e);
+      return e;
+    }
+
+    function mkLine(positions, color, dashed = false, temp = true) {
+      const mat = dashed
+        ? new Cesium.PolylineDashMaterialProperty({ color, dashLength: 14 })
+        : new Cesium.ColorMaterialProperty(color);
+      const e = viewer.entities.add({
+        polyline: {
+          positions, width: 2.5, material: mat,
+          depthFailMaterial: new Cesium.PolylineDashMaterialProperty({
+            color: color.withAlpha(0.28), dashLength: 8
+          }),
+          clampToGround: false,
+        },
+      });
+      if (temp) curEnts.push(e);
+      return e;
+    }
+
+    function mkLabel(pos, text, temp = true) {
+      const e = viewer.entities.add({
+        position: pos,
+        label: {
+          text, font: 'bold 13px monospace',
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.fromCssColorString('#0d1117'), outlineWidth: 3,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+          pixelOffset: new Cesium.Cartesian2(0, -6),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          showBackground: true,
+          backgroundColor: new Cesium.Color(0.05, 0.07, 0.09, 0.9),
+          backgroundPadding: new Cesium.Cartesian2(8, 5),
+        },
+      });
+      if (temp) curEnts.push(e);
+      return e;
+    }
+
+    function mkPoly(positions, color, temp = true) {
+      const e = viewer.entities.add({
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy([...positions]),
+          material: new Cesium.ColorMaterialProperty(color.withAlpha(0.16)),
+        },
+      });
+      if (temp) curEnts.push(e);
+      return e;
+    }
+
+    // ── Rubber-band preview ────────────────────────────────────────────────────
+    let previewPos = [];
+    const previewEnt = viewer.entities.add({
+      show: false,
+      polyline: {
+        positions: new Cesium.CallbackProperty(() => previewPos, false),
+        width: 1.5,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: Cesium.Color.YELLOW.withAlpha(0.65), dashLength: 10,
+        }),
+        clampToGround: false,
+      },
     });
 
-    // Re-zoom to tileset after 2D ↔ 3D ↔ Columbus mode transitions
-    viewer.scene.morphComplete.addEventListener(() => {
-      if (currentTileset) {
-        // Short delay lets Cesium finish the transition first
-        setTimeout(flyToTileset, 300);
-      }
-    });
+    // ── Measurement completion ─────────────────────────────────────────────────
+    function commit(tool, display) {
+      measurements.push({ id: Date.now(), tool, display, entities: [...curEnts] });
+      curEnts = []; curPts = [];
+      previewEnt.show = false; previewPos = [];
+      resetTool();
+      renderMeasureList();
+    }
 
-    async function loadDatasets() {
-      const res = await fetch('/api/datasets');
-      const datasets = await res.json();
-      const compatible = datasets.filter(d => d.type === 'cesium');
-      select.innerHTML = '<option value="">-- select dataset --</option>' +
-        compatible.map(d =>
-          `<option value="${d.id}" ${d.id === datasetId ? 'selected' : ''}>${d.name}</option>`
-        ).join('');
-      if (!compatible.length) {
-        select.innerHTML = '<option value="">No Cesium datasets</option>';
+    function doDistance() {
+      const [p1, p2] = curPts;
+      const d = fmt(Cesium.Cartesian3.distance(p1, p2));
+      mkLine([p1, p2], TC.distance.cesium);
+      mkLabel(mid(p1, p2), d);
+      commit('distance', d);
+    }
+
+    function doHorizontal() {
+      const [p1, p2] = curPts;
+      const l1 = ecefToLocal(p1), l2 = ecefToLocal(p2);
+      const d = Math.sqrt((l2.x - l1.x) ** 2 + (l2.y - l1.y) ** 2);
+      const projEcef = localToEcef(new Cesium.Cartesian3(l2.x, l2.y, l1.z));
+      mkLine([p1, projEcef], TC.horizontal.cesium, false);
+      mkLine([projEcef, p2], TC.horizontal.cesium, true);
+      mkLine([p1, p2],       TC.horizontal.cesium, true);
+      mkLabel(mid(p1, projEcef), fmt(d));
+      commit('horizontal', fmt(d));
+    }
+
+    function doVertical() {
+      const [p1, p2] = curPts;
+      const l1 = ecefToLocal(p1), l2 = ecefToLocal(p2);
+      const dz      = Math.abs(l2.z - l1.z);
+      const lower   = l1.z <= l2.z ? p1 : p2;
+      const lowerL  = l1.z <= l2.z ? l1 : l2;
+      const top     = localToEcef(new Cesium.Cartesian3(lowerL.x, lowerL.y, lowerL.z + dz));
+      mkLine([lower, top], TC.vertical.cesium);
+      mkPoint(lower, TC.vertical.cesium);
+      mkPoint(top,   TC.vertical.cesium);
+      mkLabel(mid(lower, top), '↕ ' + fmt(dz));
+      commit('vertical', '↕ ' + fmt(dz));
+    }
+
+    function doArea() {
+      if (curPts.length < 3) return;
+      const area = horizontalArea(curPts);
+      mkPoly(curPts, TC.area.cesium);
+      mkLine([...curPts, curPts[0]], TC.area.cesium);
+      const c = curPts.reduce(
+        (acc, p) => Cesium.Cartesian3.add(acc, p, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3()
+      );
+      Cesium.Cartesian3.divideByScalar(c, curPts.length, c);
+      mkLabel(c, fmtA(area));
+      commit('area', fmtA(area));
+    }
+
+    // ── Tool management ────────────────────────────────────────────────────────
+    function cancelCurrent() {
+      curEnts.forEach(e => viewer.entities.remove(e));
+      curEnts = []; curPts = [];
+      previewEnt.show = false; previewPos = [];
+    }
+
+    function resetTool() {
+      activeTool = null;
+      document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+      document.body.classList.remove('measuring');
+      document.getElementById('status-bar').style.display = 'none';
+    }
+
+    function setTool(tool) {
+      cancelCurrent();
+      if (activeTool === tool) { resetTool(); return; }
+      activeTool = tool;
+      document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+      document.querySelector(`[data-tool="${tool}"]`).classList.add('active');
+      document.body.classList.add('measuring');
+      setStatus();
+    }
+
+    const STATUS_MSG = {
+      distance:   ['Click first point', 'Click second point'],
+      horizontal: ['Click first point', 'Click second point'],
+      vertical:   ['Click first point', 'Click second point'],
+      area:       ['Click first point', 'Keep clicking — right-click or double-click to finish'],
+    };
+    function setStatus() {
+      const bar = document.getElementById('status-bar');
+      if (!activeTool) { bar.style.display = 'none'; return; }
+      const msgs = STATUS_MSG[activeTool];
+      let extra  = '';
+      if (activeTool === 'area' && curPts.length >= 3)
+        extra = ` <span style="color:#8b949e">(${curPts.length} pts)</span>`;
+      bar.style.display = 'block';
+      bar.innerHTML = `<strong style="color:${TC[activeTool].hex}">${TC[activeTool].label}</strong>`
+        + ` &nbsp; ${msgs[curPts.length > 0 ? 1 : 0]}${extra}`;
+    }
+
+    // ── Measurements list ──────────────────────────────────────────────────────
+    function renderMeasureList() {
+      const el = document.getElementById('measure-list');
+      if (!measurements.length) {
+        el.innerHTML = '<div class="m-empty">No measurements yet.<br>Select a tool to begin.</div>';
         return;
       }
-      // Auto-load first dataset if none specified
-      const id = datasetId || compatible[0].id;
-      const ds = compatible.find(d => d.id === id);
-      if (ds) {
-        if (!datasetId) select.value = ds.id;
-        loadTileset(ds);
+      el.innerHTML = measurements.map(m => `
+        <div class="m-item">
+          <div class="m-dot" style="background:${TC[m.tool].hex}"></div>
+          <div class="m-info">
+            <div class="m-val">${m.display}</div>
+            <div class="m-lbl">${TC[m.tool].label}</div>
+          </div>
+          <button class="m-del" data-id="${m.id}">✕</button>
+        </div>
+      `).join('');
+      el.querySelectorAll('.m-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const m = measurements.find(x => x.id === +btn.dataset.id);
+          if (m) m.entities.forEach(e => viewer.entities.remove(e));
+          measurements = measurements.filter(x => x.id !== +btn.dataset.id);
+          renderMeasureList();
+        });
+      });
+    }
+
+    // ── Panorama markers ───────────────────────────────────────────────────────
+    function makePanoImg() {
+      const s = 128, c = s / 2, cv = document.createElement('canvas');
+      cv.width = cv.height = s;
+      const ctx = cv.getContext('2d');
+      const g = ctx.createRadialGradient(c, c, c * 0.4, c, c, c);
+      g.addColorStop(0, 'rgba(240,136,62,0.35)');
+      g.addColorStop(1, 'rgba(240,136,62,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
+      ctx.beginPath(); ctx.arc(c, c, c * 0.55, 0, Math.PI * 2);
+      ctx.fillStyle = '#f0883e'; ctx.fill();
+      ctx.strokeStyle = 'white'; ctx.lineWidth = s * 0.05; ctx.stroke();
+      const bw = s * 0.42, bh = s * 0.28, bx = c - bw/2, by = c - bh/2 + s * 0.03;
+      ctx.fillStyle = 'white'; ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, s * 0.06); ctx.fill();
+      ctx.beginPath(); ctx.arc(c, c + s * 0.03, s * 0.1, 0, Math.PI * 2);
+      ctx.fillStyle = '#f0883e'; ctx.fill();
+      ctx.fillStyle = 'white'; ctx.beginPath();
+      ctx.roundRect(c - s*0.1, by - s*0.08, s*0.2, s*0.09, s*0.03); ctx.fill();
+      return cv.toDataURL();
+    }
+    const PANO_IMG = makePanoImg();
+
+    function addPanoMarkers(layer, ds) {
+      if (!ds.panoramas?.length) return;
+      ds.panoramas.forEach(scan => {
+        const world = Cesium.Matrix4.multiplyByPoint(
+          layer.tileset.modelMatrix,
+          new Cesium.Cartesian3(scan.x, scan.y, scan.z),
+          new Cesium.Cartesian3()
+        );
+        const e = viewer.entities.add({
+          position: world,
+          billboard: {
+            image: PANO_IMG, width: 48, height: 48,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            verticalOrigin: Cesium.VerticalOrigin.CENTER,
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+            heightReference: Cesium.HeightReference.NONE,
+          },
+          properties: new Cesium.PropertyBag({
+            scanId: scan.id, scanLabel: scan.label || 'Scan position', datasetId: ds.id,
+          }),
+        });
+        layer.panoEnts.push(e);
+        allPanoEnts.push(e);
+      });
+    }
+
+    // ── Layer management ───────────────────────────────────────────────────────
+    async function addLayer(ds) {
+      if (ds.type === 'splat') { await addSplatLayer(ds); return; }
+
+      const color = LAYER_COLORS[colorIdx++ % LAYER_COLORS.length];
+      const layer = { id: ds.id + '_' + Date.now(), dsId: ds.id, name: ds.name,
+                      color, tileset: null, panoEnts: [], visible: true };
+      layers.push(layer);
+      renderLayerList();
+
+      try {
+        const url = ds.path.startsWith('http') ? ds.path : location.origin + ds.path;
+        const ts  = await Cesium.Cesium3DTileset.fromUrl(url);
+        viewer.scene.primitives.add(ts);
+
+        if (Cesium.Cartesian3.magnitude(ts.boundingSphere.center) < 1000) {
+          ts.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(
+            Cesium.Cartesian3.fromDegrees(0, 0, 0)
+          );
+        }
+
+        layer.tileset = ts;
+        addPanoMarkers(layer, ds);
+        renderLayerList();
+        flyToLayer(layer);
+      } catch (err) {
+        console.error('Layer load error:', err);
+        layers = layers.filter(l => l.id !== layer.id);
+        renderLayerList();
       }
     }
 
-    select.addEventListener('change', async () => {
-      const id = select.value;
-      if (!id) return;
-      const res = await fetch(`/api/datasets/${id}`);
-      history.pushState({}, '', `?id=${id}`);
-      loadTileset(await res.json());
+    // ── Splat layer via GaussianSplats3D overlay ───────────────────────────────
+    async function addSplatLayer(ds) {
+      // Dispose any existing splat layer
+      if (splatGS3DViewer) {
+        try { splatGS3DViewer.dispose(); } catch(e) {}
+        splatGS3DViewer = null; splatThreeCamera = null; splatThreeRenderer = null;
+        if (splatOverlayDiv) { splatOverlayDiv.remove(); splatOverlayDiv = null; }
+        layers = layers.filter(l => !l.isSplat);
+      }
+
+      const color = LAYER_COLORS[colorIdx++ % LAYER_COLORS.length];
+      const layer = { id: ds.id + '_' + Date.now(), dsId: ds.id, name: ds.name,
+                      color, tileset: null, panoEnts: [], visible: true, isSplat: true };
+      layers.push(layer);
+      renderLayerList();
+
+      // Overlay div (covers Cesium canvas, no pointer events)
+      splatOverlayDiv = document.createElement('div');
+      splatOverlayDiv.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;overflow:hidden;';
+      document.getElementById('cesiumContainer').appendChild(splatOverlayDiv);
+
+      // Alpha-capable Three.js renderer
+      const ctnr = document.getElementById('cesiumContainer');
+      splatThreeRenderer = new THREE.WebGLRenderer({ antialias: false, precision: 'highp', alpha: true });
+      splatThreeRenderer.setPixelRatio(window.devicePixelRatio);
+      splatThreeRenderer.setSize(ctnr.clientWidth, ctnr.clientHeight);
+      splatThreeRenderer.setClearColor(0x000000, 0);
+      splatThreeRenderer.domElement.style.cssText = 'position:absolute;top:0;left:0;';
+      splatOverlayDiv.appendChild(splatThreeRenderer.domElement);
+
+      // Sync renderer size when container resizes
+      new ResizeObserver(() => {
+        if (!splatThreeRenderer) return;
+        const c = document.getElementById('cesiumContainer');
+        splatThreeRenderer.setSize(c.clientWidth, c.clientHeight);
+      }).observe(ctnr);
+
+      // External camera — driven by syncSplatCamera() every frame
+      splatThreeCamera = new THREE.PerspectiveCamera(60, ctnr.clientWidth / ctnr.clientHeight, 0.1, 100000);
+
+      // GaussianSplats3D viewer with external renderer + camera
+      splatGS3DViewer = new GaussianSplats3D.Viewer({
+        rootElement: splatOverlayDiv,
+        renderer: splatThreeRenderer,
+        camera: splatThreeCamera,
+        sharedMemoryForWorkers: false,
+        dynamicScene: false,
+        gpuAcceleratedSort: true,
+        halfPrecisionCovariancesOnGPU: true,
+        useBuiltInControls: false,
+        selfDrivenMode: true,
+      });
+
+      try {
+        await splatGS3DViewer.addSplatScene(ds.path);
+        splatGS3DViewer.start();
+        layer.gs3dViewer = splatGS3DViewer;
+        renderLayerList();
+
+        // Fly Cesium camera to the splat bounding sphere
+        setTimeout(() => {
+          const bs = splatGS3DViewer?.splatMesh?.boundingSphere;
+          if (!bs) return;
+          const ecefCenter = Cesium.Matrix4.multiplyByPoint(
+            ENU_MAT, new Cesium.Cartesian3(bs.center.x, bs.center.y, bs.center.z),
+            new Cesium.Cartesian3()
+          );
+          viewer.camera.flyToBoundingSphere(
+            new Cesium.BoundingSphere(ecefCenter, bs.radius),
+            {
+              offset: new Cesium.HeadingPitchRange(
+                Cesium.Math.toRadians(45), Cesium.Math.toRadians(-30), bs.radius * 6
+              ),
+              duration: 1.5,
+            }
+          );
+        }, 1200);
+      } catch (err) {
+        console.error('Splat load error:', err);
+        layers = layers.filter(l => l.id !== layer.id);
+        renderLayerList();
+      }
+    }
+
+    function removeLayer(layerId) {
+      const idx = layers.findIndex(l => l.id === layerId);
+      if (idx < 0) return;
+      const layer = layers[idx];
+
+      if (layer.isSplat) {
+        if (splatGS3DViewer) { try { splatGS3DViewer.dispose(); } catch(e) {} splatGS3DViewer = null; }
+        splatThreeCamera = null; splatThreeRenderer = null;
+        if (splatOverlayDiv) { splatOverlayDiv.remove(); splatOverlayDiv = null; }
+      } else {
+        if (layer.tileset) viewer.scene.primitives.remove(layer.tileset);
+        layer.panoEnts.forEach(e => {
+          viewer.entities.remove(e);
+          allPanoEnts = allPanoEnts.filter(x => x !== e);
+        });
+      }
+      layers.splice(idx, 1);
+      renderLayerList();
+    }
+
+    function setLayerVisible(layerId, visible) {
+      const layer = layers.find(l => l.id === layerId);
+      if (!layer) return;
+      layer.visible = visible;
+      if (layer.isSplat) {
+        if (splatOverlayDiv) splatOverlayDiv.style.display = visible ? '' : 'none';
+      } else {
+        if (layer.tileset) layer.tileset.show = visible;
+        layer.panoEnts.forEach(e => { e.show = visible; });
+      }
+    }
+
+    function flyToLayer(layer) {
+      if (layer?.isSplat) {
+        const bs = splatGS3DViewer?.splatMesh?.boundingSphere;
+        if (!bs) return;
+        const ecefCenter = Cesium.Matrix4.multiplyByPoint(
+          ENU_MAT, new Cesium.Cartesian3(bs.center.x, bs.center.y, bs.center.z),
+          new Cesium.Cartesian3()
+        );
+        viewer.camera.flyToBoundingSphere(
+          new Cesium.BoundingSphere(ecefCenter, bs.radius),
+          { offset: new Cesium.HeadingPitchRange(
+              Cesium.Math.toRadians(45), Cesium.Math.toRadians(-30), bs.radius * 6
+            ), duration: 1.5 }
+        );
+        return;
+      }
+      if (!layer?.tileset) return;
+      const sphere = layer.tileset.boundingSphere;
+      viewer.camera.flyToBoundingSphere(sphere, {
+        offset: new Cesium.HeadingPitchRange(
+          Cesium.Math.toRadians(45), Cesium.Math.toRadians(-30), sphere.radius * 3
+        ),
+        duration: 1.5,
+      });
+    }
+
+    // ── Layer list render ──────────────────────────────────────────────────────
+    function renderLayerList() {
+      const el = document.getElementById('layer-list');
+      if (!layers.length) {
+        el.innerHTML = '<div id="layer-empty">No layers loaded.</div>';
+        return;
+      }
+      el.innerHTML = layers.map(l => `
+        <div class="layer-item">
+          <input type="checkbox" class="layer-vis" ${l.visible ? 'checked' : ''}
+            style="--lc:${l.color}" data-lid="${l.id}">
+          <div class="layer-dot" style="background:${l.color}"></div>
+          <span class="layer-name" title="${l.name}">${l.name}${!l.tileset ? ' ⋯' : ''}</span>
+          <button class="layer-fly" data-lid="${l.id}" title="Zoom to layer">⊕</button>
+          <button class="layer-del" data-lid="${l.id}" title="Remove layer">✕</button>
+        </div>
+      `).join('');
+      el.querySelectorAll('.layer-vis').forEach(cb =>
+        cb.addEventListener('change', () => setLayerVisible(cb.dataset.lid, cb.checked))
+      );
+      el.querySelectorAll('.layer-fly').forEach(btn =>
+        btn.addEventListener('click', () => flyToLayer(layers.find(l => l.id === btn.dataset.lid)))
+      );
+      el.querySelectorAll('.layer-del').forEach(btn =>
+        btn.addEventListener('click', () => removeLayer(btn.dataset.lid))
+      );
+    }
+
+    // ── Cesium home / mode-switch ──────────────────────────────────────────────
+    viewer.homeButton.viewModel.command.beforeExecute.addEventListener(e => {
+      if (layers.length) { e.cancel = true; flyToLayer(layers[0]); }
+    });
+    viewer.scene.morphComplete.addEventListener(() => {
+      if (layers.length) setTimeout(() => flyToLayer(layers[0]), 300);
     });
 
-    async function loadTileset(ds) {
-      if (currentTileset) {
-        viewer.scene.primitives.remove(currentTileset);
-        currentTileset = null;
+    // ── Dataset catalogue ──────────────────────────────────────────────────────
+    const initId = new URLSearchParams(location.search).get('id');
+
+    async function loadDatasets() {
+      allDatasets = await fetch('/api/datasets').then(r => r.json());
+      const compat = allDatasets.filter(d => d.type === 'cesium' || d.type === 'cesium-splat' || d.type === 'splat');
+      if (initId) {
+        const ds = compat.find(d => d.id === initId);
+        if (ds) { addLayer(ds); return; }
       }
-      document.getElementById('info-panel').innerHTML =
-        `<h4 style="color:#58a6ff">Loading…</h4><p style="color:#8b949e">${ds.name}</p>`;
-      try {
-        const url = ds.path.startsWith('http')
-          ? ds.path
-          : window.location.origin + ds.path;
-
-        currentTileset = await Cesium.Cesium3DTileset.fromUrl(url);
-        viewer.scene.primitives.add(currentTileset);
-
-        // Initial fly-to
-        flyToTileset();
-
-        document.getElementById('info-panel').innerHTML = `
-          <h4>${ds.name}</h4>
-          <p style="color:#8b949e">${ds.source || 'unknown source'}</p>
-          <p style="margin-top:0.3rem">${ds.description || ''}</p>
-        `;
-      } catch (e) {
-        console.error(e);
-        document.getElementById('info-panel').innerHTML = `
-          <h4 style="color:#f85149">Load Error</h4>
-          <p style="color:#8b949e">${e.message}</p>
-        `;
-      }
+      if (compat.length) addLayer(compat[0]);
     }
 
+    // ── Modal ──────────────────────────────────────────────────────────────────
+    function openModal() {
+      const loadedIds = new Set(layers.map(l => l.dsId));
+      const compat    = allDatasets.filter(d => d.type === 'cesium' || d.type === 'cesium-splat' || d.type === 'splat');
+      const el = document.getElementById('modal-list');
+      el.innerHTML = compat.length
+        ? compat.map(ds => {
+            const loaded = loadedIds.has(ds.id);
+            const badge  = ds.type === 'splat' ? 'Splat (overlay)'
+                         : ds.type === 'cesium-splat' ? 'Gaussian Splat'
+                         : '3D Tiles';
+            return `<div class="mds-item ${loaded ? 'loaded' : ''}" data-dsid="${ds.id}">
+              <span class="mds-name">${ds.name}</span>
+              <span class="mds-badge">${badge}</span>
+            </div>`;
+          }).join('')
+        : '<div style="color:#8b949e;font-size:0.83rem;padding:0.5rem">No compatible datasets.</div>';
+      el.querySelectorAll('.mds-item:not(.loaded)').forEach(item =>
+        item.addEventListener('click', () => {
+          const ds = allDatasets.find(d => d.id === item.dataset.dsid);
+          if (ds) addLayer(ds);
+          closeModal();
+        })
+      );
+      document.getElementById('modal-bg').classList.add('open');
+    }
+
+    function closeModal() {
+      document.getElementById('modal-bg').classList.remove('open');
+    }
+
+    document.getElementById('add-layer-btn').addEventListener('click', openModal);
+    document.getElementById('add-layer-btn2').addEventListener('click', openModal);
+    document.getElementById('modal-close').addEventListener('click', closeModal);
+    document.getElementById('modal-bg').addEventListener('click', e => {
+      if (e.target.id === 'modal-bg') closeModal();
+    });
+
+    // ── Tool buttons ───────────────────────────────────────────────────────────
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(btn =>
+      btn.addEventListener('click', () => setTool(btn.dataset.tool))
+    );
+    document.getElementById('clear-all-btn').addEventListener('click', () => {
+      cancelCurrent(); resetTool();
+      measurements.forEach(m => m.entities.forEach(e => viewer.entities.remove(e)));
+      measurements = [];
+      renderMeasureList();
+    });
+
+    // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { cancelCurrent(); resetTool(); }
+      if (e.key === 'Backspace' && activeTool === 'area' && curPts.length > 0) {
+        e.preventDefault();
+        curPts.pop();
+        for (let i = 0; i < 2 && curEnts.length; i++) viewer.entities.remove(curEnts.pop());
+        setStatus();
+      }
+    });
+
+    // ── Input handler ──────────────────────────────────────────────────────────
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+    handler.setInputAction(ev => {
+      if (!activeTool) {
+        const picked = viewer.scene.pick(ev.position);
+        if (Cesium.defined(picked?.id) && allPanoEnts.includes(picked.id)) {
+          const p = picked.id.properties;
+          window.open(
+            `/viewers/panorama.html?id=${p.datasetId.getValue()}&pos=${p.scanId.getValue()}`,
+            '_blank'
+          );
+        }
+        return;
+      }
+      const pos = viewer.scene.pickPosition(ev.position);
+      if (!Cesium.defined(pos)) return;
+      const col = TC[activeTool].cesium;
+      mkPoint(pos, col);
+      if (activeTool === 'area') {
+        if (curPts.length > 0) mkLine([curPts[curPts.length - 1], pos], col);
+        curPts.push(pos);
+      } else {
+        curPts.push(pos);
+        if (curPts.length === 2) {
+          if      (activeTool === 'distance')   doDistance();
+          else if (activeTool === 'horizontal') doHorizontal();
+          else if (activeTool === 'vertical')   doVertical();
+          return;
+        }
+      }
+      setStatus();
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    handler.setInputAction(() => {
+      if (activeTool === 'area' && curPts.length >= 3) doArea();
+    }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+
+    handler.setInputAction(() => {
+      if (activeTool === 'area' && curPts.length >= 3) doArea();
+      else if (activeTool) { cancelCurrent(); if (curPts.length === 0) resetTool(); }
+    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+
+    handler.setInputAction(ev => {
+      // Rubber-band while measuring
+      if (activeTool && curPts.length > 0) {
+        const pos = viewer.scene.pickPosition(ev.endPosition);
+        if (Cesium.defined(pos)) {
+          previewEnt.show = true;
+          previewPos = (activeTool === 'area' && curPts.length >= 2)
+            ? [curPts[curPts.length - 1], pos, curPts[0]]
+            : [curPts[curPts.length - 1], pos];
+        }
+        document.getElementById('pano-tooltip').style.display = 'none';
+        return;
+      }
+
+      // Panorama hover
+      const tip    = document.getElementById('pano-tooltip');
+      const picked = viewer.scene.pick(ev.endPosition);
+      if (Cesium.defined(picked?.id) && allPanoEnts.includes(picked.id)) {
+        const rect = viewer.scene.canvas.getBoundingClientRect();
+        document.getElementById('pano-tip-label').textContent =
+          picked.id.properties.scanLabel.getValue();
+        tip.style.display = 'block';
+        tip.style.left = (rect.left + ev.endPosition.x + 14) + 'px';
+        tip.style.top  = (rect.top  + ev.endPosition.y - 10) + 'px';
+        viewer.scene.canvas.style.cursor = 'pointer';
+      } else {
+        tip.style.display = 'none';
+        viewer.scene.canvas.style.cursor = '';
+      }
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+    // ── Boot ───────────────────────────────────────────────────────────────────
     loadDatasets();
   </script>
 </body>

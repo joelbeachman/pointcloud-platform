@@ -63,6 +63,10 @@
     <div id="hud-fps"></div>
   </div>
   <div id="controls-hint">Left drag: rotate &nbsp;|&nbsp; Right drag: pan &nbsp;|&nbsp; Scroll: zoom</div>
+  <div id="pano-tooltip" style="display:none; position:absolute; z-index:50; background:rgba(22,27,34,0.95); border:1px solid #f0883e; border-radius:8px; padding:0.5rem 0.85rem; pointer-events:none; font-size:0.8rem; color:#e6edf3; white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+    <div id="pano-tooltip-label" style="font-weight:bold; color:#f0883e; margin-bottom:0.2rem;"></div>
+    <div style="color:#8b949e;">Click to open panorama</div>
+  </div>
   <div id="overlay">
     <h3 id="overlay-title">Point Cloud Viewer</h3>
     <p id="overlay-msg">Select a dataset above to begin.</p>
@@ -99,9 +103,135 @@
     let frameCount = 0, lastFpsTime = performance.now();
     let currentCloud = null;
 
+    // ── Panorama markers ────────────────────────────────────────────────────
+    let panoMarkers = [];
+    let panoMarkerMeta = []; // parallel array: {scan, datasetId}
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const tooltip = document.getElementById('pano-tooltip');
+    const tooltipLabel = document.getElementById('pano-tooltip-label');
+    let hoveredMarker = null;
+
+    function makePanoTexture() {
+      const size = 256;
+      const c = size / 2;
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = size;
+      const ctx = cv.getContext('2d');
+
+      // Outer glow
+      const grad = ctx.createRadialGradient(c, c, c * 0.4, c, c, c);
+      grad.addColorStop(0, 'rgba(240,136,62,0.35)');
+      grad.addColorStop(1, 'rgba(240,136,62,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, size, size);
+
+      // Main circle
+      ctx.beginPath();
+      ctx.arc(c, c, c * 0.55, 0, Math.PI * 2);
+      ctx.fillStyle = '#f0883e';
+      ctx.fill();
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = size * 0.05;
+      ctx.stroke();
+
+      // Camera body
+      const bw = size * 0.42, bh = size * 0.28, bx = c - bw / 2, by = c - bh / 2 + size * 0.03;
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, size * 0.06);
+      ctx.fill();
+
+      // Lens
+      ctx.beginPath();
+      ctx.arc(c, c + size * 0.03, size * 0.1, 0, Math.PI * 2);
+      ctx.fillStyle = '#f0883e';
+      ctx.fill();
+
+      // Viewfinder bump
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.roundRect(c - size * 0.1, by - size * 0.08, size * 0.2, size * 0.09, size * 0.03);
+      ctx.fill();
+
+      return new THREE.CanvasTexture(cv);
+    }
+
+    const panoTex = makePanoTexture();
+    const panoMatNormal = new THREE.SpriteMaterial({ map: panoTex, depthTest: false, transparent: true });
+    const panoMatHover  = new THREE.SpriteMaterial({ map: panoTex, depthTest: false, transparent: true, opacity: 0.75 });
+
+    function clearPanoMarkers() {
+      panoMarkers.forEach(m => scene.remove(m));
+      panoMarkers = [];
+      panoMarkerMeta = [];
+    }
+
+    function addPanoMarkers(ds, cx, cy, cz) {
+      clearPanoMarkers();
+      if (!ds.panoramas || !ds.panoramas.length) return;
+      ds.panoramas.forEach(scan => {
+        const sprite = new THREE.Sprite(panoMatNormal.clone());
+        sprite.position.set(scan.x - cx, scan.y - cy, scan.z - cz);
+        sprite.scale.setScalar(1); // scaled every frame in animate()
+        scene.add(sprite);
+        panoMarkers.push(sprite);
+        panoMarkerMeta.push({ scan, datasetId: ds.id });
+      });
+    }
+
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
+      mouse.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(panoMarkers);
+      if (hits.length) {
+        const idx = panoMarkers.indexOf(hits[0].object);
+        const meta = panoMarkerMeta[idx];
+        if (hoveredMarker !== hits[0].object) {
+          if (hoveredMarker) hoveredMarker.material.opacity = 1;
+          hoveredMarker = hits[0].object;
+          hoveredMarker.material.opacity = 0.75;
+          canvas.style.cursor = 'pointer';
+        }
+        tooltipLabel.textContent = meta.scan.label || 'Scan position';
+        tooltip.style.display = 'block';
+        tooltip.style.left = (e.clientX + 14) + 'px';
+        tooltip.style.top  = (e.clientY - 10) + 'px';
+      } else {
+        if (hoveredMarker) { hoveredMarker.material.opacity = 1; hoveredMarker = null; }
+        tooltip.style.display = 'none';
+        canvas.style.cursor = '';
+      }
+    });
+
+    canvas.addEventListener('click', e => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
+      mouse.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(panoMarkers);
+      if (hits.length) {
+        const idx = panoMarkers.indexOf(hits[0].object);
+        const { scan, datasetId } = panoMarkerMeta[idx];
+        window.open(`/viewers/panorama.html?id=${datasetId}&pos=${scan.id}`, '_blank');
+      }
+    });
+
     function animate() {
       requestAnimationFrame(animate);
       controls.update();
+
+      // Keep pano markers at a constant screen size regardless of zoom
+      if (panoMarkers.length) {
+        const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+        panoMarkers.forEach(m => {
+          const dist = camera.position.distanceTo(m.position);
+          m.scale.setScalar(dist * tanHalfFov * 0.12);
+        });
+      }
+
       renderer.render(scene, camera);
       frameCount++;
       const now = performance.now();
@@ -159,6 +289,7 @@
       document.getElementById('hud-name').textContent = ds.name;
       document.getElementById('hud-points').textContent = '';
       if (currentCloud) { scene.remove(currentCloud); currentCloud.geometry.dispose(); currentCloud.material.dispose(); currentCloud = null; }
+      clearPanoMarkers();
 
       if (ds.panoramas && ds.panoramas.length) {
         panoLink.style.display = 'inline-block';
@@ -171,6 +302,12 @@
           await loadXYZ(ds, path);
         } else if (path.endsWith('.laz') || path.endsWith('.las')) {
           showOverlay('Conversion required', 'LAZ/LAS files must be converted to Potree octree format using PotreeConverter before viewing here. The file is stored at: ' + path, 100);
+          document.getElementById('overlay').style.background = 'rgba(13,17,23,0.97)';
+          return;
+        } else if (path.endsWith('.e57')) {
+          showOverlay('Conversion required',
+            'E57 files must be converted to XYZ or LAZ before viewing here. ' +
+            'Run: python3 scripts/extract_e57.py "' + path + '" <output_dir> — or use PDAL/CloudCompare to export to XYZ.', 100);
           document.getElementById('overlay').style.background = 'rgba(13,17,23,0.97)';
           return;
         } else {
@@ -238,6 +375,7 @@
       controls.update();
 
       document.getElementById('hud-points').textContent = n.toLocaleString() + ' points';
+      addPanoMarkers(ds, cx, cy, cz);
       hideOverlay();
     }
 

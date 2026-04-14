@@ -1,4 +1,23 @@
-FROM node:20-alpine
+FROM node:20-slim
+
+# ── Python processing pipeline ────────────────────────────────────────────────
+# Required for scripts/process.py (point cloud / mesh / splat → 3D Tiles)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev \
+    gcc g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# laspy[lazrs]  — LAS / LAZ point clouds
+# pye57         — E57 laser scans
+# plyfile       — PLY point clouds and 3DGS PLY
+# trimesh[easy] — OBJ / STL / GLB mesh loading + GLB export
+# numpy         — array processing (shared across all pipeline scripts)
+RUN pip3 install --break-system-packages \
+    numpy \
+    "laspy[lazrs]" \
+    pye57 \
+    plyfile \
+    "trimesh[easy]"
 
 WORKDIR /app
 

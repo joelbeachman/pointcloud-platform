@@ -46,3 +46,62 @@
 ### Server status
 - Running at http://localhost:3000
 - 3 datasets registered: Demo Sphere, Autzen Stadium LiDAR, Nike Gaussian Splat
+
+---
+
+## 2026-04-13 — Cesium Viewer Overhaul + Splat Pipeline
+
+### Completed
+
+**Cesium viewer rewrite** (`public/viewers/cesium.html`)
+- Multi-layer TOC in left sidebar: add any number of `cesium` or `splat` datasets
+  as independent layers, toggle visibility, fly to, remove
+- Measurement tools merged in (was a separate measure.html, now deleted):
+  Distance, Horizontal distance, Vertical distance, Area — all with labelled
+  polyline/polygon entities and a right-side results panel
+- CesiumJS upgraded to 1.140 (April 2026 release)
+- Gaussian splat layers rendered via transparent Three.js canvas overlaid on
+  the Cesium canvas; cameras synced every frame via ECEF→local ENU transform
+  so the splat stays registered with the globe
+
+**Splat to 3D Tiles converter** (`scripts/convert_splat.py`)
+- Reads `.splat` binary (32 bytes/Gaussian: xyz, log-scale, RGBA, WXYZ rotation)
+- Builds GLB with `KHR_gaussian_splatting` extension
+- Outputs `splat.glb` + `tileset.json` loadable by CesiumJS 1.130+
+
+**Nike splat converted** — `data/cesium/nike-splat/` generated and registered
+as dataset `nike-splat-cesium` (type: `cesium-splat`)
+
+**Splat viewer** (`public/viewers/splat.html`)
+- Replaced OrbitControls with quaternion trackball (no gimbal lock, no poles)
+- Left drag: free rotation, right drag: pan, scroll: zoom
+
+---
+
+## 2026-04-14 — Universal Processing Pipeline
+
+### Completed
+
+**Processing pipeline** (`scripts/process.py`)
+- Universal converter: auto-detects format from file extension and PLY header
+- **Point clouds** → 3D Tiles 1.0 `.pnts` single tile + `tileset.json`
+  - Reads: LAS/LAZ (laspy), E57 (pye57), XYZ/TXT/PTS (numpy), PTX (Leica
+    multi-scan format), PCD (ASCII), PLY (plyfile)
+  - Preserves RGB colour when present in source
+  - Uses RTC_CENTER for float32 precision over large coordinate ranges
+- **Meshes** → GLB + `tileset.json`
+  - Reads: OBJ, STL, GLB, GLTF, PLY (mesh) via trimesh
+  - Flattens multi-mesh scenes before export
+- **Gaussian splats** copied or converted
+  - `.splat` files: copied to `data/splats/`, registered as type `splat`
+  - 3DGS PLY (detected by `f_dc_0` property): SH DC coefficients converted
+    to RGB, opacity via sigmoid, rotation normalised → packed to `.splat` binary
+- Auto-registers output in `datasets.json` (or prints curl command with `--no-register`)
+
+**Dockerfile updated** — switched from `node:20-alpine` to `node:20-slim`
+(Debian-based, required for Python binary wheels — pye57 needs glibc).
+Added Python processing layers: `numpy`, `laspy[lazrs]`, `pye57`, `plyfile`,
+`trimesh[easy]`.
+
+**SETUP.md updated** — full documentation for pipeline, Cesium viewer features,
+all script options, Docker usage, and dataset type reference.

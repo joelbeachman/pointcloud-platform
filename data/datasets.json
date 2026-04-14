@@ -27,6 +27,35 @@
     "createdAt": "2026-04-07T00:00:00.000Z"
   },
   {
+    "id": "nike-splat-cesium",
+    "name": "Nike (Gaussian Splat – 3D Tiles)",
+    "type": "cesium-splat",
+    "source": "photogrammetry",
+    "path": "/data/cesium/nike-splat/tileset.json",
+    "description": "Gaussian splat converted to 3D Tiles with KHR_gaussian_splatting extension for the Cesium viewer.",
+    "createdAt": "2026-04-13T00:00:00.000Z"
+  },
+  {
+    "id": "test-bauing-cesium",
+    "name": "Test Bauing (3D Tiles)",
+    "type": "cesium",
+    "source": "lidar",
+    "path": "/data/cesium/test-bauing/tileset.json",
+    "description": "E57 laser scan converted to 3D Tiles — 3.4M points with RGB.",
+    "panoramas": [
+      {
+        "id": "scan_000",
+        "label": "Scan Position 1",
+        "path": "/data/laserscans/test bauing_E57_Non-Gridded/HQ Panorama Images/1.jpeg",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "northOffset": 0
+      }
+    ],
+    "createdAt": "2026-04-08T00:00:00.000Z"
+  },
+  {
     "id": "cesium-dragon",
     "name": "Dragon (3D Tiles)",
     "type": "cesium",
@@ -34,6 +63,26 @@
     "path": "/data/cesium/TilesetWithDiscreteLOD/tileset.json",
     "description": "CesiumGS sample 3D Tiles dataset — Stanford Dragon with discrete LOD.",
     "createdAt": "2026-04-07T00:00:00.000Z"
+  },
+  {
+    "id": "test-bauing-e57",
+    "name": "Test Bauing (Laser Scan)",
+    "type": "e57",
+    "source": "lidar",
+    "path": "/data/pointclouds/test-bauing/points.xyz",
+    "description": "E57 laser scan — 3.4M points (subsampled), 1 scan position with HQ panorama.",
+    "panoramas": [
+      {
+        "id": "scan_000",
+        "label": "Scan Position 1",
+        "path": "/data/laserscans/test bauing_E57_Non-Gridded/HQ Panorama Images/1.jpeg",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "northOffset": 0
+      }
+    ],
+    "createdAt": "2026-04-08T00:00:00.000Z"
   },
   {
     "id": "demo-panoramas",
