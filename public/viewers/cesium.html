@@ -4,12 +4,13 @@
   <meta charset="UTF-8">
   <title>Cesium Viewer – Point Cloud Platform</title>
   <link rel="stylesheet" href="/css/portal.css">
-  <script src="https://cesium.com/downloads/cesiumjs/releases/1.140/Build/Cesium/Cesium.js"></script>
+  <!-- Route ALL Cesium resources (Cesium.js, Workers/*, Assets/*) through the
+       local proxy so decodeSpz.js gets the same safe-slice patch as Cesium.js.
+       Assets and other workers are redirected to CDN; only decodeSpz.js is
+       actually patched. -->
+  <script>window.CESIUM_BASE_URL = '/cesium-proxy/';</script>
+  <script src="/cesium-proxy/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.140/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
-  <!-- Three.js + GaussianSplats3D for splat layer overlay -->
-  <script src="/libs/three.min.js"></script>
-  <script src="/libs/gaussian-splats-3d.umd.js"></script>
-  <script>const GaussianSplats3D = window["Gaussian Splats 3D"];</script>
   <style>
     body { margin: 0; overflow: hidden; }
     .cesium-widget-credits { display: none !important; }
@@ -246,6 +247,16 @@
         </svg>
         Area
       </button>
+      <button class="tool-btn" data-tool="coords" style="--tc:#79c0ff" title="Click to inspect coordinates">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="8" cy="8" r="3"/>
+          <line x1="8" y1="1" x2="8" y2="4"/>
+          <line x1="8" y1="12" x2="8" y2="15"/>
+          <line x1="1" y1="8" x2="4" y2="8"/>
+          <line x1="12" y1="8" x2="15" y2="8"/>
+        </svg>
+        Coords
+      </button>
       <hr class="tool-sep">
       <button class="tool-btn danger" id="clear-all-btn">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
@@ -285,6 +296,75 @@
     </div>
   </div>
 
+  <!-- ── GCP Pick Banner (shown while picking a point, covers the globe) ── -->
+  <div id="gcpPickBanner" style="display:none; position:fixed; top:0; left:0; right:0;
+       z-index:300; background:rgba(30,60,90,.92); color:#e0e0e0; padding:12px 20px;
+       font-family:monospace; font-size:13px; align-items:center; gap:12px;">
+    <span>Click on the model to place GCP point (Esc to cancel)</span>
+    <button onclick="gcpCancelPick()" style="margin-left:auto; padding:4px 12px;">Cancel</button>
+  </div>
+
+  <!-- ── GCP Georeferencing Panel ── -->
+  <div id="gcpPanel" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.65);
+       z-index:200; align-items:center; justify-content:center;">
+    <div style="background:#161b22; color:#e0e0e0; border:1px solid #30363d; border-radius:8px;
+         padding:20px; width:900px; max-width:98vw; max-height:90vh; overflow-y:auto;
+         font-family:monospace; font-size:13px;">
+      <h3 style="margin:0 0 6px; font-size:15px;">Georeference — Point Pair Picking (Swiss LV95)</h3>
+      <p style="color:#8b949e; margin:0 0 14px; font-size:12px; line-height:1.5">
+        Pick ≥4 corresponding points: click <b>＋ Pick Point</b>, click the model, then enter the
+        known Swiss LV95 coordinates (Easting, Northing, Ellipsoidal Height in metres).
+        3D Helmert transformation (6-param rigid or 7-param with scale). Coordinates approximate
+        via swisstopo formula (~1 m accuracy).
+      </p>
+
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:1px solid #30363d; color:#8b949e; font-size:11px;">
+            <th style="padding:4px 6px; text-align:left; width:24px">#</th>
+            <th style="padding:4px 6px">Local X</th>
+            <th style="padding:4px 6px">Local Y</th>
+            <th style="padding:4px 6px">Local Z</th>
+            <th style="padding:4px 6px">LV95 E (m)</th>
+            <th style="padding:4px 6px">LV95 N (m)</th>
+            <th style="padding:4px 6px">LV95 H (m)</th>
+            <th style="padding:4px 6px">Residual</th>
+            <th style="padding:4px 6px; width:24px"></th>
+          </tr>
+        </thead>
+        <tbody id="gcpRows"></tbody>
+      </table>
+
+      <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <button id="gcpAddBtn" onclick="gcpAddRow()"
+            style="padding:5px 12px; background:#21262d; border:1px solid #30363d; color:#e0e0e0;
+                   border-radius:4px; cursor:pointer; font-size:12px;">＋ Pick Point</button>
+        <input type="file" id="gcpFileInput" accept=".txt,.csv" style="display:none"
+               onchange="gcpImportFile(this)">
+        <button onclick="document.getElementById('gcpFileInput').click()"
+            style="padding:5px 12px; background:#21262d; border:1px solid #30363d; color:#e0e0e0;
+                   border-radius:4px; cursor:pointer; font-size:12px;">Import TXT</button>
+        <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:12px; color:#ccc;">
+          <input type="checkbox" id="gcpUseScale" onchange="gcpUpdateCompute()"> Use scale (7-param)
+        </label>
+        <button id="gcpComputeBtn" onclick="gcpCompute()" disabled
+            style="padding:5px 12px; background:#1f6feb; border:none; color:#fff; border-radius:4px;
+                   cursor:pointer; font-size:12px; opacity:0.5">Compute Helmert</button>
+        <button id="gcpApplyBtn" onclick="gcpApplySave()" disabled
+            style="padding:5px 14px; background:#238636; border:none; color:#fff; border-radius:4px;
+                   cursor:pointer; font-size:12px; opacity:0.5">✓ Apply &amp; Save</button>
+        <button id="gcpResetBtn" onclick="gcpResetGeoref()"
+            style="padding:5px 12px; background:#da3633; border:none; color:#fff; border-radius:4px;
+                   cursor:pointer; font-size:12px; display:none;">Reset Georef</button>
+        <button onclick="gcpClose()"
+            style="margin-left:auto; padding:5px 12px; background:#21262d; border:1px solid #30363d;
+                   color:#e0e0e0; border-radius:4px; cursor:pointer; font-size:12px;">Close</button>
+      </div>
+
+      <div id="gcpStats" style="margin-top:10px; font-size:12px; color:#8b949e; min-height:18px;"></div>
+    </div>
+  </div>
+
   <script>
     // ── CesiumJS viewer (open source, Apache 2.0 — no Ion) ────────────────────
     const viewer = new Cesium.Viewer('cesiumContainer', {
@@ -295,11 +375,17 @@
       terrainProvider: new Cesium.EllipsoidTerrainProvider(),
     });
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0d1117');
-    viewer.scene.skyBox        = undefined;
-    viewer.scene.sun           = undefined;
-    viewer.scene.moon          = undefined;
-    viewer.scene.skyAtmosphere = undefined;
+    viewer.scene.skyBox              = undefined;
+    viewer.scene.sun                 = undefined;
+    viewer.scene.moon                = undefined;
+    viewer.scene.skyAtmosphere       = undefined;
+    viewer.scene.globe.show          = false;   // hide blue sphere; we use local 3D Tiles only
+    viewer.scene.logarithmicDepthBuffer = false; // improves depth precision for near-surface tiles
+    viewer.scene.pickTranslucentDepth  = true;  // allow pickPosition on translucent objects (splats)
     viewer.imageryLayers.removeAll();
+    // Prevent zoom-back: disable globe collision detection (not needed without globe)
+    viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 0.1;
     // Prevent default double-click zoom from interfering with area measurement
     viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
@@ -310,12 +396,22 @@
       horizontal: { cesium: Cesium.Color.fromCssColorString('#3fb950'), hex: '#3fb950', label: 'Horizontal' },
       vertical:   { cesium: Cesium.Color.fromCssColorString('#f0883e'), hex: '#f0883e', label: 'Vertical' },
       area:       { cesium: Cesium.Color.fromCssColorString('#a371f7'), hex: '#a371f7', label: 'Area' },
+      coords:     { cesium: Cesium.Color.fromCssColorString('#79c0ff'), hex: '#79c0ff', label: 'Coords' },
     };
 
     // ── State ──────────────────────────────────────────────────────────────────
-    let layers       = [];   // { id, dsId, name, color, tileset, panoEnts, visible, isSplat? }
+    let layers       = [];   // { id, dsId, name, color, tileset, panoEnts, visible }
     let allDatasets  = [];
     let colorIdx     = 0;
+
+    let gcpLayerId    = null;
+    let gcpPoints     = [];   // [{lx,ly,lz, E,N,H, residual}]
+    let gcpPickMode   = false;
+    let gcpLastResult = null; // {R, s, t, residuals, rms, modelMatrix}
+    let gcpEntities   = [];   // Cesium entities for GCP marker visualization
+    // Stored local→LV95 Helmert per layer (set on Apply & Save)
+    // Key: layerId, Value: {R: 3x3, s: number, t: [3]}
+    let layerHelmertLV95 = {};
 
     let activeTool   = null;
     let curPts       = [];
@@ -323,59 +419,14 @@
     let measurements = [];
     let allPanoEnts  = [];   // flat list for hit-testing
 
-    // ── Splat overlay state ────────────────────────────────────────────────────
-    let splatGS3DViewer  = null;   // GaussianSplats3D.Viewer
-    let splatThreeCamera = null;   // THREE.PerspectiveCamera (external)
-    let splatThreeRenderer = null; // THREE.WebGLRenderer (alpha:true)
-    let splatOverlayDiv  = null;   // div overlay inside #cesiumContainer
-
-    // Precompute the ENU matrix and its inverse (for camera sync)
-    const ENU_MAT     = Cesium.Transforms.eastNorthUpToFixedFrame(
-      Cesium.Cartesian3.fromDegrees(0, 0, 0)
-    );
-    const ENU_MAT_INV = Cesium.Matrix4.inverseTransformation(ENU_MAT, new Cesium.Matrix4());
-
-    // ── Splat camera sync (called every Cesium frame) ──────────────────────────
-    function syncSplatCamera() {
-      if (!splatThreeCamera || !splatGS3DViewer) return;
-      const cam = viewer.camera;
-
-      // ECEF → local ENU: transform position (full M^-1) and direction/up (rotation only)
-      const lp = Cesium.Matrix4.multiplyByPoint(ENU_MAT_INV, cam.position, new Cesium.Cartesian3());
-
-      const dirPt = new Cesium.Cartesian3(
-        cam.position.x + cam.direction.x,
-        cam.position.y + cam.direction.y,
-        cam.position.z + cam.direction.z
-      );
-      const ldp = Cesium.Matrix4.multiplyByPoint(ENU_MAT_INV, dirPt, new Cesium.Cartesian3());
-
-      const upPt = new Cesium.Cartesian3(
-        cam.position.x + cam.up.x,
-        cam.position.y + cam.up.y,
-        cam.position.z + cam.up.z
-      );
-      const lup = Cesium.Matrix4.multiplyByPoint(ENU_MAT_INV, upPt, new Cesium.Cartesian3());
-
-      splatThreeCamera.position.set(lp.x, lp.y, lp.z);
-      splatThreeCamera.up.set(lup.x - lp.x, lup.y - lp.y, lup.z - lp.z).normalize();
-      splatThreeCamera.lookAt(ldp.x, ldp.y, ldp.z);
-      splatThreeCamera.updateMatrixWorld(true);
-
-      const cvs = viewer.scene.canvas;
-      splatThreeCamera.aspect = cvs.clientWidth / cvs.clientHeight;
-      splatThreeCamera.fov    = Cesium.Math.toDegrees(cam.frustum?.fovy ?? (Math.PI / 3));
-      splatThreeCamera.updateProjectionMatrix();
-    }
-    viewer.scene.postRender.addEventListener(syncSplatCamera);
-
     // ── Measurement coordinate helpers (ENU local ↔ ECEF) ─────────────────────
     function getRefMatrix() {
-      return layers[0]?.tileset?.modelMatrix
-        ?? Cesium.Transforms.eastNorthUpToFixedFrame(Cesium.Cartesian3.fromDegrees(0, 0, 0));
+      const ts = layers[0]?.tileset;
+      if (!ts) return Cesium.Transforms.eastNorthUpToFixedFrame(Cesium.Cartesian3.fromDegrees(0, 0, 0));
+      return ts.modelMatrix || Cesium.Matrix4.IDENTITY;
     }
     function ecefToLocal(p) {
-      const inv = Cesium.Matrix4.inverseTransformation(getRefMatrix(), new Cesium.Matrix4());
+      const inv = Cesium.Matrix4.inverse(getRefMatrix(), new Cesium.Matrix4());
       return Cesium.Matrix4.multiplyByPoint(inv, p, new Cesium.Cartesian3());
     }
     function localToEcef(p) {
@@ -384,6 +435,39 @@
     function mid(a, b) { return Cesium.Cartesian3.midpoint(a, b, new Cesium.Cartesian3()); }
     function fmt(m)  { return m >= 1000 ? (m / 1000).toFixed(3) + ' km' : m.toFixed(3) + ' m'; }
     function fmtA(a) { return a >= 10000 ? (a / 10000).toFixed(3) + ' ha' : a.toFixed(2) + ' m²'; }
+
+    // ── Pick position with splat fallback ─────────────────────────────────────
+    // pickTranslucentDepth is enabled so pickPosition should work on splats.
+    // If it still fails, project the pick ray to a plane through the nearest
+    // tileset's bounding-sphere centre (perpendicular to the camera view).
+    // This preserves the clicked screen position at roughly the model's depth.
+    function pickPositionFallback(windowPos) {
+      // 1. Try scene.pickPosition (depth-buffer read — works on splats with
+      //    pickTranslucentDepth=true, point clouds, and meshes).
+      let ecef = viewer.scene.pickPosition(windowPos);
+      if (Cesium.defined(ecef)) return ecef;
+
+      // 2. Ray-plane fallback through nearest bounding sphere centre
+      const ray = viewer.camera.getPickRay(windowPos);
+      if (!ray) return undefined;
+      let bestCenter = null, bestDist = Infinity;
+      for (const l of layers) {
+        if (!l.tileset) continue;
+        const bs = l.tileset.boundingSphere;
+        if (!bs || bs.radius <= 0) continue;
+        const d = Cesium.Cartesian3.distance(ray.origin, bs.center);
+        if (d < bestDist) { bestDist = d; bestCenter = bs.center; }
+      }
+      if (!bestCenter) return undefined;
+      const toCenter = Cesium.Cartesian3.subtract(bestCenter, ray.origin, new Cesium.Cartesian3());
+      const t = Cesium.Cartesian3.dot(toCenter, ray.direction);
+      if (t <= 0) return undefined;
+      return Cesium.Cartesian3.add(
+        ray.origin,
+        Cesium.Cartesian3.multiplyByScalar(ray.direction, t, new Cesium.Cartesian3()),
+        new Cesium.Cartesian3()
+      );
+    }
 
     function horizontalArea(positions) {
       const pts = positions.map(p => ecefToLocal(p));
@@ -529,6 +613,62 @@
       commit('area', fmtA(area));
     }
 
+    // ── Coordinate inspector ─────────────────────────────────────────────────
+    function doCoords(ecef) {
+      const local = ecefToLocal(ecef);
+
+      // If local coords are LV95, use them directly — no conversion needed
+      let E = local.x, N = local.y, H = local.z;
+      const inSwiss = isLv95(E, N);
+
+      // If not LV95, try Helmert local→LV95
+      if (!inSwiss) {
+        for (const helm of Object.values(layerHelmertLV95)) {
+          const { R, s, t } = helm;
+          E = s*(R[0][0]*local.x + R[0][1]*local.y + R[0][2]*local.z) + t[0];
+          N = s*(R[1][0]*local.x + R[1][1]*local.y + R[1][2]*local.z) + t[1];
+          H = s*(R[2][0]*local.x + R[2][1]*local.y + R[2][2]*local.z) + t[2];
+          if (isLv95(E, N)) break;
+        }
+      }
+
+      let info, short;
+      if (isLv95(E, N)) {
+        info  = `LV95:   ${E.toFixed(2)},  ${N.toFixed(2)},  ${H.toFixed(2)} m`;
+        short = `E ${E.toFixed(2)}, N ${N.toFixed(2)}, H ${H.toFixed(2)}`;
+      } else {
+        info  = `X ${local.x.toFixed(3)},  Y ${local.y.toFixed(3)},  Z ${local.z.toFixed(3)}`;
+        short = `X ${local.x.toFixed(3)}, Y ${local.y.toFixed(3)}, Z ${local.z.toFixed(3)}`;
+      }
+
+      // Show marker + label in scene
+      const coordEnt = viewer.entities.add({
+        position: ecef,
+        point: {
+          pixelSize: 10,
+          color: Cesium.Color.fromCssColorString('#79c0ff'),
+          outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: info,
+          font: '12px monospace',
+          fillColor: Cesium.Color.WHITE,
+          backgroundColor: Cesium.Color.fromCssColorString('rgba(22,27,34,0.92)'),
+          showBackground: true,
+          backgroundPadding: new Cesium.Cartesian2(8, 5),
+          outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -14),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+
+      measurements.push({ id: Date.now(), tool: 'coords', display: short, entities: [coordEnt] });
+      renderMeasureList();
+    }
+
     // ── Tool management ────────────────────────────────────────────────────────
     function cancelCurrent() {
       curEnts.forEach(e => viewer.entities.remove(e));
@@ -558,6 +698,7 @@
       horizontal: ['Click first point', 'Click second point'],
       vertical:   ['Click first point', 'Click second point'],
       area:       ['Click first point', 'Keep clicking — right-click or double-click to finish'],
+      coords:     ['Click a centroid to inspect coordinates'],
     };
     function setStatus() {
       const bar = document.getElementById('status-bar');
@@ -647,10 +788,507 @@
       });
     }
 
+    // ── Georeferencing helpers ─────────────────────────────────────────────────
+
+    // Swiss LV95 (EPSG:2056) → WGS84 decimal degrees + ellipsoidal height
+    // Swisstopo approximate formulas (Reframe tech. report, ~1 m accuracy)
+    // y' = (E − 2600000)/1e6,  x' = (N − 1200000)/1e6
+    function lv95ToWgs84(E, N, H) {
+      const y = (E - 2600000) / 1e6;   // y' (easting aux)
+      const x = (N - 1200000) / 1e6;   // x' (northing aux)
+      const lon = (2.6779094 + 4.728982*y + 0.791484*y*x + 0.1306*y*x*x - 0.0436*y*y*y) * 100/36;
+      const lat = (16.9023892 + 3.238272*x - 0.270978*y*y - 0.002528*x*x - 0.0447*y*y*x - 0.0140*x*x*x) * 100/36;
+      const h   = H + 49.55 - 12.60*y - 22.64*x;
+      return [lon, lat, h];
+    }
+
+    // ECEF → WGS84 geodetic (iterative)
+    function ecefToWgs84(x, y, z) {
+      const a = 6378137.0, f = 1/298.257223563, e2 = 2*f - f*f;
+      const lon = Math.atan2(y, x) * 180/Math.PI;
+      const p = Math.sqrt(x*x + y*y);
+      let lat = Math.atan2(z, p*(1-e2));
+      for (let i = 0; i < 10; i++) {
+        const s = Math.sin(lat), N = a / Math.sqrt(1 - e2*s*s);
+        lat = Math.atan2(z + e2*N*s, p);
+      }
+      const s = Math.sin(lat), N = a / Math.sqrt(1 - e2*s*s);
+      const h = p / Math.cos(lat) - N;
+      return [lon, lat * 180/Math.PI, h];
+    }
+
+    // WGS84 geodetic → Swiss LV95 (iterative inverse of lv95ToWgs84)
+    // Guarantees exact round-trip: wgs84ToLv95(lv95ToWgs84(E,N,H)) ≡ (E,N,H)
+    function wgs84ToLv95(lon, lat, h) {
+      // Initial guess via swisstopo approximate inverse
+      const phi = (lat * 3600 - 169028.66) / 10000;
+      const lam = (lon * 3600 -  26782.5)  / 10000;
+      let E = 2600072.37 + 211455.93*lam - 10938.51*lam*phi
+              - 0.36*lam*phi*phi - 44.54*lam*lam*lam;
+      let N = 1200147.07 + 308807.95*phi + 3745.25*lam*lam
+              + 76.63*phi*phi - 194.56*lam*lam*phi + 119.79*phi*phi*phi;
+      let H = h - 49.55 + 12.60*lam + 22.64*phi;
+      // Refine by Newton iteration on lv95ToWgs84
+      for (let i = 0; i < 10; i++) {
+        const [lon2, lat2, h2] = lv95ToWgs84(E, N, H);
+        const dlon = lon - lon2, dlat = lat - lat2, dh = h - h2;
+        if (Math.abs(dlon) < 1e-12 && Math.abs(dlat) < 1e-12 && Math.abs(dh) < 1e-6) break;
+        E += dlon / (4.728982 * 100/36) * 1e6;
+        N += dlat / (3.238272 * 100/36) * 1e6;
+        H += dh;
+      }
+      return [E, N, H];
+    }
+
+    // WGS84 geodetic → ECEF (metres)
+    function wgs84ToEcef(lon, lat, h) {
+      const a  = 6378137.0, f = 1/298.257223563, e2 = 2*f - f*f;
+      const lr = lon * Math.PI/180, pr = lat * Math.PI/180;
+      const Nv = a / Math.sqrt(1 - e2 * Math.sin(pr)**2);
+      return [(Nv+h)*Math.cos(pr)*Math.cos(lr), (Nv+h)*Math.cos(pr)*Math.sin(lr), (Nv*(1-e2)+h)*Math.sin(pr)];
+    }
+
+    // True LV95 bounds: E ∈ [2,484,000 … 2,834,000], N ∈ [1,074,000 … 1,299,000]
+    function isLv95(x, y) {
+      return x > 2484000 && x < 2834000 && y > 1074000 && y < 1299000;
+    }
+
+    // Build a modelMatrix that maps absolute LV95 (E, N, H) → ECEF.
+    // ENU axes are anchored at the centroid, then the input is shifted by
+    // -centroid so absolute LV95 coords land in the ENU offset frame.
+    function lv95ModelMatrix(E, N, H) {
+      const [lon, lat, h] = lv95ToWgs84(E, N, H);
+      const ecef = Cesium.Cartesian3.fromDegrees(lon, lat, h);
+      const enu  = Cesium.Transforms.eastNorthUpToFixedFrame(ecef);
+      const shift = Cesium.Matrix4.fromTranslation(
+        new Cesium.Cartesian3(-E, -N, -H));
+      return Cesium.Matrix4.multiply(enu, shift, new Cesium.Matrix4());
+    }
+
+    // 3×3 matrix helpers
+    function mm3(A, B) {
+      const R = [[0,0,0],[0,0,0],[0,0,0]];
+      for (let i=0;i<3;i++) for (let j=0;j<3;j++) for (let k=0;k<3;k++) R[i][j]+=A[i][k]*B[k][j];
+      return R;
+    }
+    function mt3(M) { return [[M[0][0],M[1][0],M[2][0]],[M[0][1],M[1][1],M[2][1]],[M[0][2],M[1][2],M[2][2]]]; }
+    function mv3(M, v) { return [0,1,2].map(i=>[0,1,2].reduce((s,k)=>s+M[i][k]*v[k],0)); }
+    function det3(M) {
+      return M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])
+            -M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])
+            +M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
+    }
+
+    // 3×3 SVD via Jacobi eigendecomposition of A^T A
+    // Returns {U, S:[s0,s1,s2], V} with A = U * diag(S) * V^T, singular values descending
+    function svd3(A) {
+      function jacobiSym(M) {
+        let S = M.map(r=>[...r]), V = [[1,0,0],[0,1,0],[0,0,1]];
+        for (let iter=0;iter<100;iter++) {
+          let mx=0, p=0, q=1;
+          for (let i=0;i<3;i++) for (let j=i+1;j<3;j++)
+            if (Math.abs(S[i][j])>mx){ mx=Math.abs(S[i][j]); p=i; q=j; }
+          if (mx < 1e-14) break;
+          const th=(S[q][q]-S[p][p])/(2*S[p][q]);
+          const t=Math.sign(th||1)/(Math.abs(th)+Math.sqrt(1+th*th));
+          const c=1/Math.sqrt(1+t*t), s=t*c;
+          const nS=S.map(r=>[...r]), nV=V.map(r=>[...r]);
+          nS[p][p]=c*c*S[p][p]-2*s*c*S[p][q]+s*s*S[q][q];
+          nS[q][q]=s*s*S[p][p]+2*s*c*S[p][q]+c*c*S[q][q];
+          nS[p][q]=nS[q][p]=0;
+          for (let i=0;i<3;i++) if(i!==p&&i!==q){
+            nS[i][p]=nS[p][i]=c*S[i][p]-s*S[i][q];
+            nS[i][q]=nS[q][i]=s*S[i][p]+c*S[i][q];
+          }
+          for (let i=0;i<3;i++){
+            nV[i][p]=c*V[i][p]-s*V[i][q];
+            nV[i][q]=s*V[i][p]+c*V[i][q];
+          }
+          S=nS; V=nV;
+        }
+        const idx=[0,1,2].sort((a,b)=>S[b][b]-S[a][a]);
+        const evals=idx.map(i=>S[i][i]);
+        const newV=[[0,0,0],[0,0,0],[0,0,0]];
+        for(let j=0;j<3;j++) for(let i=0;i<3;i++) newV[i][j]=V[i][idx[j]];
+        return {evals, V:newV};
+      }
+      const ATA = mm3(mt3(A), A);
+      const {evals, V} = jacobiSym(ATA);
+      const S = evals.map(e=>Math.sqrt(Math.max(0, e)));
+      const AV = mm3(A, V);
+      const U = [[0,0,0],[0,0,0],[0,0,0]];
+      for (let j=0;j<3;j++) for (let i=0;i<3;i++) U[i][j] = S[j]>1e-10 ? AV[i][j]/S[j] : 0;
+      return {U, S, V};
+    }
+
+    // 3D Helmert transformation (Horn/Kabsch SVD approach)
+    // src, dst: arrays of [x,y,z] — at least 4 pairs; useScale: bool
+    // Returns {R, s, t, residuals, rms}
+    function solveHelmert(src, dst, useScale) {
+      const n = src.length;
+      const pBar = [0,1,2].map(i=>src.reduce((a,p)=>a+p[i],0)/n);
+      const qBar = [0,1,2].map(i=>dst.reduce((a,p)=>a+p[i],0)/n);
+      const pc = src.map(p=>[p[0]-pBar[0],p[1]-pBar[1],p[2]-pBar[2]]);
+      const qc = dst.map(p=>[p[0]-qBar[0],p[1]-qBar[1],p[2]-qBar[2]]);
+      const H = [[0,0,0],[0,0,0],[0,0,0]];
+      for (let i=0;i<n;i++) for (let r=0;r<3;r++) for (let c=0;c<3;c++) H[r][c]+=pc[i][r]*qc[i][c];
+      const {U, S, V} = svd3(H);
+      const d = det3(mm3(V, mt3(U)));
+      const D = [[1,0,0],[0,1,0],[0,0,d<0?-1:1]];
+      const R = mm3(V, mm3(D, mt3(U)));
+      const srcVar = pc.reduce((a,p)=>a+p[0]**2+p[1]**2+p[2]**2, 0);
+      const s = (useScale && srcVar > 0) ? (S[0]+S[1]+S[2]) / srcVar : 1.0;
+      const Rp = mv3(R, pBar);
+      const t = [qBar[0]-s*Rp[0], qBar[1]-s*Rp[1], qBar[2]-s*Rp[2]];
+      const residuals = src.map((p,i)=>{
+        const q = mv3(R, p);
+        return Math.sqrt([0,1,2].reduce((a,k)=>{const d=dst[i][k]-(s*q[k]+t[k]);return a+d*d;},0));
+      });
+      const rms = Math.sqrt(residuals.reduce((a,r)=>a+r*r,0)/n);
+      return {R, s, t, residuals, rms};
+    }
+
+    // ── GCP panel functions ────────────────────────────────────────────────────
+
+    function gcpOpen(layerId) {
+      gcpLayerId    = layerId;
+      gcpPoints     = [];
+      gcpLastResult = null;
+      document.getElementById('gcpStats').textContent = '';
+      document.getElementById('gcpApplyBtn').disabled = true;
+      document.getElementById('gcpApplyBtn').style.opacity = '0.5';
+      document.getElementById('gcpComputeBtn').disabled = true;
+      document.getElementById('gcpComputeBtn').style.opacity = '0.5';
+      // Show reset button only if this dataset already has a saved georef
+      const layer = layers.find(l => l.id === layerId);
+      const ds = allDatasets.find(d => d.id === layer?.dsId);
+      const resetBtn = document.getElementById('gcpResetBtn');
+      resetBtn.style.display = ds?.modelMatrix ? 'inline-block' : 'none';
+      gcpRender();
+      document.getElementById('gcpPanel').style.display = 'flex';
+    }
+
+    function gcpClose() {
+      if (gcpPickMode) gcpCancelPick();
+      gcpClearMarkers();
+      document.getElementById('gcpPanel').style.display = 'none';
+    }
+
+    async function gcpResetGeoref() {
+      if (!confirm('Remove saved georeferencing? The layer will revert to its default position.')) return;
+      const layer = layers.find(l => l.id === gcpLayerId);
+      if (!layer) return;
+      const ds = allDatasets.find(d => d.id === layer.dsId);
+
+      // Remove modelMatrix and Helmert from server
+      delete ds.modelMatrix;
+      delete ds.helmertLV95;
+      delete layerHelmertLV95[layer.id];
+      await fetch(`/api/datasets/${ds.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelMatrix: null, helmertLV95: null }),
+      });
+
+      // Reset tileset to default placement
+      if (layer.tileset) {
+        const c = layer.tileset.boundingSphere.center;
+        if (Cesium.Cartesian3.magnitude(c) < 1000) {
+          layer.tileset.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(
+            Cesium.Cartesian3.fromDegrees(0, 0, 0)
+          );
+        } else if (isLv95(c.x, c.y)) {
+          layer.tileset.modelMatrix = lv95ModelMatrix(c.x, c.y, c.z);
+        } else {
+          layer.tileset.modelMatrix = Cesium.Matrix4.IDENTITY.clone();
+        }
+        flyToLayer(layer);
+      }
+
+      gcpClearMarkers();
+      document.getElementById('gcpResetBtn').style.display = 'none';
+      document.getElementById('gcpStats').textContent = 'Georeferencing removed.';
+    }
+
+    function gcpCancelPick() {
+      gcpPickMode = false;
+      document.getElementById('gcpPickBanner').style.display = 'none';
+      document.getElementById('gcpPanel').style.display = 'flex';
+      viewer.canvas.style.cursor = '';
+    }
+
+    function gcpAddRow() {
+      document.getElementById('gcpPanel').style.display = 'none';
+      document.getElementById('gcpPickBanner').style.display = 'flex';
+      viewer.canvas.style.cursor = 'crosshair';
+      gcpPickMode = true;
+    }
+
+    function gcpHandlePick(windowPos) {
+      gcpPickMode = false;
+      document.getElementById('gcpPickBanner').style.display = 'none';
+      viewer.canvas.style.cursor = '';
+
+      const ecef = pickPositionFallback(windowPos);
+      if (!Cesium.defined(ecef)) {
+        alert('Could not pick 3D position — click directly on the model surface.');
+        document.getElementById('gcpPanel').style.display = 'flex';
+        return;
+      }
+
+      const layer = layers.find(l => l.id === gcpLayerId);
+      const ts    = layer?.tileset;
+      const mm    = ts?.modelMatrix || Cesium.Matrix4.IDENTITY;
+      const invMM = Cesium.Matrix4.inverse(mm, new Cesium.Matrix4());
+      const local = Cesium.Matrix4.multiplyByPoint(invMM, ecef, new Cesium.Cartesian3());
+
+      gcpPoints.push({ lx: local.x, ly: local.y, lz: local.z, E: '', N: '', H: '', residual: null });
+      document.getElementById('gcpPanel').style.display = 'flex';
+      gcpRender();
+      gcpSyncMarkers();
+    }
+
+    function gcpDeleteRow(i) {
+      gcpPoints.splice(i, 1);
+      gcpLastResult = null;
+      document.getElementById('gcpApplyBtn').disabled = true;
+      document.getElementById('gcpApplyBtn').style.opacity = '0.5';
+      document.getElementById('gcpStats').textContent = '';
+      gcpUpdateCompute();
+      gcpRender();
+      gcpSyncMarkers();
+    }
+
+    function gcpImportFile(input) {
+      const file = input.files[0];
+      if (!file) return;
+      input.value = '';
+      const reader = new FileReader();
+      reader.onload = () => {
+        const lines = reader.result.trim().split(/\r?\n/).filter(l => l.trim());
+        const coords = [];
+        for (const line of lines) {
+          const parts = line.split(/[,;\t\s]+/).map(Number);
+          if (parts.length >= 3 && parts.every(v => isFinite(v))) {
+            coords.push({ E: parts[0], N: parts[1], H: parts[2] });
+          }
+        }
+        if (coords.length === 0) { alert('No valid E,N,H lines found in file.'); return; }
+        // Fill existing picked points that have empty coordinates, then append remainder
+        let ci = 0;
+        for (const p of gcpPoints) {
+          if (ci >= coords.length) break;
+          if (p.E === '' && p.N === '' && p.H === '') {
+            p.E = coords[ci].E; p.N = coords[ci].N; p.H = coords[ci].H;
+            ci++;
+          }
+        }
+        // Any leftover coords → add as new rows (local coords blank, to be picked later)
+        for (; ci < coords.length; ci++) {
+          gcpPoints.push({ lx: 0, ly: 0, lz: 0, E: coords[ci].E, N: coords[ci].N, H: coords[ci].H, residual: null });
+        }
+        gcpLastResult = null;
+        document.getElementById('gcpApplyBtn').disabled = true;
+        document.getElementById('gcpApplyBtn').style.opacity = '0.5';
+        document.getElementById('gcpStats').textContent = `Imported ${coords.length} point(s) from ${file.name}`;
+        gcpUpdateCompute();
+        gcpRender();
+        gcpSyncMarkers();
+      };
+      reader.readAsText(file);
+    }
+
+    // ── GCP 3D markers ────────────────────────────────────────────────────────
+    function gcpClearMarkers() {
+      gcpEntities.forEach(e => viewer.entities.remove(e));
+      gcpEntities = [];
+    }
+
+    function gcpSyncMarkers() {
+      gcpClearMarkers();
+      const layer = layers.find(l => l.id === gcpLayerId);
+      const ts = layer?.tileset;
+      const mm = (ts && ts.modelMatrix) ? ts.modelMatrix : Cesium.Matrix4.IDENTITY.clone();
+
+      gcpPoints.forEach((p, i) => {
+        const local = new Cesium.Cartesian3(p.lx, p.ly, p.lz);
+        const ecef  = Cesium.Matrix4.multiplyByPoint(mm, local, new Cesium.Cartesian3());
+        const ent = viewer.entities.add({
+          position: ecef,
+          point: {
+            pixelSize: 10,
+            color: Cesium.Color.YELLOW,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          label: {
+            text: String(i + 1),
+            font: 'bold 14px monospace',
+            fillColor: Cesium.Color.YELLOW,
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 3,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            pixelOffset: new Cesium.Cartesian2(0, -10),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+        gcpEntities.push(ent);
+      });
+    }
+
+    function gcpRender() {
+      const tbody = document.getElementById('gcpRows');
+      if (!tbody) return;
+      tbody.innerHTML = gcpPoints.length === 0
+        ? `<tr><td colspan="9" style="padding:14px 6px; color:#555; text-align:center;">
+             No points yet — click ＋ Pick Point</td></tr>`
+        : gcpPoints.map((p, i) => {
+            const res = p.residual !== null ? p.residual.toFixed(3) : '—';
+            const rc  = p.residual !== null
+              ? (p.residual < 0.5 ? '#3fb950' : p.residual < 2.0 ? '#e3b341' : '#f85149')
+              : '#555';
+            const inp = (val, ph, field) =>
+              `<input type="number" value="${val}" placeholder="${ph}"
+               style="width:90px;background:#0d1117;color:#e0e0e0;border:1px solid #30363d;
+                      border-radius:3px;font-size:11px;padding:2px 4px;"
+               oninput="gcpPoints[${i}].${field}=this.value;gcpUpdateCompute()">`;
+            const ro = (val) =>
+              `<span style="font-family:monospace;font-size:11px;color:#79c0ff;
+                            display:inline-block;width:80px;text-align:right;">${val}</span>`;
+            return `<tr style="border-bottom:1px solid #21262d;">
+              <td style="padding:5px 6px;color:#8b949e">${i+1}</td>
+              <td style="padding:3px 4px">${ro(p.lx.toFixed(3))}</td>
+              <td style="padding:3px 4px">${ro(p.ly.toFixed(3))}</td>
+              <td style="padding:3px 4px">${ro(p.lz.toFixed(3))}</td>
+              <td style="padding:3px 4px">${inp(p.E,'e.g. 2614000','E')}</td>
+              <td style="padding:3px 4px">${inp(p.N,'e.g. 1268000','N')}</td>
+              <td style="padding:3px 4px">${inp(p.H,'e.g. 560.0','H')}</td>
+              <td style="padding:5px 6px;font-family:monospace;color:${rc}">${res}</td>
+              <td style="padding:3px 4px"><button onclick="gcpDeleteRow(${i})"
+                style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:13px;
+                       padding:2px 4px;" title="Remove point">✕</button></td>
+            </tr>`;
+          }).join('');
+    }
+
+    function gcpUpdateCompute() {
+      const n = gcpPoints.filter(p => p.E !== '' && p.N !== '' && p.H !== '').length;
+      const ok = n >= 4;
+      document.getElementById('gcpComputeBtn').disabled = !ok;
+      document.getElementById('gcpComputeBtn').style.opacity = ok ? '1' : '0.5';
+    }
+
+    async function gcpCompute() {
+      const filled = gcpPoints.filter(p => p.E !== '' && p.N !== '' && p.H !== '');
+      if (filled.length < 4) { alert('Need at least 4 fully-specified point pairs.'); return; }
+
+      const src = filled.map(p => [p.lx, p.ly, p.lz]);
+      const dst_lv95 = filled.map(p => [parseFloat(p.E), parseFloat(p.N), parseFloat(p.H)]);
+      const useScale = document.getElementById('gcpUseScale').checked;
+
+      document.getElementById('gcpStats').textContent = 'Computing…';
+      try {
+        const resp = await fetch('/api/helmert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ src, dst_lv95: dst_lv95, useScale }),
+        });
+        if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
+        gcpLastResult = await resp.json();
+        console.log('[helmert] LV95 verification:', gcpLastResult.verification);
+        console.log('[helmert] E2E (modelMatrix→ECEF→LV95):', gcpLastResult.e2e);
+        console.log('[helmert] RMS:', gcpLastResult.rms);
+      } catch (e) {
+        alert('Helmert computation failed: ' + e.message);
+        document.getElementById('gcpStats').textContent = '';
+        return;
+      }
+
+      let fi = 0;
+      gcpPoints.forEach(p => {
+        if (p.E !== '' && p.N !== '' && p.H !== '') {
+          p.residual = gcpLastResult.residuals[fi++];
+        }
+      });
+
+      const rms  = gcpLastResult.rms;
+      const maxR = Math.max(...gcpLastResult.residuals);
+      const minR = Math.min(...gcpLastResult.residuals);
+      const col  = rms < 0.5 ? '#3fb950' : rms < 2.0 ? '#e3b341' : '#f85149';
+      document.getElementById('gcpApplyBtn').disabled = false;
+      document.getElementById('gcpApplyBtn').style.opacity = '1';
+      document.getElementById('gcpStats').innerHTML =
+        `RMS: <b style="color:${col}">${rms.toFixed(3)} m</b>` +
+        ` &nbsp;|&nbsp; Min: ${minR.toFixed(3)} m` +
+        ` &nbsp;|&nbsp; Max: ${maxR.toFixed(3)} m` +
+        ` &nbsp;|&nbsp; Scale: ${gcpLastResult.s.toFixed(8)}` +
+        ` &nbsp;|&nbsp; n = ${filled.length}`;
+      gcpRender();
+    }
+
+    async function gcpApplySave() {
+      if (!gcpLastResult) return;
+      const { R, s, t } = gcpLastResult;
+
+      // Build modelMatrix client-side:
+      // 1. M_helmert maps local → LV95
+      // 2. M_lv95 maps LV95 → ECEF (using the proven lv95ModelMatrix)
+      // 3. Final = M_lv95 * M_helmert
+
+      // Helmert as 4×4 (column-major): lv95 = s*R*local + t
+      const mH = Cesium.Matrix4.fromArray([
+        s*R[0][0], s*R[1][0], s*R[2][0], 0,
+        s*R[0][1], s*R[1][1], s*R[2][1], 0,
+        s*R[0][2], s*R[1][2], s*R[2][2], 0,
+        t[0],      t[1],      t[2],      1,
+      ]);
+
+      // LV95 centroid of target points
+      const filled = gcpPoints.filter(p => p.E !== '' && p.N !== '' && p.H !== '');
+      let cE = 0, cN = 0, cH = 0;
+      filled.forEach(p => { cE += parseFloat(p.E); cN += parseFloat(p.N); cH += parseFloat(p.H); });
+      cE /= filled.length; cN /= filled.length; cH /= filled.length;
+
+      const mL = lv95ModelMatrix(cE, cN, cH);
+      const m4 = Cesium.Matrix4.multiply(mL, mH, new Cesium.Matrix4());
+
+      // Verify: transform first local point → ECEF → LV95, log result
+      if (filled.length > 0) {
+        const p0 = filled[0];
+        const localPt = new Cesium.Cartesian3(p0.lx, p0.ly, p0.lz);
+        const ecefPt = Cesium.Matrix4.multiplyByPoint(m4, localPt, new Cesium.Cartesian3());
+        const [lon, lat, hWgs] = ecefToWgs84(ecefPt.x, ecefPt.y, ecefPt.z);
+        const [eOut, nOut, hOut] = wgs84ToLv95(lon, lat, hWgs);
+        console.log(`[helmert] verify pt0: target LV95(${p0.E}, ${p0.N}, ${p0.H}) → computed LV95(${eOut.toFixed(3)}, ${nOut.toFixed(3)}, ${hOut.toFixed(3)}) Δ(${(eOut-p0.E).toFixed(3)}, ${(nOut-p0.N).toFixed(3)}, ${(hOut-p0.H).toFixed(3)})`);
+      }
+
+      const col = Cesium.Matrix4.toArray(m4, []);
+
+      const layer = layers.find(l => l.id === gcpLayerId);
+      if (layer?.tileset) layer.tileset.modelMatrix = m4;
+
+      // Store the local→LV95 Helmert for direct coordinate readout
+      layerHelmertLV95[gcpLayerId] = { R, s, t };
+
+      const ds = allDatasets.find(d => d.id === layer.dsId);
+      ds.modelMatrix = col;
+      ds.helmertLV95 = { R, s, t, center: [cE, cN, cH] };
+
+      await fetch(`/api/datasets/${ds.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelMatrix: col, helmertLV95: ds.helmertLV95 }),
+      });
+
+      flyToLayer(layer);
+      alert(`Georeferencing saved.\nRMS = ${gcpLastResult.rms.toFixed(3)} m`);
+      gcpClose();
+    }
+
     // ── Layer management ───────────────────────────────────────────────────────
     async function addLayer(ds) {
-      if (ds.type === 'splat') { await addSplatLayer(ds); return; }
-
       const color = LAYER_COLORS[colorIdx++ % LAYER_COLORS.length];
       const layer = { id: ds.id + '_' + Date.now(), dsId: ds.id, name: ds.name,
                       color, tileset: null, panoEnts: [], visible: true };
@@ -662,103 +1300,51 @@
         const ts  = await Cesium.Cesium3DTileset.fromUrl(url);
         viewer.scene.primitives.add(ts);
 
-        if (Cesium.Cartesian3.magnitude(ts.boundingSphere.center) < 1000) {
+        if (ds.helmertLV95) {
+          // Rebuild modelMatrix from Helmert: M_lv95 * M_helmert
+          const { R, s, t, center } = ds.helmertLV95;
+          const mH = Cesium.Matrix4.fromArray([
+            s*R[0][0], s*R[1][0], s*R[2][0], 0,
+            s*R[0][1], s*R[1][1], s*R[2][1], 0,
+            s*R[0][2], s*R[1][2], s*R[2][2], 0,
+            t[0],      t[1],      t[2],      1,
+          ]);
+          const c = center || t;  // fallback to t if center not stored
+          const mL = lv95ModelMatrix(c[0], c[1], c[2]);
+          ts.modelMatrix = Cesium.Matrix4.multiply(mL, mH, new Cesium.Matrix4());
+          layerHelmertLV95[layer.id] = ds.helmertLV95;
+        } else if (ds.modelMatrix) {
+          ts.modelMatrix = Cesium.Matrix4.fromArray(ds.modelMatrix);
+        } else if (Cesium.Cartesian3.magnitude(ts.boundingSphere.center) < 1000) {
           ts.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(
             Cesium.Cartesian3.fromDegrees(0, 0, 0)
           );
+        } else {
+          const c = ts.boundingSphere.center;
+          if (isLv95(c.x, c.y)) {
+            // Bounding sphere centre is in Swiss LV95 — auto-place in Switzerland
+            ts.modelMatrix = lv95ModelMatrix(c.x, c.y, c.z);
+          }
         }
 
         layer.tileset = ts;
+
+        // Debug: log tile content loading errors
+        ts.tileFailed.addEventListener((err) => {
+          console.error('[splat] tile failed:', err.url, err.message,
+            err.error?.stack ?? err.error ?? '');
+        });
+        ts.tileLoad.addEventListener((tile) => {
+          console.log('[splat] tile loaded:', tile.contentUrl || tile.content?.url,
+            'primitives:', tile.content?._model?._sceneGraph?.components?.scenes?.length);
+        });
+
         addPanoMarkers(layer, ds);
         renderLayerList();
         flyToLayer(layer);
       } catch (err) {
         console.error('Layer load error:', err);
-        layers = layers.filter(l => l.id !== layer.id);
-        renderLayerList();
-      }
-    }
-
-    // ── Splat layer via GaussianSplats3D overlay ───────────────────────────────
-    async function addSplatLayer(ds) {
-      // Dispose any existing splat layer
-      if (splatGS3DViewer) {
-        try { splatGS3DViewer.dispose(); } catch(e) {}
-        splatGS3DViewer = null; splatThreeCamera = null; splatThreeRenderer = null;
-        if (splatOverlayDiv) { splatOverlayDiv.remove(); splatOverlayDiv = null; }
-        layers = layers.filter(l => !l.isSplat);
-      }
-
-      const color = LAYER_COLORS[colorIdx++ % LAYER_COLORS.length];
-      const layer = { id: ds.id + '_' + Date.now(), dsId: ds.id, name: ds.name,
-                      color, tileset: null, panoEnts: [], visible: true, isSplat: true };
-      layers.push(layer);
-      renderLayerList();
-
-      // Overlay div (covers Cesium canvas, no pointer events)
-      splatOverlayDiv = document.createElement('div');
-      splatOverlayDiv.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;overflow:hidden;';
-      document.getElementById('cesiumContainer').appendChild(splatOverlayDiv);
-
-      // Alpha-capable Three.js renderer
-      const ctnr = document.getElementById('cesiumContainer');
-      splatThreeRenderer = new THREE.WebGLRenderer({ antialias: false, precision: 'highp', alpha: true });
-      splatThreeRenderer.setPixelRatio(window.devicePixelRatio);
-      splatThreeRenderer.setSize(ctnr.clientWidth, ctnr.clientHeight);
-      splatThreeRenderer.setClearColor(0x000000, 0);
-      splatThreeRenderer.domElement.style.cssText = 'position:absolute;top:0;left:0;';
-      splatOverlayDiv.appendChild(splatThreeRenderer.domElement);
-
-      // Sync renderer size when container resizes
-      new ResizeObserver(() => {
-        if (!splatThreeRenderer) return;
-        const c = document.getElementById('cesiumContainer');
-        splatThreeRenderer.setSize(c.clientWidth, c.clientHeight);
-      }).observe(ctnr);
-
-      // External camera — driven by syncSplatCamera() every frame
-      splatThreeCamera = new THREE.PerspectiveCamera(60, ctnr.clientWidth / ctnr.clientHeight, 0.1, 100000);
-
-      // GaussianSplats3D viewer with external renderer + camera
-      splatGS3DViewer = new GaussianSplats3D.Viewer({
-        rootElement: splatOverlayDiv,
-        renderer: splatThreeRenderer,
-        camera: splatThreeCamera,
-        sharedMemoryForWorkers: false,
-        dynamicScene: false,
-        gpuAcceleratedSort: true,
-        halfPrecisionCovariancesOnGPU: true,
-        useBuiltInControls: false,
-        selfDrivenMode: true,
-      });
-
-      try {
-        await splatGS3DViewer.addSplatScene(ds.path);
-        splatGS3DViewer.start();
-        layer.gs3dViewer = splatGS3DViewer;
-        renderLayerList();
-
-        // Fly Cesium camera to the splat bounding sphere
-        setTimeout(() => {
-          const bs = splatGS3DViewer?.splatMesh?.boundingSphere;
-          if (!bs) return;
-          const ecefCenter = Cesium.Matrix4.multiplyByPoint(
-            ENU_MAT, new Cesium.Cartesian3(bs.center.x, bs.center.y, bs.center.z),
-            new Cesium.Cartesian3()
-          );
-          viewer.camera.flyToBoundingSphere(
-            new Cesium.BoundingSphere(ecefCenter, bs.radius),
-            {
-              offset: new Cesium.HeadingPitchRange(
-                Cesium.Math.toRadians(45), Cesium.Math.toRadians(-30), bs.radius * 6
-              ),
-              duration: 1.5,
-            }
-          );
-        }, 1200);
-      } catch (err) {
-        console.error('Splat load error:', err);
-        layers = layers.filter(l => l.id !== layer.id);
+        layer.error = err.message || 'Failed to load';
         renderLayerList();
       }
     }
@@ -767,18 +1353,11 @@
       const idx = layers.findIndex(l => l.id === layerId);
       if (idx < 0) return;
       const layer = layers[idx];
-
-      if (layer.isSplat) {
-        if (splatGS3DViewer) { try { splatGS3DViewer.dispose(); } catch(e) {} splatGS3DViewer = null; }
-        splatThreeCamera = null; splatThreeRenderer = null;
-        if (splatOverlayDiv) { splatOverlayDiv.remove(); splatOverlayDiv = null; }
-      } else {
-        if (layer.tileset) viewer.scene.primitives.remove(layer.tileset);
-        layer.panoEnts.forEach(e => {
-          viewer.entities.remove(e);
-          allPanoEnts = allPanoEnts.filter(x => x !== e);
-        });
-      }
+      if (layer.tileset) viewer.scene.primitives.remove(layer.tileset);
+      layer.panoEnts.forEach(e => {
+        viewer.entities.remove(e);
+        allPanoEnts = allPanoEnts.filter(x => x !== e);
+      });
       layers.splice(idx, 1);
       renderLayerList();
     }
@@ -787,30 +1366,11 @@
       const layer = layers.find(l => l.id === layerId);
       if (!layer) return;
       layer.visible = visible;
-      if (layer.isSplat) {
-        if (splatOverlayDiv) splatOverlayDiv.style.display = visible ? '' : 'none';
-      } else {
-        if (layer.tileset) layer.tileset.show = visible;
-        layer.panoEnts.forEach(e => { e.show = visible; });
-      }
+      if (layer.tileset) layer.tileset.show = visible;
+      layer.panoEnts.forEach(e => { e.show = visible; });
     }
 
     function flyToLayer(layer) {
-      if (layer?.isSplat) {
-        const bs = splatGS3DViewer?.splatMesh?.boundingSphere;
-        if (!bs) return;
-        const ecefCenter = Cesium.Matrix4.multiplyByPoint(
-          ENU_MAT, new Cesium.Cartesian3(bs.center.x, bs.center.y, bs.center.z),
-          new Cesium.Cartesian3()
-        );
-        viewer.camera.flyToBoundingSphere(
-          new Cesium.BoundingSphere(ecefCenter, bs.radius),
-          { offset: new Cesium.HeadingPitchRange(
-              Cesium.Math.toRadians(45), Cesium.Math.toRadians(-30), bs.radius * 6
-            ), duration: 1.5 }
-        );
-        return;
-      }
       if (!layer?.tileset) return;
       const sphere = layer.tileset.boundingSphere;
       viewer.camera.flyToBoundingSphere(sphere, {
@@ -828,16 +1388,26 @@
         el.innerHTML = '<div id="layer-empty">No layers loaded.</div>';
         return;
       }
-      el.innerHTML = layers.map(l => `
+      el.innerHTML = layers.map(l => {
+        const ds = allDatasets.find(d => d.id === l.dsId);
+        const georefBtn = (ds && (ds.type === 'cesium-splat' || ds.type === 'cesium'))
+          ? `<button class="layer-georef" data-lid="${l.id}" title="Georeference (GCP)"
+               style="font-size:11px; padding:1px 4px; background:${ds.modelMatrix ? '#1a4a2e' : '#21262d'};
+                      border:1px solid ${ds.modelMatrix ? '#3fb950' : '#444'}; color:${ds.modelMatrix ? '#3fb950' : '#8b949e'};
+                      border-radius:3px; cursor:pointer;">GCP</button>`
+          : '';
+        return `
         <div class="layer-item">
           <input type="checkbox" class="layer-vis" ${l.visible ? 'checked' : ''}
             style="--lc:${l.color}" data-lid="${l.id}">
           <div class="layer-dot" style="background:${l.color}"></div>
-          <span class="layer-name" title="${l.name}">${l.name}${!l.tileset ? ' ⋯' : ''}</span>
+          <span class="layer-name" title="${l.error || l.name}"
+            style="${l.error ? 'color:#f85149' : ''}">${l.name}${l.error ? ' ✗' : !l.tileset ? ' ⋯' : ''}</span>
+          ${georefBtn}
           <button class="layer-fly" data-lid="${l.id}" title="Zoom to layer">⊕</button>
           <button class="layer-del" data-lid="${l.id}" title="Remove layer">✕</button>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
       el.querySelectorAll('.layer-vis').forEach(cb =>
         cb.addEventListener('change', () => setLayerVisible(cb.dataset.lid, cb.checked))
       );
@@ -846,6 +1416,9 @@
       );
       el.querySelectorAll('.layer-del').forEach(btn =>
         btn.addEventListener('click', () => removeLayer(btn.dataset.lid))
+      );
+      el.querySelectorAll('.layer-georef').forEach(btn =>
+        btn.addEventListener('click', () => gcpOpen(btn.dataset.lid))
       );
     }
 
@@ -860,9 +1433,11 @@
     // ── Dataset catalogue ──────────────────────────────────────────────────────
     const initId = new URLSearchParams(location.search).get('id');
 
+    function isCompat(d) { return d.type === 'cesium' || d.type === 'cesium-splat'; }
+
     async function loadDatasets() {
       allDatasets = await fetch('/api/datasets').then(r => r.json());
-      const compat = allDatasets.filter(d => d.type === 'cesium' || d.type === 'cesium-splat' || d.type === 'splat');
+      const compat = allDatasets.filter(isCompat);
       if (initId) {
         const ds = compat.find(d => d.id === initId);
         if (ds) { addLayer(ds); return; }
@@ -873,14 +1448,12 @@
     // ── Modal ──────────────────────────────────────────────────────────────────
     function openModal() {
       const loadedIds = new Set(layers.map(l => l.dsId));
-      const compat    = allDatasets.filter(d => d.type === 'cesium' || d.type === 'cesium-splat' || d.type === 'splat');
+      const compat    = allDatasets.filter(isCompat);
       const el = document.getElementById('modal-list');
       el.innerHTML = compat.length
         ? compat.map(ds => {
             const loaded = loadedIds.has(ds.id);
-            const badge  = ds.type === 'splat' ? 'Splat (overlay)'
-                         : ds.type === 'cesium-splat' ? 'Gaussian Splat'
-                         : '3D Tiles';
+            const badge  = ds.type === 'cesium-splat' ? 'Gaussian Splat' : '3D Tiles';
             return `<div class="mds-item ${loaded ? 'loaded' : ''}" data-dsid="${ds.id}">
               <span class="mds-name">${ds.name}</span>
               <span class="mds-badge">${badge}</span>
@@ -921,7 +1494,10 @@
 
     // ── Keyboard shortcuts ─────────────────────────────────────────────────────
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { cancelCurrent(); resetTool(); }
+      if (e.key === 'Escape') {
+        if (gcpPickMode) { gcpCancelPick(); return; }
+        cancelCurrent(); resetTool();
+      }
       if (e.key === 'Backspace' && activeTool === 'area' && curPts.length > 0) {
         e.preventDefault();
         curPts.pop();
@@ -934,6 +1510,7 @@
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
 
     handler.setInputAction(ev => {
+      if (gcpPickMode) { gcpHandlePick(ev.position); return; }
       if (!activeTool) {
         const picked = viewer.scene.pick(ev.position);
         if (Cesium.defined(picked?.id) && allPanoEnts.includes(picked.id)) {
@@ -945,8 +1522,15 @@
         }
         return;
       }
-      const pos = viewer.scene.pickPosition(ev.position);
+      const pos = pickPositionFallback(ev.position);
       if (!Cesium.defined(pos)) return;
+
+      // ── Coordinate inspector tool ───────────────────────────────────────────
+      if (activeTool === 'coords') {
+        doCoords(pos);
+        return;
+      }
+
       const col = TC[activeTool].cesium;
       mkPoint(pos, col);
       if (activeTool === 'area') {
@@ -976,7 +1560,7 @@
     handler.setInputAction(ev => {
       // Rubber-band while measuring
       if (activeTool && curPts.length > 0) {
-        const pos = viewer.scene.pickPosition(ev.endPosition);
+        const pos = pickPositionFallback(ev.endPosition);
         if (Cesium.defined(pos)) {
           previewEnt.show = true;
           previewPos = (activeTool === 'area' && curPts.length >= 2)
