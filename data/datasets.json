@@ -85,6 +85,18 @@
     "createdAt": "2026-04-08T00:00:00.000Z"
   },
   {
+    "id": "haus-eggiwil",
+    "name": "Haus Eggiwil (LiDAR + Panoramas)",
+    "type": "cesium",
+    "source": "lidar",
+    "path": "/data/cesium/haus-eggiwil/tileset.json",
+    "description": "TLS scan of Haus Eggiwil — 5,023,669 points in LV95 (EPSG:2056). 185 linked panorama positions.",
+    "panoramasPath": "/data/panoramas/haus-eggiwil/metadata.json",
+    "crs": "EPSG:2056",
+    "pointCount": 5023669,
+    "createdAt": "2026-05-15T13:50:23.493Z"
+  },
+  {
     "id": "demo-panoramas",
     "name": "Demo Site (Panoramas)",
     "type": "e57",

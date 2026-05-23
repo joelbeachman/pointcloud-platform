@@ -1,9 +1,29 @@
 node_modules/
 .env
-data/pointclouds/
-data/cesium/
-data/splats/
-data/panoramas/
 *.log
 .DS_Store
 .claude/
+
+# Large binary data — keep on external storage, not in git.
+# Small config files (.json, .csv) in these directories ARE tracked.
+data/**/*.las
+data/**/*.laz
+data/**/*.e57
+data/**/*.pnts
+data/**/*.b3dm
+data/**/*.glb
+data/**/*.splat
+data/**/*.ply
+data/**/*.xyz
+data/**/*.ptx
+data/**/*.pcd
+data/**/*.bin
+data/**/*.jpg
+data/**/*.jpeg
+data/**/*.png
+data/**/*.gif
+data/**/*.resume
+
+# Raw backup and intermediate ML/COLMAP outputs — always external
+data/eggiswil_backup/
+data/splats/colmap_only_flight3/

@@ -1,107 +1,139 @@
 # Progress Log
 
+> **Rule:** Update this file whenever a task is planned or completed. It is the single source of truth for what has been done and what is next.
+
+---
+
+## Data Safety Guidelines
+
+`.gitignore` blocks **binary file extensions** (`.pnts`, `.splat`, `.ply`, `.glb`, `.jpg`, `.laz`, etc.)
+across `data/`, not entire directories. This means all small config files (`.json`, `.csv`, `.tex`,
+`.bib`) inside `data/` **are tracked by git** — a `git reset --hard` restores tilesets, metadata,
+and panorama position tables. Only the binary payload needs to come from external storage.
+
+**To prevent data loss:**
+- Keep large binary data on external storage; mount via `DATA_DIR` (Docker) or symlink
+- `data/eggiswil_backup/` and `data/splats/colmap_only_flight3/` are fully gitignored — external only
+- Never run `git clean -fd` without a dry run (`git clean -nfd`) first
+- `data/datasets.json` is the dataset registry; always commit it after registering a new dataset
+
+**Recovery after a hard reset:**
+All `.json`/`.csv` config files survive (tracked). Re-copy binaries from external storage, then:
+- `scripts/restore_eggiswil.py` — re-copies panorama JPEGs + regenerates `metadata.json` from `eggiswil_backup/`
+
+---
+
 ## 2026-04-02 — Initial Setup
 
-**Completed by:** Human + Claude setup session
-
-### Done
+### Completed
 - Project structure created
-- Express server (server.js) — REST API for dataset management
-- Portal dashboard (public/index.html) — dark-themed, dataset registry
-- Potree viewer (public/viewers/potree.html) — loads any Potree-format point cloud
-- Cesium viewer (public/viewers/cesium.html) — 3D Tiles + demo OSM Buildings
-- Gaussian Splat viewer (public/viewers/splat.html) — @mkkellogg/gaussian-splats-3d
-- Panorama viewer (public/viewers/panorama.html) — Pannellum, linked scan positions
+- Express server (`server.js`) — REST API for dataset management
+- Portal dashboard (`public/index.html`) — dark-themed, dataset registry with search + type filters
+- Potree viewer (`public/viewers/potree.html`) — loads any Potree-format point cloud
+- Cesium viewer (`public/viewers/cesium.html`) — 3D Tiles + OSM Buildings
+- Gaussian Splat viewer (`public/viewers/splat.html`) — @mkkellogg/gaussian-splats-3d
+- Panorama viewer (`public/viewers/panorama.html`) — Pannellum, linked scan positions
+- Compare viewer (`public/viewers/compare.html`) — side-by-side with draggable divider
 - Git initialized, remote connected to joelbeachman/pointcloud-platform
-- TASKS.md created with 18 tasks across 3 days
 
 ---
 
 ## 2026-04-07 — Bulk Task Completion
 
-**Note:** Scheduled remote agents did not run (trigger was disabled after setup). All tasks completed manually in this session.
-
 ### Completed
-- **TASK-001** — npm deps verified (express, cors, multer)
-- **TASK-002** — Downloaded autzen.laz (295KB, PDAL test LiDAR data — Autzen Stadium, Eugene OR)
-- **TASK-003** — Generated 50k-point synthetic demo sphere point cloud; both datasets registered in datasets.json
-- **TASK-004** — Downloaded nike.splat (8.3MB Gaussian splat from huggingface/cakewalk)
-- **TASK-005** — Server verified: all API endpoints return correct responses
-- **TASK-007/009** — Installed Python3 + pye57 + laspy + Pillow + numpy; wrote scripts/extract_e57.py (converts E57 → equirectangular panorama JPEGs + metadata.json for platform registration)
-- **TASK-012** — Built public/viewers/compare.html — side-by-side viewer with draggable divider, layout switching (split H/V/fullscreen L/R)
-- **TASK-013** — Added live search bar + type filter buttons to portal dashboard
-- **TASK-015** — Wrote scripts/download_samples.sh — reproduces full dataset download from scratch
-- **TASK-016** — Wrote scripts/test.sh — E2E tests covering API, all viewer pages, data file access
-- **TASK-017** — Wrote SETUP.md — comprehensive documentation
+- npm deps verified (express, cors, multer)
+- Downloaded autzen.laz (295KB PDAL test LiDAR — Autzen Stadium, Eugene OR)
+- Generated 50k-point synthetic demo sphere point cloud; both registered in `datasets.json`
+- Downloaded nike.splat (8.3MB Gaussian splat from huggingface/cakewalk)
+- Server verified: all API endpoints return correct responses
+- Installed Python3 + pye57 + laspy + Pillow + numpy
+- Wrote `scripts/extract_e57.py` — E57 → equirectangular panoramas + metadata.json
+- Wrote `scripts/download_samples.sh` — reproducible dataset download from scratch
+- Wrote `scripts/test.sh` — E2E tests covering API, all viewer pages, data file access
+- Wrote `SETUP.md` — comprehensive documentation
 
-### Skipped (reason)
-- **TASK-008** — No public E57 sample file small enough to download; script is ready for user's own E57 files
-- **TASK-010** — 3D Tiles aerial data requires Cesium Ion token or pre-tiled dataset; Cesium viewer is ready
-- **TASK-011** — Scan position markers were already implemented at setup time in potree.html
-- **TASK-014** — Info panels already built into all viewers at setup
-
-### Pending
-- **TASK-018** — Final tag v0.1.0 (next step)
-
-### Server status
-- Running at http://localhost:3000
-- 3 datasets registered: Demo Sphere, Autzen Stadium LiDAR, Nike Gaussian Splat
+### Skipped
+- No public E57 sample small enough to download; `extract_e57.py` is ready for real files
+- 3D Tiles aerial data requires Cesium Ion token; Cesium viewer is ready
+- Scan position markers already implemented at setup in `potree.html`
+- Info panels already built into all viewers at setup
 
 ---
 
 ## 2026-04-13 — Cesium Viewer Overhaul + Splat Pipeline
 
 ### Completed
-
-**Cesium viewer rewrite** (`public/viewers/cesium.html`)
-- Multi-layer TOC in left sidebar: add any number of `cesium` or `splat` datasets
-  as independent layers, toggle visibility, fly to, remove
-- Measurement tools merged in (was a separate measure.html, now deleted):
-  Distance, Horizontal distance, Vertical distance, Area — all with labelled
-  polyline/polygon entities and a right-side results panel
-- CesiumJS upgraded to 1.140 (April 2026 release)
-- Gaussian splat layers rendered via transparent Three.js canvas overlaid on
-  the Cesium canvas; cameras synced every frame via ECEF→local ENU transform
-  so the splat stays registered with the globe
-
-**Splat to 3D Tiles converter** (`scripts/convert_splat.py`)
-- Reads `.splat` binary (32 bytes/Gaussian: xyz, log-scale, RGBA, WXYZ rotation)
-- Builds GLB with `KHR_gaussian_splatting` extension
-- Outputs `splat.glb` + `tileset.json` loadable by CesiumJS 1.130+
-
-**Nike splat converted** — `data/cesium/nike-splat/` generated and registered
-as dataset `nike-splat-cesium` (type: `cesium-splat`)
-
-**Splat viewer** (`public/viewers/splat.html`)
-- Replaced OrbitControls with quaternion trackball (no gimbal lock, no poles)
-- Left drag: free rotation, right drag: pan, scroll: zoom
+- **Cesium viewer rewrite** (`public/viewers/cesium.html`)
+  - Multi-layer TOC: add any number of `cesium` or `splat` datasets as layers
+  - Measurement tools merged in (was separate `measure.html`, now deleted): Distance,
+    Horizontal distance, Vertical distance, Area — labelled polyline/polygon entities
+  - CesiumJS upgraded to 1.140
+  - Gaussian splat layers via transparent Three.js canvas overlaid on Cesium canvas;
+    cameras synced every frame via ECEF→local ENU transform
+- **Splat → 3D Tiles converter** (`scripts/convert_splat.py`)
+  - Reads `.splat` binary (32 bytes/Gaussian: xyz, log-scale, RGBA, WXYZ rotation)
+  - Builds GLB with `KHR_gaussian_splatting` extension + `tileset.json`
+- Nike splat converted → `data/cesium/nike-splat/`, registered as `nike-splat-cesium`
+- **Splat viewer** (`public/viewers/splat.html`) — replaced OrbitControls with quaternion
+  trackball (no gimbal lock, no poles)
 
 ---
 
 ## 2026-04-14 — Universal Processing Pipeline
 
 ### Completed
+- **Processing pipeline** (`scripts/process.py`) — universal converter, auto-detects format
+  - Point clouds → 3D Tiles 1.0 `.pnts` single tile + `tileset.json`
+    - Reads: LAS/LAZ, E57, XYZ/TXT/PTS, PTX, PCD, PLY (point cloud)
+    - Preserves RGB colour; uses RTC_CENTER for float32 precision
+  - Meshes → GLB + `tileset.json` — reads OBJ, STL, GLB, GLTF, PLY (mesh)
+  - Gaussian splats: `.splat` copied; 3DGS PLY converted (SH DC → RGB, sigmoid opacity)
+  - Auto-registers output in `datasets.json`
+- **Dockerfile** updated — `node:20-slim` (glibc required for Python wheels)
+- **SETUP.md** updated — full pipeline, Cesium features, Docker, dataset type reference
 
-**Processing pipeline** (`scripts/process.py`)
-- Universal converter: auto-detects format from file extension and PLY header
-- **Point clouds** → 3D Tiles 1.0 `.pnts` single tile + `tileset.json`
-  - Reads: LAS/LAZ (laspy), E57 (pye57), XYZ/TXT/PTS (numpy), PTX (Leica
-    multi-scan format), PCD (ASCII), PLY (plyfile)
-  - Preserves RGB colour when present in source
-  - Uses RTC_CENTER for float32 precision over large coordinate ranges
-- **Meshes** → GLB + `tileset.json`
-  - Reads: OBJ, STL, GLB, GLTF, PLY (mesh) via trimesh
-  - Flattens multi-mesh scenes before export
-- **Gaussian splats** copied or converted
-  - `.splat` files: copied to `data/splats/`, registered as type `splat`
-  - 3DGS PLY (detected by `f_dc_0` property): SH DC coefficients converted
-    to RGB, opacity via sigmoid, rotation normalised → packed to `.splat` binary
-- Auto-registers output in `datasets.json` (or prints curl command with `--no-register`)
+---
 
-**Dockerfile updated** — switched from `node:20-alpine` to `node:20-slim`
-(Debian-based, required for Python binary wheels — pye57 needs glibc).
-Added Python processing layers: `numpy`, `laspy[lazrs]`, `pye57`, `plyfile`,
-`trimesh[easy]`.
+## 2026-05-15 — Haus Eggiwil Dataset Processing
 
-**SETUP.md updated** — full documentation for pipeline, Cesium viewer features,
-all script options, Docker usage, and dataset type reference.
+### Completed
+- LAS file `351_Haus-Eggiwil.las` processed → `data/cesium/haus-eggiwil/` (72MB, 5,023,669 pts)
+- `image_poses.csv` generated with 185 scan positions in LV95 (EPSG:2056)
+
+### Lost in revert (recovered 2026-05-23)
+- Processed panoramic JPEGs for `data/panoramas/haus-eggiwil/` — wiped by git operation
+- Original `documentation/` folder contents — wiped by git reset
+
+---
+
+## 2026-05-23 — Data Recovery + Safety Hardening
+
+### Completed
+- Restored 185 panoramic JPEGs to `data/panoramas/haus-eggiwil/` from `data/eggiswil_backup/images/`
+- Generated `data/panoramas/haus-eggiwil/metadata.json` — LV95 coords normalized to local,
+  `northOffset` from `rotZ_deg`, 185 scan positions
+- Registered `haus-eggiwil` in `datasets.json` (cesium 3D Tiles + panoramas path)
+- Added `data/eggiswil_backup/` to `.gitignore`
+- Wrote `scripts/restore_eggiswil.py` — documents and automates panorama recovery
+- Added data safety guidelines to this file (top section)
+
+---
+
+## Pending / Planned
+
+### High priority
+- [ ] Verify panorama viewer loads haus-eggiwil correctly (check image format compatibility with Pannellum — images are per-position perspective JPEGs from scanner, may need equirectangular conversion)
+- [ ] Restore documentation folder contents (thesis assets, compiled PDF, figures)
+- [ ] Commit current state (datasets.json update, .gitignore, restore script)
+
+### Medium priority
+- [ ] COPC streaming support — convert LAS files to COPC for Potree streaming (better for large Ballenberg datasets)
+- [ ] Metadata schema — define minimum field set per dataset (capture method, date, scanner model, CRS, point density, processing status) aligned with CIDOC-CRM
+- [ ] Semantic annotations layer — clickable regions in Cesium/Potree viewer linked to documentation records
+- [ ] Mobile optimization audit — test viewers on mobile; Potree-Next to be monitored as WebGPU successor
+- [ ] Tag v0.1.0 once haus-eggiwil dataset is verified end-to-end
+
+### Low priority / future
+- [ ] Multi-building support — extend `datasets.json` schema for building-level grouping (toward Ballenberg archive)
+- [ ] Potree-Next integration — monitor WebGPU support, plan migration path from Potree 1.8
+- [ ] CIDOC-CRM metadata export — dataset-level metadata serializable to CIDOC-CRM/CRMdig

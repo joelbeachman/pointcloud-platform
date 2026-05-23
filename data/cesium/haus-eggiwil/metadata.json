@@ -1,0 +1,22 @@
+{
+  "id": "haus-eggiwil",
+  "name": "Haus Eggiwil",
+  "type": "cesium",
+  "source": "lidar",
+  "path": "/data/cesium/haus-eggiwil/tileset.json",
+  "description": "LiDAR scan of Haus Eggiwil \u2014 5,023,669 points",
+  "createdAt": "2026-05-15T13:50:23.493376+00:00",
+  "crs": "EPSG:2056",
+  "pointCount": 5023669,
+  "sourcePath": "/workspace/data/eggwil/351_Haus-Eggiwil.las",
+  "sourceFormat": "LAS",
+  "hasColor": true,
+  "coverage": {
+    "center": [
+      2648855.0,
+      1177528.0,
+      649.0
+    ],
+    "radius": 51.54379915773449
+  }
+}

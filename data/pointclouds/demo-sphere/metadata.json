@@ -1,0 +1,76 @@
+{
+  "version": "2.0",
+  "name": "Demo Sphere",
+  "description": "Synthetic demo point cloud — sphere + ground plane, 50k points",
+  "points": 50000,
+  "projection": "",
+  "hierarchy": {
+    "firstChunkSize": 50000,
+    "stepSize": 4,
+    "depth": 1
+  },
+  "offset": [
+    0,
+    0,
+    0
+  ],
+  "scale": [
+    0.001,
+    0.001,
+    0.001
+  ],
+  "spacing": 0.5,
+  "boundingBox": {
+    "min": [
+      -10.5,
+      -10.5,
+      -5.5
+    ],
+    "max": [
+      10.5,
+      10.5,
+      5.5
+    ]
+  },
+  "encoding": "DEFAULT",
+  "attributes": [
+    {
+      "name": "position",
+      "description": "",
+      "size": 12,
+      "numElements": 3,
+      "elementSize": 4,
+      "type": "int32",
+      "min": [
+        -10500,
+        -10500,
+        -5500
+      ],
+      "max": [
+        10500,
+        10500,
+        5500
+      ]
+    },
+    {
+      "name": "rgba",
+      "description": "",
+      "size": 4,
+      "numElements": 4,
+      "elementSize": 1,
+      "type": "uint8",
+      "min": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "max": [
+        255,
+        255,
+        255,
+        255
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "name": "Demo Site (Synthetic)",
+  "source": "generated",
+  "scanCount": 2,
+  "panoramas": [
+    {
+      "id": "scan_000",
+      "label": "Scan Position 1",
+      "path": "/data/panoramas/demo-site/scan_000.jpg",
+      "x": 0,
+      "y": 0,
+      "z": 1.5,
+      "northOffset": 0
+    },
+    {
+      "id": "scan_001",
+      "label": "Scan Position 2",
+      "path": "/data/panoramas/demo-site/scan_001.jpg",
+      "x": 3,
+      "y": 1.5,
+      "z": 1.5,
+      "northOffset": 0
+    }
+  ]
+}
