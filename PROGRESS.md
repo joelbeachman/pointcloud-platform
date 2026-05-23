@@ -119,19 +119,64 @@ All `.json`/`.csv` config files survive (tracked). Re-copy binaries from externa
 
 ---
 
+## 2026-05-23 — Panorama Viewer: Spatial Hotspots + Orientation Fix
+
+### Completed
+- **Spatial navigation hotspots** (`public/viewers/panorama.html`)
+  - Camera-icon hotspots (same orange SVG as Potree markers) pointing toward nearby scan positions
+  - Icons scaled by distance (56 px at 0.5 m → 24 px at ≥6.25 m), hard cutoff at 10 m horizontal
+  - Compass heading preserved on jump: `compass = getYaw() + northOffset_src`, `initYaw = compass - northOffset_dst`
+  - Removed 6-marker hard limit; filter is now purely distance-based (≤10 m)
+  - Navigation opens in same tab (not new tab) from Potree camera markers
+- **Quaternion-derived `northOffset`** — fixed systematic orientation errors
+  - Root cause: Leica scanner stores Euler ZYX angles; near |rotation|≈180° two Euler decompositions
+    give the same physical orientation but different `rotZ_deg` values (differ by 180°)
+  - Fix: compute `northOffset = atan2(1−2(qy²+qz²), 2(qx·qy+qw·qz))` directly from quaternion
+    columns of `image_poses.csv` — unique regardless of gimbal-lock variant
+  - Regenerated all 185 `northOffset` values in `data/panoramas/haus-eggiwil/metadata.json`
+  - Added `scripts/regen_northoffset.pl` — documents and automates the regeneration
+- **Hotspot anchor fix** — icons were anchored at bottom-right instead of center
+  - Pannellum already centers hotspot divs via `offsetWidth/2`; our additional
+    `margin-left: -s/2; margin-top: -s/2` was doubling the offset
+  - Removed negative margins from both CSS class and `createTooltipFunc` inline style
+
+---
+
+## 2026-05-23 — Panorama Overlay in Cesium Viewer
+
+### Completed
+- **In-page panorama overlay** (`public/viewers/cesium.html`)
+  - Clicking a camera marker opens the panorama as an overlay covering only `#cesiumContainer`
+    (`top:100px; bottom:0; left:220px; right:220px`); both sidebars remain fully visible
+  - Overlay bar shows scan label, LV95 coordinates, and a close button; Escape also closes
+  - Full spatial navigation hotspots (same logic as standalone panorama.html)
+  - Prev/next scan navigation within the dataset
+  - Compass heading preserved when jumping between scans
+- **Measurement integration**: when a measurement tool is active, clicking inside the panorama
+  casts a ray into the Cesium scene (`pickFromRay`) and feeds the hit point to the existing
+  measurement tools (Distance, Horizontal, Vertical, Area, Coords)
+  - Ray construction: `bearing = clickYaw + northOffset` → ENU vector →
+    ECEF via `Cesium.Transforms.eastNorthUpToFixedFrame` at scan's ECEF position
+  - Click yaw/pitch derived from Pannellum's current view using perspective projection formula
+  - Right-click in panorama finishes area or cancels current measurement, matching Cesium canvas behavior
+  - Blue "Click in panorama to place measurement point" hint shown when a tool is active
+- Pannellum CSS/JS loaded in `<head>`; hover tooltip suppressed while overlay is open
+
+---
+
 ## Pending / Planned
 
 ### High priority
-- [ ] Verify panorama viewer loads haus-eggiwil correctly (check image format compatibility with Pannellum — images are per-position perspective JPEGs from scanner, may need equirectangular conversion)
+- [ ] Verify panorama images are equirectangular — scanner perspective JPEGs may need conversion before Pannellum can display them correctly
+- [ ] Update `scripts/restore_eggiswil.py` to use quaternion-derived `northOffset` formula (currently stores `rotZ_deg` directly)
 - [ ] Restore documentation folder contents (thesis assets, compiled PDF, figures)
-- [ ] Commit current state (datasets.json update, .gitignore, restore script)
+- [ ] Tag v0.1.0 once haus-eggiwil is verified end-to-end
 
 ### Medium priority
 - [ ] COPC streaming support — convert LAS files to COPC for Potree streaming (better for large Ballenberg datasets)
 - [ ] Metadata schema — define minimum field set per dataset (capture method, date, scanner model, CRS, point density, processing status) aligned with CIDOC-CRM
 - [ ] Semantic annotations layer — clickable regions in Cesium/Potree viewer linked to documentation records
 - [ ] Mobile optimization audit — test viewers on mobile; Potree-Next to be monitored as WebGPU successor
-- [ ] Tag v0.1.0 once haus-eggiwil dataset is verified end-to-end
 
 ### Low priority / future
 - [ ] Multi-building support — extend `datasets.json` schema for building-level grouping (toward Ballenberg archive)
