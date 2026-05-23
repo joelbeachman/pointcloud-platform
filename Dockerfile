@@ -1,23 +1,20 @@
-FROM node:20-slim
+FROM node:20-alpine
 
 # ── Python processing pipeline ────────────────────────────────────────────────
 # Required for scripts/process.py (point cloud / mesh / splat → 3D Tiles)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-dev \
-    gcc g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-# laspy[lazrs]  — LAS / LAZ point clouds
-# pye57         — E57 laser scans
-# plyfile       — PLY point clouds and 3DGS PLY
-# trimesh[easy] — OBJ / STL / GLB mesh loading + GLB export
-# numpy         — array processing (shared across all pipeline scripts)
-RUN pip3 install --break-system-packages \
-    numpy \
-    "laspy[lazrs]" \
-    pye57 \
-    plyfile \
-    "trimesh[easy]"
+# laspy      — LAS point clouds (no LAZ; lazrs needs Rust to compile)
+# plyfile    — PLY point clouds and 3DGS PLY
+# trimesh    — OBJ / STL / GLB mesh loading + GLB export
+# numpy      — array processing
+# pye57 (E57) and lazrs (LAZ) are excluded — both require native compilation.
+# Install manually inside the container if needed:
+#   apk add gcc g++ musl-dev rust cargo python3-dev && pip3 install lazrs pye57
+RUN apk add --no-cache python3 py3-pip && \
+    pip3 install --break-system-packages \
+        numpy \
+        laspy \
+        plyfile \
+        trimesh
 
 WORKDIR /app
 

@@ -179,7 +179,72 @@
     #add-layer-btn:hover { background: #21262d; color: #e6edf3; }
 
     body.measuring #cesiumContainer { cursor: crosshair; }
+
+    /* ── Panorama overlay ── */
+    #pano-overlay {
+      display: none; position: absolute;
+      top: 100px; bottom: 0; left: 220px; right: 220px;
+      z-index: 40; flex-direction: column; background: #0d1117;
+    }
+    #pano-overlay.open { display: flex; }
+    #pano-overlay-bar {
+      display: flex; align-items: center; gap: 0.55rem;
+      padding: 0.35rem 0.8rem; flex-shrink: 0;
+      background: rgba(13,17,23,0.97); border-bottom: 1px solid #30363d;
+      font-size: 0.8rem; color: #8b949e;
+    }
+    #pano-overlay-title { color: #f0883e; font-weight: 600; white-space: nowrap; }
+    #pano-overlay-coords { flex: 1; font-size: 0.72rem; }
+    #pano-close-btn {
+      background: none; border: 1px solid #30363d; color: #8b949e;
+      border-radius: 5px; padding: 0.18rem 0.6rem; cursor: pointer; font-size: 0.78rem;
+    }
+    #pano-close-btn:hover { background: #21262d; color: #e6edf3; }
+    #pano-inner { flex: 1; position: relative; overflow: hidden; }
+    #pano-div   { position: absolute; inset: 0; }
+    #pano-scan-nav {
+      position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 0.5rem;
+      background: rgba(13,17,23,0.9); border: 1px solid #30363d; border-radius: 7px;
+      padding: 0.35rem 0.75rem; z-index: 10; font-size: 0.78rem; color: #8b949e;
+    }
+    #pano-scan-nav button {
+      background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+      padding: 0.22rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem;
+    }
+    #pano-scan-nav button:hover { background: #30363d; }
+    #pano-scan-nav button:disabled { opacity: 0.35; cursor: default; }
+    #pano-measure-hint {
+      display: none; position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+      background: rgba(88,166,255,0.12); border: 1px solid #58a6ff; border-radius: 5px;
+      padding: 0.22rem 0.8rem; font-size: 0.74rem; color: #58a6ff;
+      z-index: 10; pointer-events: none; white-space: nowrap;
+    }
+    body.measuring #pano-overlay.open #pano-measure-hint { display: block; }
+    body.measuring #pano-overlay.open #pano-div { cursor: crosshair; }
+
+    /* pano hotspot styles (mirrored from panorama.html) */
+    .pnlm-hotspot.pano-nav-hotspot {
+      width: 40px; height: 40px;
+      background: none !important; background-image: none !important;
+      border: none !important; cursor: pointer; overflow: visible; display: block;
+      transition: transform 0.12s ease, filter 0.12s ease;
+    }
+    .pnlm-hotspot.pano-nav-hotspot:hover {
+      transform: scale(1.2);
+      filter: brightness(1.15) drop-shadow(0 0 8px rgba(240,136,62,0.75));
+    }
+    .pano-nav-popup {
+      display: none; position: absolute; bottom: calc(100% + 6px);
+      left: 50%; transform: translateX(-50%);
+      background: rgba(13,17,23,0.95); border: 1px solid #f0883e; border-radius: 5px;
+      padding: 3px 9px; font-size: 11px; color: #e6edf3;
+      white-space: nowrap; pointer-events: none; z-index: 100; line-height: 1.5;
+    }
+    .pnlm-hotspot.pano-nav-hotspot:hover .pano-nav-popup { display: block; }
   </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
 </head>
 <body>
   <header>
@@ -293,6 +358,24 @@
       <h4>Add Layer</h4>
       <div id="modal-list"></div>
       <button id="modal-close">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ── Panorama overlay ── -->
+  <div id="pano-overlay">
+    <div id="pano-overlay-bar">
+      <span id="pano-overlay-title">Panorama</span>
+      <span id="pano-overlay-coords"></span>
+      <button id="pano-close-btn" onclick="closePanoramaOverlay()">&#x2715; Close</button>
+    </div>
+    <div id="pano-inner">
+      <div id="pano-div"></div>
+      <div id="pano-measure-hint">Click in panorama to place measurement point</div>
+      <div id="pano-scan-nav">
+        <button id="pano-btn-prev">&#8592; Prev</button>
+        <span id="pano-scan-label">Scan 1 / 1</span>
+        <button id="pano-btn-next">Next &#8594;</button>
+      </div>
     </div>
   </div>
 
@@ -1496,6 +1579,7 @@
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
         if (gcpPickMode) { gcpCancelPick(); return; }
+        if (panoDS) { closePanoramaOverlay(); return; }
         cancelCurrent(); resetTool();
       }
       if (e.key === 'Backspace' && activeTool === 'area' && curPts.length > 0) {
@@ -1515,10 +1599,7 @@
         const picked = viewer.scene.pick(ev.position);
         if (Cesium.defined(picked?.id) && allPanoEnts.includes(picked.id)) {
           const p = picked.id.properties;
-          window.open(
-            `/viewers/panorama.html?id=${p.datasetId.getValue()}&pos=${p.scanId.getValue()}`,
-            '_blank'
-          );
+          openPanoramaOverlay(p.datasetId.getValue(), p.scanId.getValue());
         }
         return;
       }
@@ -1571,9 +1652,9 @@
         return;
       }
 
-      // Panorama hover
+      // Panorama hover (suppressed when overlay is open)
       const tip    = document.getElementById('pano-tooltip');
-      const picked = viewer.scene.pick(ev.endPosition);
+      const picked = !panoDS ? viewer.scene.pick(ev.endPosition) : undefined;
       if (Cesium.defined(picked?.id) && allPanoEnts.includes(picked.id)) {
         const rect = viewer.scene.canvas.getBoundingClientRect();
         document.getElementById('pano-tip-label').textContent =
@@ -1590,6 +1671,190 @@
 
     // ── Boot ───────────────────────────────────────────────────────────────────
     loadDatasets();
+    // ── Panorama overlay ──────────────────────────────────────────────────────
+    let panoDS      = null;
+    let panoScanIdx = 0;
+    let panoViewer  = null;
+
+    function panoCameraSVG(s) {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 56 56" style="display:block">
+        <circle cx="28" cy="28" r="28" fill="rgba(240,136,62,0.25)"/>
+        <circle cx="28" cy="28" r="20" fill="#f0883e" stroke="white" stroke-width="2.5"/>
+        <rect x="16" y="21" width="24" height="15" rx="3" fill="white"/>
+        <rect x="22" y="17" width="12" height="6" rx="2" fill="white"/>
+        <circle cx="28" cy="28.5" r="5.5" fill="#f0883e"/>
+      </svg>`;
+    }
+
+    function computePanoHotspots(idx, panos) {
+      const cur = panos[idx];
+      if (cur.x == null) return [];
+      return panos
+        .map((p, i) => {
+          if (i === idx) return null;
+          const dx = p.x - cur.x, dy = p.y - cur.y, dz = p.z - cur.z;
+          const horiz = Math.sqrt(dx*dx + dy*dy);
+          const dist  = Math.sqrt(dx*dx + dy*dy + dz*dz);
+          if (dist < 0.1) return null;
+          const bearing = Math.atan2(dx, dy) * 180 / Math.PI;
+          const pitch   = Math.atan2(dz, horiz) * 180 / Math.PI;
+          let yaw = bearing - (cur.northOffset || 0);
+          while (yaw >  180) yaw -= 360;
+          while (yaw < -180) yaw += 360;
+          return { i, p, dist, horiz, dz, yaw, pitch };
+        })
+        .filter(r => r !== null && r.horiz <= 10)
+        .sort((a, b) => a.horiz - b.horiz)
+        .map(({ i, p, dist, dz, yaw, pitch }) => {
+          const distLabel = dist < 10 ? `${dist.toFixed(1)}m` : `${Math.round(dist)}m`;
+          const label = (p.label || `Scan ${i + 1}`).replace('240906_Gr3_', '');
+          const floorNote = dz > 1.5 ? ' ▲' : dz < -1.5 ? ' ▼' : '';
+          const size = Math.round(Math.max(24, Math.min(56, 60 / Math.sqrt(Math.max(dist, 0.5)))));
+          return {
+            type: 'info', pitch, yaw,
+            cssClass: 'pano-nav-hotspot',
+            createTooltipFunc: (div, args) => {
+              const s = args.size;
+              div.style.width = s + 'px'; div.style.height = s + 'px';
+              div.innerHTML = panoCameraSVG(s) +
+                `<div class="pano-nav-popup">${args.label}${args.floorNote}<br>` +
+                `<span style="color:#8b949e">${args.distLabel}</span></div>`;
+            },
+            createTooltipArgs: { size, distLabel, label, floorNote },
+            clickHandlerFunc: (_e, args) => {
+              let initYaw = 0;
+              if (panoViewer) {
+                const compass = panoViewer.getYaw() + (panos[panoScanIdx].northOffset || 0);
+                initYaw = compass - (panos[args.navIdx].northOffset || 0);
+              }
+              loadPanoScan(args.navIdx, initYaw);
+            },
+            clickHandlerArgs: { navIdx: i },
+          };
+        });
+    }
+
+    function openPanoramaOverlay(dsId, scanId) {
+      const ds = allDatasets.find(d => d.id === dsId);
+      if (!ds?.panoramas?.length) return;
+      panoDS = ds;
+      const idx = scanId ? ds.panoramas.findIndex(p => p.id === scanId) : 0;
+      panoScanIdx = idx >= 0 ? idx : 0;
+      document.getElementById('pano-overlay').classList.add('open');
+      document.getElementById('pano-tooltip').style.display = 'none';
+      loadPanoScan(panoScanIdx, 0);
+    }
+
+    function closePanoramaOverlay() {
+      if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
+      document.getElementById('pano-overlay').classList.remove('open');
+      panoDS = null;
+    }
+
+    function loadPanoScan(idx, initYaw = 0) {
+      if (!panoDS) return;
+      panoScanIdx = idx;
+      const panos = panoDS.panoramas;
+      const p = panos[idx];
+      document.getElementById('pano-overlay-title').textContent = p.label || `Scan ${idx + 1}`;
+      document.getElementById('pano-overlay-coords').textContent = p.x != null
+        ? `X: ${p.x.toFixed(2)}  Y: ${p.y.toFixed(2)}  Z: ${p.z.toFixed(2)}` : '';
+      document.getElementById('pano-scan-label').textContent = `Scan ${idx + 1} / ${panos.length}`;
+      document.getElementById('pano-btn-prev').disabled = (idx === 0);
+      document.getElementById('pano-btn-next').disabled = (idx === panos.length - 1);
+
+      const hotspots = computePanoHotspots(idx, panos);
+      if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
+      panoViewer = pannellum.viewer('pano-div', {
+        type: 'equirectangular', panorama: p.path,
+        autoLoad: true, autoRotate: 0, compass: true,
+        northOffset: p.northOffset || 0, yaw: initYaw,
+        hfov: 100, minHfov: 30, maxHfov: 150,
+        hotSpots: hotspots, showControls: true, showZoomCtrl: true, showFullscreenCtrl: true,
+      });
+    }
+
+    function panoRayPick(yawDeg, pitchDeg) {
+      if (!panoDS) return undefined;
+      const scan = panoDS.panoramas[panoScanIdx];
+      if (!scan || scan.x == null) return undefined;
+      const layer = layers.find(l => l.dsId === panoDS.id);
+      if (!layer?.tileset) return undefined;
+
+      const compassBearing = (yawDeg + (scan.northOffset || 0)) * Math.PI / 180;
+      const pitchRad = pitchDeg * Math.PI / 180;
+      const east  = Math.sin(compassBearing) * Math.cos(pitchRad);
+      const north = Math.cos(compassBearing) * Math.cos(pitchRad);
+      const up    = Math.sin(pitchRad);
+
+      const scanEcef = Cesium.Matrix4.multiplyByPoint(
+        layer.tileset.modelMatrix,
+        new Cesium.Cartesian3(scan.x, scan.y, scan.z),
+        new Cesium.Cartesian3()
+      );
+      const m = Cesium.Transforms.eastNorthUpToFixedFrame(scanEcef);
+      const dirEcef = Cesium.Cartesian3.normalize(
+        new Cesium.Cartesian3(
+          m[0]*east + m[4]*north + m[8]*up,
+          m[1]*east + m[5]*north + m[9]*up,
+          m[2]*east + m[6]*north + m[10]*up
+        ),
+        new Cesium.Cartesian3()
+      );
+      const hit = viewer.scene.pickFromRay(new Cesium.Ray(scanEcef, dirEcef));
+      return hit?.position;
+    }
+
+    document.getElementById('pano-btn-prev').addEventListener('click', () => {
+      if (panoScanIdx > 0) loadPanoScan(panoScanIdx - 1);
+    });
+    document.getElementById('pano-btn-next').addEventListener('click', () => {
+      if (panoDS && panoScanIdx < panoDS.panoramas.length - 1) loadPanoScan(panoScanIdx + 1);
+    });
+
+    document.getElementById('pano-div').addEventListener('mousedown', e => {
+      if (e.button !== 0 || !activeTool || !panoDS || !panoViewer) return;
+      const div  = document.getElementById('pano-div');
+      const rect = div.getBoundingClientRect();
+      const dx = e.clientX - (rect.left + rect.width  / 2);
+      const dy = e.clientY - (rect.top  + rect.height / 2);
+      const tanH2 = Math.tan(panoViewer.getHfov() * Math.PI / 360);
+      const half  = rect.width / 2;
+      const yaw   = panoViewer.getYaw()   + Math.atan(dx * tanH2 / half) * 180 / Math.PI;
+      const pitch = panoViewer.getPitch() - Math.atan(dy * tanH2 / half) * 180 / Math.PI;
+
+      const ecef = panoRayPick(yaw, pitch);
+      if (!Cesium.defined(ecef)) return;
+      e.stopPropagation();
+
+      if (activeTool === 'coords') { doCoords(ecef); return; }
+      const col = TC[activeTool].cesium;
+      mkPoint(ecef, col);
+      if (activeTool === 'area') {
+        if (curPts.length > 0) mkLine([curPts[curPts.length - 1], ecef], col);
+        curPts.push(ecef);
+      } else {
+        curPts.push(ecef);
+        if (curPts.length === 2) {
+          if      (activeTool === 'distance')   doDistance();
+          else if (activeTool === 'horizontal') doHorizontal();
+          else if (activeTool === 'vertical')   doVertical();
+          return;
+        }
+      }
+      setStatus();
+    });
+
+    document.getElementById('pano-div').addEventListener('contextmenu', e => {
+      if (!activeTool) return;
+      e.preventDefault();
+      if (activeTool === 'area' && curPts.length >= 3) doArea();
+      else if (activeTool) { cancelCurrent(); if (curPts.length === 0) resetTool(); }
+    });
+
+    // ── Boot ───────────────────────────────────────────────────────────────────
+    loadDatasets();
   </script>
+
 </body>
 </html>

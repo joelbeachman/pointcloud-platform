@@ -35,6 +35,42 @@
     #scan-nav button:hover { background: #30363d; }
     #scan-nav button.active { border-color: #f0883e; color: #f0883e; }
     #scan-label { color: #8b949e; font-size: 0.8rem; margin: 0 0.5rem; }
+
+    /* ── Spatial navigation hotspots ── */
+    .pnlm-hotspot.pano-nav-hotspot {
+      /* size set per-hotspot via inline style; Pannellum centers on offsetWidth/2 */
+      width: 40px;
+      height: 40px;
+      background: none !important;
+      background-image: none !important;
+      border: none !important;
+      cursor: pointer;
+      overflow: visible;
+      display: block;
+      transition: transform 0.12s ease, filter 0.12s ease;
+    }
+    .pnlm-hotspot.pano-nav-hotspot:hover {
+      transform: scale(1.2);
+      filter: brightness(1.15) drop-shadow(0 0 8px rgba(240,136,62,0.75));
+    }
+    .pano-nav-popup {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(13,17,23,0.95);
+      border: 1px solid #f0883e;
+      border-radius: 5px;
+      padding: 3px 9px;
+      font-size: 11px;
+      color: #e6edf3;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 100;
+      line-height: 1.5;
+    }
+    .pnlm-hotspot.pano-nav-hotspot:hover .pano-nav-popup { display: block; }
     #no-pano {
       position: absolute; inset: 0; top: 100px;
       display: flex; flex-direction: column;
@@ -166,7 +202,70 @@
       showPanorama(currentIdx);
     }
 
-    function showPanorama(idx) {
+    function cameraSVG(s) {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 56 56" style="display:block">
+        <circle cx="28" cy="28" r="28" fill="rgba(240,136,62,0.25)"/>
+        <circle cx="28" cy="28" r="20" fill="#f0883e" stroke="white" stroke-width="2.5"/>
+        <rect x="16" y="21" width="24" height="15" rx="3" fill="white"/>
+        <rect x="22" y="17" width="12" height="6" rx="2" fill="white"/>
+        <circle cx="28" cy="28.5" r="5.5" fill="#f0883e"/>
+      </svg>`;
+    }
+
+    function computeNeighborHotspots(idx, panoramas) {
+      const cur = panoramas[idx];
+      if (cur.x == null) return [];
+      return panoramas
+        .map((p, i) => {
+          if (i === idx) return null;
+          const dx = p.x - cur.x;
+          const dy = p.y - cur.y;
+          const dz = p.z - cur.z;
+          const horiz = Math.sqrt(dx * dx + dy * dy);
+          const dist  = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (dist < 0.1) return null;
+          const bearing = Math.atan2(dx, dy) * 180 / Math.PI;
+          const pitch   = Math.atan2(dz, horiz) * 180 / Math.PI;
+          let yaw = bearing - (cur.northOffset || 0);
+          while (yaw >  180) yaw -= 360;
+          while (yaw < -180) yaw += 360;
+          return { i, p, dist, horiz, dz, yaw, pitch };
+        })
+        .filter(r => r !== null && r.horiz <= 10)
+        .sort((a, b) => a.horiz - b.horiz)
+        .map(({ i, p, dist, dz, yaw, pitch }) => {
+          const distLabel = dist < 10 ? `${dist.toFixed(1)}m` : `${Math.round(dist)}m`;
+          const label = (p.label || `Scan ${i + 1}`).replace('240906_Gr3_', '');
+          const floorNote = dz > 1.5 ? ' ▲' : dz < -1.5 ? ' ▼' : '';
+          const size = Math.round(Math.max(24, Math.min(56, 60 / Math.sqrt(Math.max(dist, 0.5)))));
+          return {
+            type: 'info',
+            pitch,
+            yaw,
+            cssClass: 'pano-nav-hotspot',
+            createTooltipFunc: (div, args) => {
+              const s = args.size;
+              div.style.width  = s + 'px';
+              div.style.height = s + 'px';
+              div.innerHTML = cameraSVG(s) +
+                `<div class="pano-nav-popup">${args.label}${args.floorNote}<br>` +
+                `<span style="color:#8b949e">${args.distLabel}</span></div>`;
+            },
+            createTooltipArgs: { size, distLabel, label, floorNote },
+            clickHandlerFunc: (_e, args) => {
+              let initYaw = 0;
+              if (pannellumViewer) {
+                const compass = pannellumViewer.getYaw() + (panoramas[currentIdx].northOffset || 0);
+                initYaw = compass - (panoramas[args.navIdx].northOffset || 0);
+              }
+              showPanorama(args.navIdx, initYaw);
+            },
+            clickHandlerArgs: { navIdx: i },
+          };
+        });
+    }
+
+    function showPanorama(idx, initialYaw = 0) {
       currentIdx = idx;
       const p = panoramas[idx];
       scanLabel.textContent = `Scan ${idx + 1} / ${panoramas.length}`;
@@ -176,24 +275,7 @@
         ? `X: ${p.x.toFixed(2)}  Y: ${p.y.toFixed(2)}  Z: ${p.z.toFixed(2)}`
         : '';
 
-      // Build hotspots to adjacent positions
-      const hotspots = [];
-      if (idx > 0) {
-        hotspots.push({
-          type: 'scene', pitch: -5, yaw: -30,
-          sceneId: `pano_${idx - 1}`,
-          text: panoramas[idx-1].label || `Scan ${idx}`,
-          cssClass: 'custom-hotspot',
-        });
-      }
-      if (idx < panoramas.length - 1) {
-        hotspots.push({
-          type: 'scene', pitch: -5, yaw: 30,
-          sceneId: `pano_${idx + 1}`,
-          text: panoramas[idx+1].label || `Scan ${idx + 2}`,
-          cssClass: 'custom-hotspot',
-        });
-      }
+      const hotspots = computeNeighborHotspots(idx, panoramas);
 
       if (pannellumViewer) {
         pannellumViewer.destroy();
@@ -207,6 +289,7 @@
         autoRotate: 0,
         compass: true,
         northOffset: p.northOffset || 0,
+        yaw: initialYaw,
         hfov: 100,
         minHfov: 30,
         maxHfov: 150,

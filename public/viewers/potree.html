@@ -212,10 +212,23 @@
       mouse.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
       const hits = raycaster.intersectObjects(panoMarkers);
+
       if (hits.length) {
         const idx = panoMarkers.indexOf(hits[0].object);
         const { scan, datasetId } = panoMarkerMeta[idx];
-        window.open(`/viewers/panorama.html?id=${datasetId}&pos=${scan.id}`, '_blank');
+        window.location.href = `/viewers/panorama.html?id=${datasetId}&pos=${scan.id}`;
+      }
+
+      // Handle reference point clicks for measurements
+      if (currentCloud && referencePoint) {
+        raycaster.setFromCamera(mouse, camera);
+        const refHits = raycaster.intersectObject(referencePoint);
+        if (refHits.length) {
+          // Start measurement from reference point
+          console.log('[Ref] Starting measurement from reference point');
+          // TODO: Implement measurement from reference point
+          // For now, just highlight the intersection
+        }
       }
     });
 
@@ -230,6 +243,14 @@
           const dist = camera.position.distanceTo(m.position);
           m.scale.setScalar(dist * tanHalfFov * 0.12);
         });
+      }
+
+      // Update reference point label position
+      if (referencePoint && referencePoint.geometry) {
+        const labelDiv = document.querySelector('div[style*="color: #00ff00"]');
+        if (labelDiv && labelDiv.updatePosition) {
+          labelDiv.updatePosition();
+        }
       }
 
       renderer.render(scene, camera);
@@ -250,6 +271,61 @@
     const params = new URLSearchParams(location.search);
     const datasetId = params.get('id');
     const select = document.getElementById('dataset-select');
+
+    // ── Ray casting from panorama click ─────────────────────────────
+    let referencePoint = null; // Point selected from panorama
+    const ray = params.get('ray');
+
+    if (ray && currentCloud) {
+      try {
+        const rayData = JSON.parse(atob(ray));
+        const originParts = rayData.origin.split(',').map(parseFloat);
+        const dirParts = rayData.direction.split(',').map(parseFloat);
+
+        const origin = new THREE.Vector3(originParts[0], originParts[1], originParts[2]);
+        const direction = new THREE.Vector3(dirParts[0], dirParts[1], dirParts[2]).normalize();
+
+        // Cast ray through point cloud
+        raycaster.set(origin, direction);
+        const intersections = raycaster.intersectObject(currentCloud);
+
+        if (intersections.length > 0) {
+          const point = intersections[0].point;
+
+          // Create reference point marker
+          const refGeometry = new THREE.SphereGeometry(0.2, 16, 16);
+          const refMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.8 });
+          const refMesh = new THREE.Mesh(refGeometry, refMaterial);
+          refMesh.position.copy(point);
+          scene.add(refMesh);
+          referencePoint = refMesh;
+
+          // Add label
+          const labelDiv = document.createElement('div');
+          labelDiv.style.cssText = 'position: absolute; color: #00ff00; font-weight: bold; font-size: 12px; pointer-events: none; text-shadow: 1px 1px 2px black;';
+          labelDiv.textContent = '📍 From panorama';
+          document.body.appendChild(labelDiv);
+
+          // Store world position for measurements
+          labelDiv.updatePosition = () => {
+            const screenPos = point.clone().project(camera);
+            if (screenPos.z < 1) {
+              labelDiv.style.left = (screenPos.x * canvas.clientWidth / 2 + canvas.clientWidth / 2) + 'px';
+              labelDiv.style.top = (-screenPos.y * canvas.clientHeight / 2 + canvas.clientHeight / 2) + 'px';
+              labelDiv.style.display = 'block';
+            } else {
+              labelDiv.style.display = 'none';
+            }
+          };
+
+          console.log('[Ray] Intersection found:', point);
+          showOverlay('Reference Point', 'Point from panorama loaded successfully');
+        }
+      } catch (e) {
+        console.error('[Ray] Failed to parse ray data:', e);
+        showOverlay('Ray Error', 'Could not load point from panorama', 0);
+      }
+    }
     const overlay = document.getElementById('overlay');
     const overlayTitle = document.getElementById('overlay-title');
     const overlayMsg = document.getElementById('overlay-msg');
