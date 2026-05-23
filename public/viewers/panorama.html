@@ -8,45 +8,49 @@
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
   <style>
     body { margin: 0; overflow: hidden; background: #0d1117; }
+
     #panorama {
-      position: absolute; inset: 0; top: 100px;
-      width: 100%; height: calc(100vh - 100px);
+      position: absolute; left: 0; top: 100px; right: 220px; bottom: 0;
     }
+    /* Transparent capture layer — blocks Pannellum events when a tool is active */
+    #measure-capture {
+      position: absolute; left: 0; top: 100px; right: 220px; bottom: 0;
+      z-index: 10; pointer-events: none; cursor: crosshair;
+    }
+    body.measuring #measure-capture { pointer-events: all; }
+    /* Canvas drawn on top of Pannellum each animation frame */
+    #measure-canvas {
+      position: absolute; left: 0; top: 100px; right: 220px; bottom: 0;
+      z-index: 11; pointer-events: none; display: block;
+    }
+
     .toolbar-label { color: #8b949e; font-size: 0.8rem; }
+
     #scan-nav {
       position: absolute;
-      bottom: 16px; left: 50%; transform: translateX(-50%);
-      background: rgba(22,27,34,0.9);
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 0.5rem 1rem;
-      display: flex; gap: 0.5rem; align-items: center;
-      z-index: 20;
+      bottom: 16px; left: calc(50% - 110px); transform: translateX(-50%);
+      background: rgba(22,27,34,0.9); border: 1px solid #30363d; border-radius: 8px;
+      padding: 0.5rem 1rem; display: flex; gap: 0.5rem; align-items: center; z-index: 20;
     }
     #scan-nav button {
-      background: #21262d;
-      border: 1px solid #30363d;
-      color: #e6edf3;
-      padding: 0.3rem 0.75rem;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 0.8rem;
+      background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+      padding: 0.3rem 0.75rem; border-radius: 5px; cursor: pointer; font-size: 0.8rem;
     }
     #scan-nav button:hover { background: #30363d; }
-    #scan-nav button.active { border-color: #f0883e; color: #f0883e; }
     #scan-label { color: #8b949e; font-size: 0.8rem; margin: 0 0.5rem; }
+
+    #status-bar {
+      position: absolute; bottom: 0; left: 0; right: 220px;
+      background: rgba(13,17,23,0.93); border-top: 1px solid #30363d;
+      padding: 0.25rem 0.8rem; font-size: 0.78rem; color: #8b949e;
+      z-index: 20; pointer-events: none; display: none; white-space: nowrap;
+    }
 
     /* ── Spatial navigation hotspots ── */
     .pnlm-hotspot.pano-nav-hotspot {
-      /* size set per-hotspot via inline style; Pannellum centers on offsetWidth/2 */
-      width: 40px;
-      height: 40px;
-      background: none !important;
-      background-image: none !important;
-      border: none !important;
-      cursor: pointer;
-      overflow: visible;
-      display: block;
+      width: 40px; height: 40px;
+      background: none !important; background-image: none !important;
+      border: none !important; cursor: pointer; overflow: visible; display: block;
       transition: transform 0.12s ease, filter 0.12s ease;
     }
     .pnlm-hotspot.pano-nav-hotspot:hover {
@@ -54,42 +58,79 @@
       filter: brightness(1.15) drop-shadow(0 0 8px rgba(240,136,62,0.75));
     }
     .pano-nav-popup {
-      display: none;
-      position: absolute;
-      bottom: calc(100% + 6px);
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(13,17,23,0.95);
-      border: 1px solid #f0883e;
-      border-radius: 5px;
-      padding: 3px 9px;
-      font-size: 11px;
-      color: #e6edf3;
-      white-space: nowrap;
-      pointer-events: none;
-      z-index: 100;
-      line-height: 1.5;
+      display: none; position: absolute; bottom: calc(100% + 6px);
+      left: 50%; transform: translateX(-50%);
+      background: rgba(13,17,23,0.95); border: 1px solid #f0883e; border-radius: 5px;
+      padding: 3px 9px; font-size: 11px; color: #e6edf3;
+      white-space: nowrap; pointer-events: none; z-index: 100; line-height: 1.5;
     }
     .pnlm-hotspot.pano-nav-hotspot:hover .pano-nav-popup { display: block; }
+
     #no-pano {
-      position: absolute; inset: 0; top: 100px;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
+      position: absolute; left: 0; top: 100px; right: 220px; bottom: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
       color: #8b949e;
     }
     #no-pano h3 { color: #e6edf3; margin-bottom: 0.5rem; }
+
     #pano-info {
-      position: absolute;
-      left: 12px; top: 112px;
-      background: rgba(22,27,34,0.88);
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 0.6rem 0.9rem;
-      font-size: 0.8rem;
-      color: #8b949e;
-      z-index: 20;
+      position: absolute; left: 12px; top: 112px;
+      background: rgba(22,27,34,0.88); border: 1px solid #30363d; border-radius: 8px;
+      padding: 0.6rem 0.9rem; font-size: 0.8rem; color: #8b949e; z-index: 20;
     }
     #pano-info strong { color: #f0883e; display: block; margin-bottom: 0.2rem; }
+
+    /* ── Right measurement panel ── */
+    #right-panel {
+      position: absolute; right: 0; top: 100px; bottom: 0; width: 220px;
+      background: #0d1117; border-left: 1px solid #30363d;
+      display: flex; flex-direction: column; overflow: hidden; z-index: 20;
+    }
+    .sec-hdr {
+      padding: 0.4rem 0.7rem; font-size: 0.65rem;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: #8b949e; border-bottom: 1px solid #21262d; flex-shrink: 0;
+    }
+    .tools-area { padding: 0.35rem; flex-shrink: 0; }
+    .tool-btn {
+      display: flex; align-items: center; gap: 0.4rem;
+      width: 100%; padding: 0.36rem 0.5rem;
+      background: none; border: 1px solid transparent; border-radius: 5px;
+      color: #c9d1d9; cursor: pointer; font-size: 0.8rem;
+      text-align: left; margin-bottom: 2px;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .tool-btn:hover { background: #21262d; border-color: #30363d; }
+    .tool-btn.active {
+      border-color: var(--tc, #58a6ff); color: var(--tc, #58a6ff);
+      background: color-mix(in srgb, var(--tc, #58a6ff) 10%, transparent);
+    }
+    .tool-btn.danger { color: #8b949e; }
+    .tool-btn.danger:hover { color: #f85149; background: rgba(248,81,73,0.06); }
+    .tool-btn svg { flex-shrink: 0; }
+    .tool-sep { border: none; border-top: 1px solid #21262d; margin: 0.3rem 0; }
+    .floor-row {
+      display: flex; align-items: center; gap: 0.35rem;
+      padding: 0.28rem 0.5rem; font-size: 0.75rem; color: #8b949e;
+    }
+    .floor-row input {
+      width: 50px; background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+      border-radius: 4px; padding: 2px 4px; font-size: 0.75rem; text-align: right;
+    }
+    #measure-list { overflow-y: auto; flex: 1; padding: 0.3rem; }
+    .m-item {
+      display: flex; align-items: center; gap: 0.4rem;
+      padding: 0.34rem 0.45rem; border-radius: 5px; margin-bottom: 2px;
+    }
+    .m-item:hover { background: #161b22; }
+    .m-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .m-info { flex: 1; min-width: 0; }
+    .m-val  { font-size: 0.8rem; color: #e6edf3; font-variant-numeric: tabular-nums; }
+    .m-lbl  { font-size: 0.67rem; color: #8b949e; margin-top: 1px; }
+    .m-del  { background: none; border: none; color: #8b949e; cursor: pointer;
+              padding: 1px 3px; border-radius: 3px; font-size: 0.7rem; }
+    .m-del:hover { color: #f85149; }
+    .m-empty { color: #484f58; font-size: 0.77rem; text-align: center; padding: 1rem 0.5rem; }
   </style>
 </head>
 <body>
@@ -117,6 +158,9 @@
   </div>
 
   <div id="panorama"></div>
+  <div id="measure-capture"></div>
+  <canvas id="measure-canvas"></canvas>
+
   <div id="pano-info" style="display:none">
     <strong id="pano-name"></strong>
     <span id="pano-coords"></span>
@@ -133,34 +177,418 @@
     <p>Select a dataset with panoramas above, or <a href="/" style="color:#58a6ff;">add one from the dashboard</a>.</p>
   </div>
 
+  <div id="status-bar"></div>
+
+  <!-- ── Right panel: measurement tools ── -->
+  <div id="right-panel">
+    <div class="sec-hdr">Measure</div>
+    <div class="tools-area">
+      <button class="tool-btn" data-tool="horizontal" style="--tc:#58a6ff" title="Horizontal distance — 2 clicks on floor plane">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <line x1="1" y1="8" x2="15" y2="8"/>
+          <line x1="1" y1="5" x2="1" y2="11"/>
+          <line x1="15" y1="5" x2="15" y2="11"/>
+        </svg>
+        Horizontal
+      </button>
+      <button class="tool-btn" data-tool="angle" style="--tc:#f0883e" title="Angular separation between two directions">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <line x1="2" y1="14" x2="14" y2="14"/>
+          <line x1="2" y1="14" x2="9" y2="3"/>
+          <path d="M5.5,14 A3.5,3.5 0 0,1 8,10.5" stroke-dasharray="2 2.5"/>
+        </svg>
+        Angle
+      </button>
+      <button class="tool-btn" data-tool="area" style="--tc:#a371f7" title="Polygon area on floor plane — right-click to finish">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="8,2 14,6 12,14 4,14 2,6"/>
+        </svg>
+        Area
+      </button>
+      <hr class="tool-sep">
+      <div class="floor-row">
+        <span>Floor Z</span>
+        <input id="plane-dz" type="number" value="0" step="0.1" min="-10" max="10"
+               title="Height offset from scan Z to intersection plane (metres)">
+        <span>m</span>
+      </div>
+      <hr class="tool-sep">
+      <button class="tool-btn danger" id="clear-all-btn">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <polyline points="2,4 14,4"/>
+          <path d="M5,4V2h6v2"/>
+          <path d="M6,7v5M10,7v5"/>
+          <path d="M3,4l1,10h8l1-10"/>
+        </svg>
+        Clear All
+      </button>
+    </div>
+    <div class="sec-hdr" style="border-top:1px solid #21262d">Results</div>
+    <div id="measure-list">
+      <div class="m-empty">No measurements yet.<br>Select a tool to begin.</div>
+    </div>
+  </div>
+
   <script>
-    const params = new URLSearchParams(location.search);
-    const datasetId = params.get('id');
-    const posId = params.get('pos');
-    const select = document.getElementById('dataset-select');
-    const noPano = document.getElementById('no-pano');
-    const scanNav = document.getElementById('scan-nav');
-    const scanLabel = document.getElementById('scan-label');
-    const panoInfo = document.getElementById('pano-info');
+    const params     = new URLSearchParams(location.search);
+    const datasetId  = params.get('id');
+    const posId      = params.get('pos');
+    const select     = document.getElementById('dataset-select');
+    const noPano     = document.getElementById('no-pano');
+    const scanNav    = document.getElementById('scan-nav');
+    const scanLabel  = document.getElementById('scan-label');
+    const panoInfo   = document.getElementById('pano-info');
     const potreeLink = document.getElementById('potree-link');
 
     let pannellumViewer = null;
-    let panoramas = [];
-    let currentIdx = 0;
+    let panoramas       = [];
+    let currentIdx      = 0;
 
-    async function loadDatasets() {
-      const res = await fetch('/api/datasets');
-      const datasets = await res.json();
-      const compatible = datasets.filter(d => d.type === 'panorama' || d.type === 'e57' || (d.panoramas && d.panoramas.length > 0));
-      select.innerHTML = '<option value="">-- select dataset --</option>' +
-        compatible.map(d => `<option value="${d.id}" ${d.id === datasetId ? 'selected' : ''}>${d.name}</option>`).join('');
-      if (compatible.length === 0) {
-        select.innerHTML = '<option value="">No panorama datasets</option>';
+    // ── Measurement state ────────────────────────────────────────────────────
+    let activeTool   = null;
+    let measurePts   = [];   // in-progress: [{yaw, pitch, lv95:{x,y,z}}]
+    let measurements = [];   // committed:   [{id, tool, display, color, pts:[{x,y,z}]}]
+
+    const TC = {
+      horizontal: { hex: '#58a6ff', label: 'Horizontal' },
+      angle:      { hex: '#f0883e', label: 'Angle' },
+      area:       { hex: '#a371f7', label: 'Area' },
+    };
+    const STATUS_MSG = {
+      horizontal: ['Click first point on floor', 'Click second point on floor'],
+      angle:      ['Click first direction',      'Click second direction'],
+      area:       ['Click first point',          'Keep clicking — right-click to finish'],
+    };
+
+    function setTool(tool) {
+      cancelCurrent();
+      if (activeTool === tool) { resetTool(); return; }
+      activeTool = tool;
+      document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+      document.querySelector(`.tool-btn[data-tool="${tool}"]`).classList.add('active');
+      document.body.classList.add('measuring');
+      setStatus();
+    }
+
+    function resetTool() {
+      activeTool = null;
+      document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+      document.body.classList.remove('measuring');
+      document.getElementById('status-bar').style.display = 'none';
+    }
+
+    function cancelCurrent() { measurePts = []; }
+
+    function setStatus() {
+      const bar = document.getElementById('status-bar');
+      if (!activeTool) { bar.style.display = 'none'; return; }
+      const msgs = STATUS_MSG[activeTool];
+      let extra  = '';
+      if (activeTool === 'area' && measurePts.length >= 3)
+        extra = ` <span style="color:#8b949e">(${measurePts.length} pts)</span>`;
+      bar.style.display = 'block';
+      bar.innerHTML = `<strong style="color:${TC[activeTool].hex}">${TC[activeTool].label}</strong>`
+        + ` &nbsp;${msgs[Math.min(measurePts.length, 1)]}${extra}`;
+    }
+
+    // ── Ray math ─────────────────────────────────────────────────────────────
+    function getClickYawPitch(e) {
+      const el    = document.getElementById('panorama');
+      const rect  = el.getBoundingClientRect();
+      const dx    = e.clientX - (rect.left + rect.width  / 2);
+      const dy    = e.clientY - (rect.top  + rect.height / 2);
+      const tanH2 = Math.tan(pannellumViewer.getHfov() * Math.PI / 360);
+      const half  = rect.width / 2;
+      return {
+        yaw:   pannellumViewer.getYaw()   + Math.atan(dx * tanH2 / half) * 180 / Math.PI,
+        pitch: pannellumViewer.getPitch() - Math.atan(dy * tanH2 / half) * 180 / Math.PI,
+      };
+    }
+
+    function clickRay(yaw, pitch) {
+      const scan    = panoramas[currentIdx];
+      const bearing = (yaw + (scan.northOffset || 0)) * Math.PI / 180;
+      const p       = pitch * Math.PI / 180;
+      return {
+        ox: scan.x, oy: scan.y, oz: scan.z,
+        dx: Math.sin(bearing) * Math.cos(p),
+        dy: Math.cos(bearing) * Math.cos(p),
+        dz: Math.sin(p),
+      };
+    }
+
+    function rayHitPlane(ray) {
+      const scan   = panoramas[currentIdx];
+      const planeZ = scan.z + parseFloat(document.getElementById('plane-dz').value || 0);
+      if (Math.abs(ray.dz) < 0.02) return null;   // near-horizontal — no reliable intersection
+      const t = (planeZ - ray.oz) / ray.dz;
+      if (t <= 0) return null;                     // plane is behind the scanner
+      return { x: ray.ox + t*ray.dx, y: ray.oy + t*ray.dy, z: planeZ };
+    }
+
+    function lv95AtDist(yaw, pitch, dist) {
+      const scan    = panoramas[currentIdx];
+      const bearing = (yaw + (scan.northOffset || 0)) * Math.PI / 180;
+      const p       = pitch * Math.PI / 180;
+      return {
+        x: scan.x + Math.sin(bearing) * Math.cos(p) * dist,
+        y: scan.y + Math.cos(bearing) * Math.cos(p) * dist,
+        z: scan.z + Math.sin(p) * dist,
+      };
+    }
+
+    function angularDist(yaw1, pitch1, yaw2, pitch2) {
+      const no = (panoramas[currentIdx].northOffset || 0) * Math.PI / 180;
+      const b1 = yaw1*Math.PI/180 + no,  b2 = yaw2*Math.PI/180 + no;
+      const p1 = pitch1*Math.PI/180,     p2 = pitch2*Math.PI/180;
+      const dot = Math.sin(b1)*Math.cos(p1)*Math.sin(b2)*Math.cos(p2)
+                + Math.cos(b1)*Math.cos(p1)*Math.cos(b2)*Math.cos(p2)
+                + Math.sin(p1)*Math.sin(p2);
+      return Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI;
+    }
+
+    function fmtDist(m) { return m >= 1000 ? (m/1000).toFixed(3)+' km' : m.toFixed(3)+' m'; }
+    function fmtArea(a) { return a >= 10000 ? (a/10000).toFixed(3)+' ha' : a.toFixed(2)+' m²'; }
+
+    // ── Commit functions ──────────────────────────────────────────────────────
+    function commitMeasurement(tool, display, pts) {
+      measurements.push({ id: Date.now(), tool, display, color: TC[tool].hex, pts });
+      measurePts = [];
+      resetTool();
+      renderMeasureList();
+    }
+
+    function doHorizontal() {
+      const [a, b] = measurePts;
+      const d = Math.sqrt((b.lv95.x-a.lv95.x)**2 + (b.lv95.y-a.lv95.y)**2);
+      commitMeasurement('horizontal', fmtDist(d), [a.lv95, b.lv95]);
+    }
+
+    function doAngle() {
+      const [a, b] = measurePts;
+      const deg = angularDist(a.yaw, a.pitch, b.yaw, b.pitch);
+      commitMeasurement('angle', deg.toFixed(2)+'°', [
+        lv95AtDist(a.yaw, a.pitch, 10),
+        lv95AtDist(b.yaw, b.pitch, 10),
+      ]);
+    }
+
+    function doArea() {
+      const pts = measurePts.map(p => p.lv95);
+      let a = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const j = (i+1) % pts.length;
+        a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
       }
+      commitMeasurement('area', fmtArea(Math.abs(a)/2), pts);
+    }
+
+    // ── Results list ──────────────────────────────────────────────────────────
+    function renderMeasureList() {
+      const el = document.getElementById('measure-list');
+      if (!measurements.length) {
+        el.innerHTML = '<div class="m-empty">No measurements yet.<br>Select a tool to begin.</div>';
+        return;
+      }
+      el.innerHTML = measurements.map(m => `
+        <div class="m-item">
+          <div class="m-dot" style="background:${m.color}"></div>
+          <div class="m-info">
+            <div class="m-val">${m.display}</div>
+            <div class="m-lbl">${TC[m.tool].label}</div>
+          </div>
+          <button class="m-del" data-id="${m.id}">&#x2715;</button>
+        </div>
+      `).join('');
+      el.querySelectorAll('.m-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+          measurements = measurements.filter(x => x.id !== +btn.dataset.id);
+          renderMeasureList();
+        });
+      });
+    }
+
+    // ── Canvas overlay ────────────────────────────────────────────────────────
+    function resizeCanvas() {
+      const el     = document.getElementById('panorama');
+      const canvas = document.getElementById('measure-canvas');
+      const rect   = el.getBoundingClientRect();
+      canvas.width  = Math.max(1, Math.round(rect.width));
+      canvas.height = Math.max(1, Math.round(rect.height));
+    }
+
+    function lv95ToYawPitch(pt, scan) {
+      const dx = pt.x - scan.x, dy = pt.y - scan.y, dz = pt.z - scan.z;
+      const horiz   = Math.sqrt(dx*dx + dy*dy);
+      const bearing = Math.atan2(dx, dy) * 180 / Math.PI;
+      let yaw = bearing - (scan.northOffset || 0);
+      while (yaw >  180) yaw -= 360;
+      while (yaw < -180) yaw += 360;
+      return { yaw, pitch: Math.atan2(dz, horiz) * 180 / Math.PI };
+    }
+
+    function yawPitchToCanvas(yaw, pitch) {
+      if (!pannellumViewer) return null;
+      const canvas = document.getElementById('measure-canvas');
+      let dYaw = yaw - pannellumViewer.getYaw();
+      while (dYaw >  180) dYaw -= 360;
+      while (dYaw < -180) dYaw += 360;
+      if (Math.abs(dYaw) > 87) return null;   // behind the viewer
+      const dPitch = pitch - pannellumViewer.getPitch();
+      const tanH2  = Math.tan(pannellumViewer.getHfov() * Math.PI / 360);
+      const cx = canvas.width / 2, cy = canvas.height / 2;
+      return {
+        x: cx + Math.tan(dYaw   * Math.PI/180) / tanH2 * cx,
+        y: cy - Math.tan(dPitch * Math.PI/180) / tanH2 * cx,
+      };
+    }
+
+    function drawMeasureCanvas() {
+      const canvas = document.getElementById('measure-canvas');
+      const ctx    = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (!pannellumViewer || !panoramas.length) {
+        requestAnimationFrame(drawMeasureCanvas);
+        return;
+      }
+      const scan = panoramas[currentIdx];
+
+      // Committed measurements — reprojected from LV95 each frame
+      for (const m of measurements) {
+        const spts = m.pts.map(pt => {
+          const { yaw, pitch } = lv95ToYawPitch(pt, scan);
+          return yawPitchToCanvas(yaw, pitch);
+        }).filter(Boolean);
+        if (!spts.length) continue;
+
+        ctx.strokeStyle = m.color;
+        ctx.fillStyle   = m.color;
+        ctx.lineWidth   = 1.8;
+
+        if (spts.length >= 2) {
+          ctx.beginPath();
+          ctx.moveTo(spts[0].x, spts[0].y);
+          for (let i = 1; i < spts.length; i++) ctx.lineTo(spts[i].x, spts[i].y);
+          if (m.tool === 'area') ctx.closePath();
+          ctx.stroke();
+        }
+        if (m.tool === 'area' && spts.length >= 3) {
+          ctx.globalAlpha = 0.12; ctx.fill(); ctx.globalAlpha = 1;
+        }
+        for (const sp of spts) {
+          ctx.beginPath(); ctx.arc(sp.x, sp.y, 4, 0, Math.PI*2); ctx.fill();
+        }
+
+        // Label at centroid
+        const mx = spts.reduce((s,p) => s+p.x, 0) / spts.length;
+        const my = spts.reduce((s,p) => s+p.y, 0) / spts.length;
+        ctx.font      = 'bold 12px monospace';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(13,17,23,0.85)';
+        ctx.strokeText(m.display, mx+7, my-5);
+        ctx.fillStyle = '#e6edf3';
+        ctx.fillText(m.display, mx+7, my-5);
+        ctx.strokeStyle = m.color;
+        ctx.lineWidth   = 1.8;
+      }
+
+      // In-progress points — stored by yaw/pitch, always relative to current view
+      if (measurePts.length > 0) {
+        const col  = TC[activeTool]?.hex || '#fff';
+        const spts = measurePts.map(p => yawPitchToCanvas(p.yaw, p.pitch)).filter(Boolean);
+        ctx.strokeStyle = col;
+        ctx.fillStyle   = col;
+        ctx.lineWidth   = 1.8;
+        if (spts.length >= 2) {
+          ctx.beginPath();
+          ctx.moveTo(spts[0].x, spts[0].y);
+          for (let i = 1; i < spts.length; i++) ctx.lineTo(spts[i].x, spts[i].y);
+          ctx.stroke();
+        }
+        for (let i = 0; i < spts.length; i++) {
+          ctx.beginPath(); ctx.arc(spts[i].x, spts[i].y, 5, 0, Math.PI*2); ctx.fill();
+          ctx.font      = 'bold 11px monospace';
+          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = 'rgba(13,17,23,0.9)';
+          ctx.strokeText(i+1, spts[i].x+7, spts[i].y-5);
+          ctx.fillStyle = '#e6edf3';
+          ctx.fillText(i+1, spts[i].x+7, spts[i].y-5);
+          ctx.strokeStyle = col;
+          ctx.fillStyle   = col;
+          ctx.lineWidth   = 1.8;
+        }
+      }
+
+      requestAnimationFrame(drawMeasureCanvas);
+    }
+
+    // ── Click handler ─────────────────────────────────────────────────────────
+    document.getElementById('measure-capture').addEventListener('mousedown', e => {
+      if (e.button !== 0 || !activeTool || !pannellumViewer) return;
+      const { yaw, pitch } = getClickYawPitch(e);
+
+      if (activeTool === 'angle') {
+        measurePts.push({ yaw, pitch, lv95: lv95AtDist(yaw, pitch, 10) });
+        if (measurePts.length === 2) doAngle(); else setStatus();
+        return;
+      }
+
+      const ray  = clickRay(yaw, pitch);
+      const lv95 = rayHitPlane(ray);
+      if (!lv95) {
+        const bar = document.getElementById('status-bar');
+        bar.style.display = 'block';
+        bar.innerHTML = '<span style="color:#f0883e">Aim below the horizon</span>';
+        setTimeout(() => { if (activeTool) setStatus(); }, 1500);
+        return;
+      }
+
+      measurePts.push({ yaw, pitch, lv95 });
+      if (activeTool === 'horizontal' && measurePts.length === 2) doHorizontal();
+      else setStatus();
+    });
+
+    document.getElementById('measure-capture').addEventListener('contextmenu', e => {
+      e.preventDefault();
+      if (activeTool === 'area' && measurePts.length >= 3) doArea();
+      else { cancelCurrent(); resetTool(); }
+    });
+
+    // Tool buttons
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(btn =>
+      btn.addEventListener('click', () => setTool(btn.dataset.tool))
+    );
+    document.getElementById('clear-all-btn').addEventListener('click', () => {
+      cancelCurrent(); resetTool(); measurements = []; renderMeasureList();
+    });
+
+    // Keyboard
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { cancelCurrent(); resetTool(); }
+      if (e.key === 'Backspace' && activeTool === 'area' && measurePts.length > 0) {
+        e.preventDefault(); measurePts.pop(); setStatus();
+      }
+    });
+
+    window.addEventListener('resize', resizeCanvas);
+
+    // ── Panorama loading ──────────────────────────────────────────────────────
+    async function loadDatasets() {
+      const res      = await fetch('/api/datasets');
+      const datasets = await res.json();
+      const compatible = datasets.filter(d =>
+        d.type === 'panorama' || d.type === 'e57' || (d.panoramas && d.panoramas.length > 0)
+      );
+      select.innerHTML = '<option value="">-- select dataset --</option>' +
+        compatible.map(d =>
+          `<option value="${d.id}" ${d.id === datasetId ? 'selected' : ''}>${d.name}</option>`
+        ).join('');
+      if (compatible.length === 0)
+        select.innerHTML = '<option value="">No panorama datasets</option>';
       if (datasetId) {
         const ds = compatible.find(d => d.id === datasetId);
-        if (ds) loadPanoramas(ds);
-        else showNone();
+        if (ds) loadPanoramas(ds); else showNone();
       } else {
         showNone();
       }
@@ -175,7 +603,7 @@
       const id = select.value;
       if (!id) { showNone(); return; }
       const res = await fetch(`/api/datasets/${id}`);
-      const ds = await res.json();
+      const ds  = await res.json();
       history.pushState({}, '', `?id=${id}`);
       loadPanoramas(ds);
     });
@@ -189,14 +617,10 @@
       }
       noPano.style.display = 'none';
       scanNav.style.display = 'flex';
-
-      // Link to Potree if source is pointcloud or e57
       if (ds.type === 'e57' || ds.type === 'pointcloud') {
         potreeLink.style.display = 'inline-block';
         potreeLink.href = `/viewers/potree.html?id=${ds.id}`;
       }
-
-      // Find initial position
       const startIdx = posId ? panoramas.findIndex(p => p.id === posId) : 0;
       currentIdx = startIdx >= 0 ? startIdx : 0;
       showPanorama(currentIdx);
@@ -218,11 +642,9 @@
       return panoramas
         .map((p, i) => {
           if (i === idx) return null;
-          const dx = p.x - cur.x;
-          const dy = p.y - cur.y;
-          const dz = p.z - cur.z;
-          const horiz = Math.sqrt(dx * dx + dy * dy);
-          const dist  = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          const dx = p.x - cur.x, dy = p.y - cur.y, dz = p.z - cur.z;
+          const horiz = Math.sqrt(dx*dx + dy*dy);
+          const dist  = Math.sqrt(dx*dx + dy*dy + dz*dz);
           if (dist < 0.1) return null;
           const bearing = Math.atan2(dx, dy) * 180 / Math.PI;
           const pitch   = Math.atan2(dz, horiz) * 180 / Math.PI;
@@ -235,13 +657,11 @@
         .sort((a, b) => a.horiz - b.horiz)
         .map(({ i, p, dist, dz, yaw, pitch }) => {
           const distLabel = dist < 10 ? `${dist.toFixed(1)}m` : `${Math.round(dist)}m`;
-          const label = (p.label || `Scan ${i + 1}`).replace('240906_Gr3_', '');
+          const label     = (p.label || `Scan ${i + 1}`).replace('240906_Gr3_', '');
           const floorNote = dz > 1.5 ? ' ▲' : dz < -1.5 ? ' ▼' : '';
-          const size = Math.round(Math.max(24, Math.min(56, 60 / Math.sqrt(Math.max(dist, 0.5)))));
+          const size      = Math.round(Math.max(24, Math.min(56, 60 / Math.sqrt(Math.max(dist, 0.5)))));
           return {
-            type: 'info',
-            pitch,
-            yaw,
+            type: 'info', pitch, yaw,
             cssClass: 'pano-nav-hotspot',
             createTooltipFunc: (div, args) => {
               const s = args.size;
@@ -267,38 +687,27 @@
 
     function showPanorama(idx, initialYaw = 0) {
       currentIdx = idx;
+      cancelCurrent();   // clear in-progress points; keep completed measurements
       const p = panoramas[idx];
       scanLabel.textContent = `Scan ${idx + 1} / ${panoramas.length}`;
       panoInfo.style.display = 'block';
-      document.getElementById('pano-name').textContent = p.label || `Scan ${idx + 1}`;
+      document.getElementById('pano-name').textContent   = p.label || `Scan ${idx + 1}`;
       document.getElementById('pano-coords').textContent = p.x !== undefined
-        ? `X: ${p.x.toFixed(2)}  Y: ${p.y.toFixed(2)}  Z: ${p.z.toFixed(2)}`
-        : '';
+        ? `X: ${p.x.toFixed(2)}  Y: ${p.y.toFixed(2)}  Z: ${p.z.toFixed(2)}` : '';
 
       const hotspots = computeNeighborHotspots(idx, panoramas);
-
-      if (pannellumViewer) {
-        pannellumViewer.destroy();
-        pannellumViewer = null;
-      }
+      if (pannellumViewer) { pannellumViewer.destroy(); pannellumViewer = null; }
 
       pannellumViewer = pannellum.viewer('panorama', {
-        type: 'equirectangular',
-        panorama: p.path,
-        autoLoad: true,
-        autoRotate: 0,
-        compass: true,
-        northOffset: p.northOffset || 0,
-        yaw: initialYaw,
-        hfov: 100,
-        minHfov: 30,
-        maxHfov: 150,
-        hotSpots: hotspots,
-        showControls: true,
-        showZoomCtrl: true,
-        showFullscreenCtrl: true,
+        type: 'equirectangular', panorama: p.path,
+        autoLoad: true, autoRotate: 0, compass: true,
+        northOffset: p.northOffset || 0, yaw: initialYaw,
+        hfov: 100, minHfov: 30, maxHfov: 150,
+        hotSpots: hotspots, showControls: true, showZoomCtrl: true, showFullscreenCtrl: true,
         uiText: { loadButtonLabel: 'Load Panorama' },
       });
+
+      resizeCanvas();
     }
 
     document.getElementById('btn-prev').addEventListener('click', () => {
@@ -308,6 +717,9 @@
       if (currentIdx < panoramas.length - 1) showPanorama(currentIdx + 1);
     });
 
+    // Boot
+    resizeCanvas();
+    requestAnimationFrame(drawMeasureCanvas);
     loadDatasets();
   </script>
 </body>
