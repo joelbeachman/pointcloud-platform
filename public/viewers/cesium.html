@@ -725,26 +725,13 @@
         short = `X ${local.x.toFixed(3)}, Y ${local.y.toFixed(3)}, Z ${local.z.toFixed(3)}`;
       }
 
-      // Show marker + label in scene
+      // Show marker only — coordinates are shown in the panel, not the scene
       const coordEnt = viewer.entities.add({
         position: ecef,
         point: {
           pixelSize: 10,
           color: Cesium.Color.fromCssColorString('#79c0ff'),
           outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: info,
-          font: '12px monospace',
-          fillColor: Cesium.Color.WHITE,
-          backgroundColor: Cesium.Color.fromCssColorString('rgba(22,27,34,0.92)'),
-          showBackground: true,
-          backgroundPadding: new Cesium.Cartesian2(8, 5),
-          outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          pixelOffset: new Cesium.Cartesian2(0, -14),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
       });
@@ -1725,12 +1712,16 @@
         ctx.stroke();
       }
       for (const sp of spts) {
-        ctx.beginPath(); ctx.arc(sp.x, sp.y, 11, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
         ctx.fillStyle = color; ctx.fill();
         ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
-        ctx.font = 'bold 10px monospace'; ctx.fillStyle = 'white';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(String(sp.i + 1), sp.x, sp.y);
+        // Number floats above the circle
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(13,17,23,0.9)';
+        ctx.strokeText(String(sp.i + 1), sp.x, sp.y - 10);
+        ctx.fillStyle = '#e6edf3';
+        ctx.fillText(String(sp.i + 1), sp.x, sp.y - 10);
         ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
       }
     }
@@ -1747,14 +1738,25 @@
           const spts = projectEcefPts(m.pts);
           if (!spts.length) continue;
           drawCircles(ctx, spts, TC[m.tool]?.hex || '#fff');
-          // Value label at centroid of visible points
+          // Close area polygon
+          if (m.tool === 'area' && spts.length >= 3) {
+            ctx.strokeStyle = TC[m.tool]?.hex || '#fff'; ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(spts[spts.length - 1].x, spts[spts.length - 1].y);
+            ctx.lineTo(spts[0].x, spts[0].y);
+            ctx.stroke();
+          }
+          // Value label: above midpoint for lines, at centroid for area
           const mx = spts.reduce((s, p) => s + p.x, 0) / spts.length;
           const my = spts.reduce((s, p) => s + p.y, 0) / spts.length;
+          const labelY = m.tool === 'area' ? my : my - 18;
           ctx.font = 'bold 12px monospace'; ctx.lineWidth = 3;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.strokeStyle = 'rgba(13,17,23,0.85)';
-          ctx.strokeText(m.display, mx + 14, my - 5);
+          ctx.strokeText(m.display, mx, labelY);
           ctx.fillStyle = '#e6edf3';
-          ctx.fillText(m.display, mx + 14, my - 5);
+          ctx.fillText(m.display, mx, labelY);
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         }
 
         // In-progress (globe or panorama) points
