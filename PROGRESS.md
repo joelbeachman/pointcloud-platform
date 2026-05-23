@@ -164,6 +164,23 @@ All `.json`/`.csv` config files survive (tracked). Re-copy binaries from externa
 
 ---
 
+## 2026-05-23 — Panorama Viewer: Measurement Tools
+
+### Completed
+- **Measurement panel** (`public/viewers/panorama.html`)
+  - Right-side panel (220 px, matches Cesium sidebar style) with tool buttons and results list
+  - **Horizontal distance** — 2 clicks; ray–floor-plane intersection at configurable z-offset; result in metres
+  - **Angular distance** — 2 clicks; great-circle angle between click directions on unit sphere; result in degrees
+  - **Area** — n-click floor-plane polygon; shoelace formula; result in m² or ha
+- **Canvas overlay** (`<canvas id="measure-canvas">`) redraws committed measurement markers each rAF frame
+  - Committed points stored in LV95 → reprojected via `lv95ToYawPitch` each frame; visible from any scan position
+  - In-progress points tracked by (yaw, pitch) relative to current scan; cleared on navigation
+- **`#measure-capture`** transparent intercept overlay — `pointer-events: all` only when a tool is active; blocks Pannellum pan so measurement clicks register correctly
+- Floor Z offset input (±0.1 m step) adjusts assumed measurement plane height
+- Keyboard: Escape cancels in-progress; Backspace removes last area point; right-click finishes area or cancels
+
+---
+
 ## Pending / Planned
 
 ### High priority
