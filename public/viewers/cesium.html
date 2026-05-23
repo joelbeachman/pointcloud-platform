@@ -117,6 +117,8 @@
     .m-del  { background: none; border: none; color: #8b949e; cursor: pointer;
               padding: 1px 3px; border-radius: 3px; font-size: 0.7rem; }
     .m-del:hover { color: #f85149; }
+    .m-num  { min-width: 18px; font-size: 0.72rem; color: #484f58;
+              text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
     .m-empty { color: #484f58; font-size: 0.77rem; text-align: center; padding: 1rem 0.5rem; }
 
     /* ── Status bar ── */
@@ -497,11 +499,12 @@
     // Key: layerId, Value: {R: 3x3, s: number, t: [3]}
     let layerHelmertLV95 = {};
 
-    let activeTool   = null;
-    let curPts       = [];
-    let curEnts      = [];
-    let measurements = [];
-    let allPanoEnts  = [];   // flat list for hit-testing
+    let activeTool    = null;
+    let curPts        = [];
+    let curEnts       = [];
+    let measurements  = [];
+    let measureCount  = 0;
+    let allPanoEnts   = [];   // flat list for hit-testing
 
     // ── Measurement coordinate helpers (ENU local ↔ ECEF) ─────────────────────
     function getRefMatrix() {
@@ -642,7 +645,7 @@
 
     // ── Measurement completion ─────────────────────────────────────────────────
     function commit(tool, display) {
-      measurements.push({ id: Date.now(), tool, display, entities: [...curEnts], pts: [...curPts] });
+      measurements.push({ id: Date.now(), num: ++measureCount, tool, display, entities: [...curEnts], pts: [...curPts] });
       curEnts = []; curPts = [];
       previewEnt.show = false; previewPos = [];
       resetTool();
@@ -727,7 +730,7 @@
         },
       });
 
-      measurements.push({ id: Date.now(), tool: 'coords', display: short, entities: [coordEnt], pts: [ecef] });
+      measurements.push({ id: Date.now(), num: ++measureCount, tool: 'coords', display: short, entities: [coordEnt], pts: [ecef] });
       renderMeasureList();
     }
 
@@ -784,6 +787,7 @@
       }
       el.innerHTML = measurements.map(m => `
         <div class="m-item">
+          <div class="m-num">${m.num}</div>
           <div class="m-dot" style="background:${TC[m.tool].hex}"></div>
           <div class="m-info">
             <div class="m-val">${m.display}</div>
@@ -1551,7 +1555,7 @@
     document.getElementById('clear-all-btn').addEventListener('click', () => {
       cancelCurrent(); resetTool();
       measurements.forEach(m => m.entities.forEach(e => viewer.entities.remove(e)));
-      measurements = [];
+      measurements = []; measureCount = 0;
       renderMeasureList();
     });
 
@@ -1706,14 +1710,6 @@
         ctx.beginPath(); ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
         ctx.fillStyle = color; ctx.fill();
         ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
-        // Number floats above the circle
-        ctx.font = 'bold 10px monospace';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(13,17,23,0.9)';
-        ctx.strokeText(String(sp.i + 1), sp.x, sp.y - 10);
-        ctx.fillStyle = '#e6edf3';
-        ctx.fillText(String(sp.i + 1), sp.x, sp.y - 10);
-        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
       }
     }
 
@@ -1737,6 +1733,17 @@
             ctx.lineTo(spts[0].x, spts[0].y);
             ctx.stroke();
           }
+          // One number per measurement at centroid (above midpoint for lines, inside for area)
+          const mx = spts.reduce((s, p) => s + p.x, 0) / spts.length;
+          const my = spts.reduce((s, p) => s + p.y, 0) / spts.length;
+          const ny = m.tool === 'area' ? my : my - 18;
+          ctx.font = 'bold 11px monospace';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(13,17,23,0.9)';
+          ctx.strokeText(String(m.num), mx, ny);
+          ctx.fillStyle = '#e6edf3';
+          ctx.fillText(String(m.num), mx, ny);
+          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         }
 
         // In-progress (globe or panorama) points
