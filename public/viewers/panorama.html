@@ -66,6 +66,18 @@
     }
     .pnlm-hotspot.pano-nav-hotspot:hover .pano-nav-popup { display: block; }
 
+    /* Measurement point markers (Pannellum hotspots) */
+    .pnlm-hotspot.measure-hotspot {
+      width: 28px; height: 28px;
+      background: none !important; background-image: none !important;
+      border: none !important; cursor: default; overflow: visible; display: block;
+      transition: transform 0.12s ease, filter 0.12s ease;
+    }
+    .pnlm-hotspot.measure-hotspot:hover {
+      transform: scale(1.15);
+      filter: brightness(1.1) drop-shadow(0 0 6px rgba(255,255,255,0.45));
+    }
+
     #no-pano {
       position: absolute; left: 0; top: 100px; right: 220px; bottom: 0;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -352,9 +364,11 @@
 
     // ── Commit functions ──────────────────────────────────────────────────────
     function commitMeasurement(tool, display, pts) {
-      measurements.push({ id: Date.now(), tool, display, color: TC[tool].hex, pts });
+      const m = { id: Date.now(), tool, display, color: TC[tool].hex, pts };
+      measurements.push(m);
       measurePts = [];
       resetTool();
+      addMeasureHotspots(m);
       renderMeasureList();
     }
 
@@ -402,6 +416,8 @@
       `).join('');
       el.querySelectorAll('.m-del').forEach(btn => {
         btn.addEventListener('click', () => {
+          const m = measurements.find(x => x.id === +btn.dataset.id);
+          if (m) removeMeasureHotspots(m);
           measurements = measurements.filter(x => x.id !== +btn.dataset.id);
           renderMeasureList();
         });
@@ -475,9 +491,6 @@
         }
         if (m.tool === 'area' && spts.length >= 3) {
           ctx.globalAlpha = 0.12; ctx.fill(); ctx.globalAlpha = 1;
-        }
-        for (const sp of spts) {
-          ctx.beginPath(); ctx.arc(sp.x, sp.y, 4, 0, Math.PI*2); ctx.fill();
         }
 
         // Label at centroid
@@ -560,6 +573,7 @@
       btn.addEventListener('click', () => setTool(btn.dataset.tool))
     );
     document.getElementById('clear-all-btn').addEventListener('click', () => {
+      measurements.forEach(m => removeMeasureHotspots(m));
       cancelCurrent(); resetTool(); measurements = []; renderMeasureList();
     });
 
@@ -636,6 +650,50 @@
       </svg>`;
     }
 
+    function measureSVG(num, color) {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28" style="display:block">
+        <circle cx="14" cy="14" r="11" fill="${color}" stroke="rgba(255,255,255,0.9)" stroke-width="2"/>
+        <text x="14" y="18.5" text-anchor="middle" fill="white" font-size="10" font-weight="bold" font-family="monospace">${num}</text>
+      </svg>`;
+    }
+
+    function makeMeasureHotspot(m, ptIdx, scan) {
+      const { yaw, pitch } = lv95ToYawPitch(m.pts[ptIdx], scan);
+      return {
+        id: `m_${m.id}_${ptIdx}`,
+        type: 'info', yaw, pitch,
+        cssClass: 'measure-hotspot',
+        createTooltipFunc: (div, args) => {
+          div.style.width = div.style.height = '28px';
+          div.innerHTML = measureSVG(args.num, args.color);
+        },
+        createTooltipArgs: { num: ptIdx + 1, color: m.color },
+        clickHandlerFunc: () => {},
+        clickHandlerArgs: {},
+      };
+    }
+
+    function measurementHotspots(scanIdx) {
+      const scan = panoramas[scanIdx];
+      if (!scan || scan.x == null) return [];
+      return measurements.flatMap((m) =>
+        m.pts.map((_, ptIdx) => makeMeasureHotspot(m, ptIdx, scan))
+      );
+    }
+
+    function addMeasureHotspots(m) {
+      if (!pannellumViewer) return;
+      const scan = panoramas[currentIdx];
+      m.pts.forEach((_, ptIdx) => pannellumViewer.addHotSpot(makeMeasureHotspot(m, ptIdx, scan)));
+    }
+
+    function removeMeasureHotspots(m) {
+      if (!pannellumViewer) return;
+      m.pts.forEach((_, i) => {
+        try { pannellumViewer.removeHotSpot(`m_${m.id}_${i}`); } catch (_) {}
+      });
+    }
+
     function computeNeighborHotspots(idx, panoramas) {
       const cur = panoramas[idx];
       if (cur.x == null) return [];
@@ -695,7 +753,10 @@
       document.getElementById('pano-coords').textContent = p.x !== undefined
         ? `X: ${p.x.toFixed(2)}  Y: ${p.y.toFixed(2)}  Z: ${p.z.toFixed(2)}` : '';
 
-      const hotspots = computeNeighborHotspots(idx, panoramas);
+      const hotspots = [
+        ...computeNeighborHotspots(idx, panoramas),
+        ...measurementHotspots(idx),
+      ];
       if (pannellumViewer) { pannellumViewer.destroy(); pannellumViewer = null; }
 
       pannellumViewer = pannellum.viewer('panorama', {
