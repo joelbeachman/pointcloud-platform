@@ -18,24 +18,6 @@
     "createdAt": "2026-04-07T00:00:00.000Z"
   },
   {
-    "id": "nike-splat",
-    "name": "Nike (Gaussian Splat)",
-    "type": "splat",
-    "source": "photogrammetry",
-    "path": "/data/splats/nike.splat",
-    "description": "Open Gaussian splat scene.",
-    "createdAt": "2026-04-07T00:00:00.000Z"
-  },
-  {
-    "id": "nike-splat-cesium",
-    "name": "Nike (Gaussian Splat – 3D Tiles)",
-    "type": "cesium-splat",
-    "source": "photogrammetry",
-    "path": "/data/cesium/nike-splat/tileset.json",
-    "description": "Gaussian splat converted to 3D Tiles with KHR_gaussian_splatting extension for the Cesium viewer.",
-    "createdAt": "2026-04-13T00:00:00.000Z"
-  },
-  {
     "id": "test-bauing-cesium",
     "name": "Test Bauing (3D Tiles)",
     "type": "cesium",

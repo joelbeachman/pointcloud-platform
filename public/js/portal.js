@@ -37,7 +37,7 @@ const VIEWER_MAP = {
   e57: '/viewers/potree.html',
   cesium: '/viewers/cesium.html',
   splat: '/viewers/splat.html',
-  panorama: '/viewers/panorama.html',
+  panorama: '/viewers/cesium.html',
 };
 
 const ICONS = {

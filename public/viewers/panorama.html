@@ -432,18 +432,22 @@
 
     function yawPitchToCanvas(yaw, pitch) {
       if (!pannellumViewer) return null;
+      const hfov = pannellumViewer.getHfov();
+      if (!hfov || !isFinite(hfov) || hfov <= 0) return null;
       const canvas = document.getElementById('measure-canvas');
+      if (!canvas.width || !canvas.height) return null;
       let dYaw = yaw - pannellumViewer.getYaw();
       while (dYaw >  180) dYaw -= 360;
       while (dYaw < -180) dYaw += 360;
-      if (Math.abs(dYaw) > 87) return null;   // behind the viewer
+      if (Math.abs(dYaw) > 87) return null;
       const dPitch = pitch - pannellumViewer.getPitch();
-      const tanH2  = Math.tan(pannellumViewer.getHfov() * Math.PI / 360);
+      const tanH2  = Math.tan(hfov * Math.PI / 360);
+      if (!tanH2 || !isFinite(tanH2)) return null;
       const cx = canvas.width / 2, cy = canvas.height / 2;
-      return {
-        x: cx + Math.tan(dYaw   * Math.PI/180) / tanH2 * cx,
-        y: cy - Math.tan(dPitch * Math.PI/180) / tanH2 * cx,
-      };
+      const x = cx + Math.tan(dYaw   * Math.PI / 180) / tanH2 * cx;
+      const y = cy - Math.tan(dPitch * Math.PI / 180) / tanH2 * cx;
+      if (!isFinite(x) || !isFinite(y)) return null;
+      return { x, y };
     }
 
     function drawMeasureCanvas() {
@@ -463,7 +467,7 @@
         const spts = m.pts.map((pt, i) => {
           const { yaw, pitch } = lv95ToYawPitch(pt, scan);
           const pos = yawPitchToCanvas(yaw, pitch);
-          return pos ? { ...pos, i } : null;
+          return (pos && isFinite(pos.x) && isFinite(pos.y)) ? { ...pos, i } : null;
         }).filter(Boolean);
         if (!spts.length) continue;
 
@@ -514,7 +518,8 @@
       // In-progress points — stored by yaw/pitch, always relative to current view
       if (measurePts.length > 0) {
         const col  = TC[activeTool]?.hex || '#fff';
-        const spts = measurePts.map(p => yawPitchToCanvas(p.yaw, p.pitch)).filter(Boolean);
+        const spts = measurePts.map(p => yawPitchToCanvas(p.yaw, p.pitch))
+          .filter(p => p && isFinite(p.x) && isFinite(p.y));
         ctx.strokeStyle = col;
         ctx.fillStyle   = col;
         ctx.lineWidth   = 1.8;

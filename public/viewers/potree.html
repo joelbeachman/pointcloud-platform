@@ -41,7 +41,6 @@
       <a href="/viewers/potree.html" class="active">Point Cloud</a>
       <a href="/viewers/cesium.html">Cesium</a>
       <a href="/viewers/splat.html">Splat</a>
-      <a href="/viewers/panorama.html">Panorama</a>
       <a href="/viewers/compare.html">Compare</a>
     </nav>
   </header>
@@ -216,7 +215,7 @@
       if (hits.length) {
         const idx = panoMarkers.indexOf(hits[0].object);
         const { scan, datasetId } = panoMarkerMeta[idx];
-        window.location.href = `/viewers/panorama.html?id=${datasetId}&pos=${scan.id}`;
+        window.location.href = `/viewers/cesium.html?id=${datasetId}`;
       }
 
       // Handle reference point clicks for measurements
@@ -369,7 +368,7 @@
 
       if (ds.panoramas && ds.panoramas.length) {
         panoLink.style.display = 'inline-block';
-        panoLink.href = `/viewers/panorama.html?id=${ds.id}`;
+        panoLink.href = `/viewers/cesium.html?id=${ds.id}`;
       } else { panoLink.style.display = 'none'; }
 
       try {

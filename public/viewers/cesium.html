@@ -222,6 +222,7 @@
     }
     body.measuring #pano-overlay.open #pano-measure-hint { display: block; }
     body.measuring #pano-overlay.open #pano-div { cursor: crosshair; }
+    #pano-canvas { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 
     /* pano hotspot styles (mirrored from panorama.html) */
     .pnlm-hotspot.pano-nav-hotspot {
@@ -257,7 +258,6 @@
       <a href="/viewers/potree.html">Point Cloud</a>
       <a href="/viewers/cesium.html" class="active">Cesium</a>
       <a href="/viewers/splat.html">Splat</a>
-      <a href="/viewers/panorama.html">Panorama</a>
       <a href="/viewers/compare.html">Compare</a>
     </nav>
   </header>
@@ -370,6 +370,7 @@
     </div>
     <div id="pano-inner">
       <div id="pano-div"></div>
+      <canvas id="pano-canvas"></canvas>
       <div id="pano-measure-hint">Click in panorama to place measurement point</div>
       <div id="pano-scan-nav">
         <button id="pano-btn-prev">&#8592; Prev</button>
@@ -641,7 +642,7 @@
 
     // ── Measurement completion ─────────────────────────────────────────────────
     function commit(tool, display) {
-      measurements.push({ id: Date.now(), tool, display, entities: [...curEnts] });
+      measurements.push({ id: Date.now(), tool, display, entities: [...curEnts], pts: [...curPts] });
       curEnts = []; curPts = [];
       previewEnt.show = false; previewPos = [];
       resetTool();
@@ -748,7 +749,7 @@
         },
       });
 
-      measurements.push({ id: Date.now(), tool: 'coords', display: short, entities: [coordEnt] });
+      measurements.push({ id: Date.now(), tool: 'coords', display: short, entities: [coordEnt], pts: [ecef] });
       renderMeasureList();
     }
 
@@ -757,6 +758,7 @@
       curEnts.forEach(e => viewer.entities.remove(e));
       curEnts = []; curPts = [];
       previewEnt.show = false; previewPos = [];
+      panoCurPts = [];
     }
 
     function resetTool() {
@@ -1675,6 +1677,98 @@
     let panoDS      = null;
     let panoScanIdx = 0;
     let panoViewer  = null;
+    let panoCurPts  = [];   // {yaw, pitch, color} — in-progress measurement clicks in panorama
+
+    function resizePanoCanvas() {
+      const inner  = document.getElementById('pano-inner');
+      const canvas = document.getElementById('pano-canvas');
+      const rect   = inner.getBoundingClientRect();
+      canvas.width  = Math.max(1, Math.round(rect.width));
+      canvas.height = Math.max(1, Math.round(rect.height));
+    }
+
+    function yawPitchToPanoCanvas(yaw, pitch) {
+      if (!panoViewer) return null;
+      const hfov = panoViewer.getHfov();
+      if (!hfov || !isFinite(hfov) || hfov <= 0) return null;
+      const canvas = document.getElementById('pano-canvas');
+      if (!canvas.width || !canvas.height) return null;
+      let dYaw = yaw - panoViewer.getYaw();
+      while (dYaw >  180) dYaw -= 360;
+      while (dYaw < -180) dYaw += 360;
+      if (Math.abs(dYaw) > 87) return null;
+      const dPitch = pitch - panoViewer.getPitch();
+      const tanH2  = Math.tan(hfov * Math.PI / 360);
+      if (!tanH2 || !isFinite(tanH2)) return null;
+      const cx = canvas.width / 2, cy = canvas.height / 2;
+      const x  = cx + Math.tan(dYaw   * Math.PI / 180) / tanH2 * cx;
+      const y  = cy - Math.tan(dPitch * Math.PI / 180) / tanH2 * cx;
+      if (!isFinite(x) || !isFinite(y)) return null;
+      return { x, y };
+    }
+
+    // Project an array of ECEF points to canvas coords; returns [{x,y,i},...] (visible only)
+    function projectEcefPts(ecefArr) {
+      return ecefArr.map((ecef, i) => {
+        const yw = ecefToPanoYawPitch(ecef);
+        if (!yw) return null;
+        const pos = yawPitchToPanoCanvas(yw.yaw, yw.pitch);
+        return (pos && isFinite(pos.x) && isFinite(pos.y)) ? { ...pos, i } : null;
+      }).filter(Boolean);
+    }
+
+    function drawCircles(ctx, spts, color) {
+      if (spts.length >= 2) {
+        ctx.strokeStyle = color; ctx.lineWidth = 1.8;
+        ctx.beginPath(); ctx.moveTo(spts[0].x, spts[0].y);
+        for (let j = 1; j < spts.length; j++) ctx.lineTo(spts[j].x, spts[j].y);
+        ctx.stroke();
+      }
+      for (const sp of spts) {
+        ctx.beginPath(); ctx.arc(sp.x, sp.y, 11, 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+        ctx.font = 'bold 10px monospace'; ctx.fillStyle = 'white';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(sp.i + 1), sp.x, sp.y);
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      }
+    }
+
+    function drawPanoCanvas() {
+      const canvas = document.getElementById('pano-canvas');
+      const ctx    = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (panoViewer) {
+        // Committed measurements — persisted until cleared
+        for (const m of measurements) {
+          if (!m.pts?.length) continue;
+          const spts = projectEcefPts(m.pts);
+          if (!spts.length) continue;
+          drawCircles(ctx, spts, TC[m.tool]?.hex || '#fff');
+          // Value label at centroid of visible points
+          const mx = spts.reduce((s, p) => s + p.x, 0) / spts.length;
+          const my = spts.reduce((s, p) => s + p.y, 0) / spts.length;
+          ctx.font = 'bold 12px monospace'; ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(13,17,23,0.85)';
+          ctx.strokeText(m.display, mx + 14, my - 5);
+          ctx.fillStyle = '#e6edf3';
+          ctx.fillText(m.display, mx + 14, my - 5);
+        }
+
+        // In-progress (globe or panorama) points
+        if (activeTool && curPts.length > 0) {
+          const spts = projectEcefPts(curPts);
+          if (spts.length) drawCircles(ctx, spts, TC[activeTool]?.hex || '#fff');
+        }
+      }
+
+
+      if (document.getElementById('pano-overlay').classList.contains('open')) {
+        requestAnimationFrame(drawPanoCanvas);
+      }
+    }
 
     function panoCameraSVG(s) {
       return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 56 56" style="display:block">
@@ -1743,17 +1837,21 @@
       document.getElementById('pano-overlay').classList.add('open');
       document.getElementById('pano-tooltip').style.display = 'none';
       loadPanoScan(panoScanIdx, 0);
+      resizePanoCanvas();
+      requestAnimationFrame(drawPanoCanvas);
     }
 
     function closePanoramaOverlay() {
       if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
       document.getElementById('pano-overlay').classList.remove('open');
       panoDS = null;
+      panoCurPts = [];
     }
 
     function loadPanoScan(idx, initYaw = 0) {
       if (!panoDS) return;
       panoScanIdx = idx;
+      panoCurPts = [];
       const panos = panoDS.panoramas;
       const p = panos[idx];
       document.getElementById('pano-overlay-title').textContent = p.label || `Scan ${idx + 1}`;
@@ -1805,6 +1903,62 @@
       return hit?.position;
     }
 
+    // Project an ECEF point into the current panorama scan as (yaw, pitch).
+    // Returns null if the panorama is closed or the scan has no coordinates.
+    function ecefToPanoYawPitch(ecef) {
+      if (!panoDS || !panoViewer) return null;
+      const scan = panoDS.panoramas[panoScanIdx];
+      if (!scan || scan.x == null) return null;
+      const layer = layers.find(l => l.dsId === panoDS.id);
+      if (!layer?.tileset) return null;
+
+      const scanEcef = Cesium.Matrix4.multiplyByPoint(
+        layer.tileset.modelMatrix,
+        new Cesium.Cartesian3(scan.x, scan.y, scan.z),
+        new Cesium.Cartesian3()
+      );
+      const delta = Cesium.Cartesian3.subtract(ecef, scanEcef, new Cesium.Cartesian3());
+      const enu   = Cesium.Transforms.eastNorthUpToFixedFrame(scanEcef);
+      // Rotate ECEF delta into local ENU by dotting with each axis column
+      const e = enu[0]*delta.x + enu[1]*delta.y + enu[2]*delta.z;
+      const n = enu[4]*delta.x + enu[5]*delta.y + enu[6]*delta.z;
+      const u = enu[8]*delta.x + enu[9]*delta.y + enu[10]*delta.z;
+      const bearing = Math.atan2(e, n) * 180 / Math.PI;
+      const horiz   = Math.sqrt(e*e + n*n);
+      return {
+        yaw:   bearing - (scan.northOffset || 0),
+        pitch: Math.atan2(u, horiz) * 180 / Math.PI,
+      };
+    }
+
+    // Fallback: ray × horizontal plane at scan.z.  Works even when pickFromRay
+    // misses a point cloud (which has no solid surface for ray intersection).
+    function panoFloorPick(yawDeg, pitchDeg) {
+      const scan = panoDS?.panoramas[panoScanIdx];
+      if (!scan || scan.x == null) return undefined;
+      const pitchRad = pitchDeg * Math.PI / 180;
+      if (pitchRad >= 0) return undefined;           // looking up — no floor hit
+      const bearing = (yawDeg + (scan.northOffset || 0)) * Math.PI / 180;
+      const cp = Math.cos(pitchRad);
+      const dirX = Math.sin(bearing) * cp;           // east
+      const dirY = Math.cos(bearing) * cp;           // north
+      const dirZ = Math.sin(pitchRad);               // up (negative)
+      const t = -scan.z / dirZ;                      // intersect z=0 plane (ground)
+      if (t <= 0) return undefined;
+      const lv95 = new Cesium.Cartesian3(
+        scan.x + t * dirX,
+        scan.y + t * dirY,
+        0
+      );
+      const layer = layers.find(l => l.dsId === panoDS.id);
+      if (layer?.tileset) {
+        return Cesium.Matrix4.multiplyByPoint(
+          layer.tileset.modelMatrix, lv95, new Cesium.Cartesian3());
+      }
+      const [lon, lat, h] = lv95ToWgs84(lv95.x, lv95.y, lv95.z);
+      return Cesium.Cartesian3.fromDegrees(lon, lat, h);
+    }
+
     document.getElementById('pano-btn-prev').addEventListener('click', () => {
       if (panoScanIdx > 0) loadPanoScan(panoScanIdx - 1);
     });
@@ -1823,7 +1977,8 @@
       const yaw   = panoViewer.getYaw()   + Math.atan(dx * tanH2 / half) * 180 / Math.PI;
       const pitch = panoViewer.getPitch() - Math.atan(dy * tanH2 / half) * 180 / Math.PI;
 
-      const ecef = panoRayPick(yaw, pitch);
+      let ecef = panoRayPick(yaw, pitch);
+      if (!Cesium.defined(ecef)) ecef = panoFloorPick(yaw, pitch);
       if (!Cesium.defined(ecef)) return;
       e.stopPropagation();
 
@@ -1851,6 +2006,8 @@
       if (activeTool === 'area' && curPts.length >= 3) doArea();
       else if (activeTool) { cancelCurrent(); if (curPts.length === 0) resetTool(); }
     });
+
+    window.addEventListener('resize', resizePanoCanvas);
 
     // ── Boot ───────────────────────────────────────────────────────────────────
     loadDatasets();

@@ -181,6 +181,34 @@ All `.json`/`.csv` config files survive (tracked). Re-copy binaries from externa
 
 ---
 
+## 2026-05-23 — Measurement Markers in Cesium Panorama Overlay
+
+### Completed
+- **Removed standalone panorama viewer tab** from all nav bars (portal, potree, cesium, splat,
+  compare) and from the portal viewer-card grid; panorama functionality lives exclusively in
+  the Cesium overlay
+  - Potree scan-position click now opens `cesium.html?id=...` instead of `panorama.html`
+  - `portal.js` routes `panorama` dataset type to `cesium.html`
+  - Compare viewer picker no longer lists panorama as an option
+- **Removed nike splat datasets** (`nike-splat`, `nike-splat-cesium`) from `datasets.json`
+- **Measurement markers in panorama overlay** (`public/viewers/cesium.html`)
+  - `<canvas id="pano-canvas">` overlaid on `#pano-div` (z-index 5, pointer-events none)
+  - `yawPitchToPanoCanvas` — perspective projection with full `isFinite` / hfov guards
+    to survive WebGL context loss or invalid viewer state
+  - `ecefToPanoYawPitch(ecef)` — inverse projection: ECEF → ENU at scan → compass bearing
+    → Pannellum yaw/pitch; uses `layer.tileset.modelMatrix` (LV95→ECEF) already set by
+    `addLayer`
+  - `drawPanoCanvas` rAF loop reads directly from `curPts` (in-progress) and
+    `measurements[].pts` (committed) every frame — markers appear whether the panorama was
+    open or closed when measurements were placed
+  - `commit()` now stores `pts: [...curPts]` so committed measurements project correctly
+  - `doCoords()` now stores `pts: [ecef]` so coordinate-inspection points also appear
+  - `panoFloorPick` fallback for panorama-click measurements when 3D raycast misses
+    point cloud geometry
+  - Canvas resized on overlay open and window resize; rAF loop stops when overlay closes
+
+---
+
 ## Pending / Planned
 
 ### High priority
