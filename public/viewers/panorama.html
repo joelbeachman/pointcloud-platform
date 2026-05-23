@@ -66,17 +66,7 @@
     }
     .pnlm-hotspot.pano-nav-hotspot:hover .pano-nav-popup { display: block; }
 
-    /* Measurement point markers (Pannellum hotspots) */
-    .pnlm-hotspot.measure-hotspot {
-      width: 28px; height: 28px;
-      background: none !important; background-image: none !important;
-      border: none !important; cursor: default; overflow: visible; display: block;
-      transition: transform 0.12s ease, filter 0.12s ease;
-    }
-    .pnlm-hotspot.measure-hotspot:hover {
-      transform: scale(1.15);
-      filter: brightness(1.1) drop-shadow(0 0 6px rgba(255,255,255,0.45));
-    }
+
 
     #no-pano {
       position: absolute; left: 0; top: 100px; right: 220px; bottom: 0;
@@ -369,7 +359,6 @@
       measurePts = [];
       resetTool();
       renderMeasureList();
-      refreshHotspots();
     }
 
     function doHorizontal() {
@@ -418,7 +407,6 @@
         btn.addEventListener('click', () => {
           measurements = measurements.filter(x => x.id !== +btn.dataset.id);
           renderMeasureList();
-          refreshHotspots();
         });
       });
     }
@@ -471,20 +459,22 @@
 
       // Committed measurements — reprojected from LV95 each frame
       for (const m of measurements) {
-        const spts = m.pts.map(pt => {
+        // Preserve original point index so numbers stay correct after off-screen filtering
+        const spts = m.pts.map((pt, i) => {
           const { yaw, pitch } = lv95ToYawPitch(pt, scan);
-          return yawPitchToCanvas(yaw, pitch);
+          const pos = yawPitchToCanvas(yaw, pitch);
+          return pos ? { ...pos, i } : null;
         }).filter(Boolean);
         if (!spts.length) continue;
 
+        // Lines / polygon outline
         ctx.strokeStyle = m.color;
         ctx.fillStyle   = m.color;
         ctx.lineWidth   = 1.8;
-
         if (spts.length >= 2) {
           ctx.beginPath();
           ctx.moveTo(spts[0].x, spts[0].y);
-          for (let i = 1; i < spts.length; i++) ctx.lineTo(spts[i].x, spts[i].y);
+          for (let j = 1; j < spts.length; j++) ctx.lineTo(spts[j].x, spts[j].y);
           if (m.tool === 'area') ctx.closePath();
           ctx.stroke();
         }
@@ -492,17 +482,33 @@
           ctx.globalAlpha = 0.12; ctx.fill(); ctx.globalAlpha = 1;
         }
 
-        // Label at centroid
+        // Point markers — numbered filled circles
+        for (const sp of spts) {
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, 11, 0, Math.PI * 2);
+          ctx.fillStyle = m.color;
+          ctx.fill();
+          ctx.lineWidth   = 2;
+          ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+          ctx.stroke();
+          ctx.font         = 'bold 10px monospace';
+          ctx.fillStyle    = 'white';
+          ctx.textAlign    = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(sp.i + 1), sp.x, sp.y);
+          ctx.textAlign    = 'left';
+          ctx.textBaseline = 'alphabetic';
+        }
+
+        // Value label at centroid of visible points
         const mx = spts.reduce((s,p) => s+p.x, 0) / spts.length;
         const my = spts.reduce((s,p) => s+p.y, 0) / spts.length;
         ctx.font      = 'bold 12px monospace';
         ctx.lineWidth = 3;
         ctx.strokeStyle = 'rgba(13,17,23,0.85)';
-        ctx.strokeText(m.display, mx+7, my-5);
+        ctx.strokeText(m.display, mx + 14, my - 5);
         ctx.fillStyle = '#e6edf3';
-        ctx.fillText(m.display, mx+7, my-5);
-        ctx.strokeStyle = m.color;
-        ctx.lineWidth   = 1.8;
+        ctx.fillText(m.display, mx + 14, my - 5);
       }
 
       // In-progress points — stored by yaw/pitch, always relative to current view
@@ -572,7 +578,7 @@
       btn.addEventListener('click', () => setTool(btn.dataset.tool))
     );
     document.getElementById('clear-all-btn').addEventListener('click', () => {
-      cancelCurrent(); resetTool(); measurements = []; renderMeasureList(); refreshHotspots();
+      cancelCurrent(); resetTool(); measurements = []; renderMeasureList();
     });
 
     // Keyboard
@@ -648,37 +654,6 @@
       </svg>`;
     }
 
-    function measureSVG(num, color) {
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28" style="display:block">
-        <circle cx="14" cy="14" r="11" fill="${color}" stroke="rgba(255,255,255,0.9)" stroke-width="2"/>
-        <text x="14" y="18.5" text-anchor="middle" fill="white" font-size="10" font-weight="bold" font-family="monospace">${num}</text>
-      </svg>`;
-    }
-
-    function makeMeasureHotspot(m, ptIdx, scan) {
-      const { yaw, pitch } = lv95ToYawPitch(m.pts[ptIdx], scan);
-      return {
-        id: `m_${m.id}_${ptIdx}`,
-        type: 'info', yaw, pitch,
-        cssClass: 'measure-hotspot',
-        createTooltipFunc: (div, args) => {
-          div.style.width = div.style.height = '28px';
-          div.innerHTML = measureSVG(args.num, args.color);
-        },
-        createTooltipArgs: { num: ptIdx + 1, color: m.color },
-        clickHandlerFunc: () => {},
-        clickHandlerArgs: {},
-      };
-    }
-
-    function measurementHotspots(scanIdx) {
-      const scan = panoramas[scanIdx];
-      if (!scan || scan.x == null) return [];
-      return measurements.flatMap((m) =>
-        m.pts.map((_, ptIdx) => makeMeasureHotspot(m, ptIdx, scan))
-      );
-    }
-
     function computeNeighborHotspots(idx, panoramas) {
       const cur = panoramas[idx];
       if (cur.x == null) return [];
@@ -738,10 +713,7 @@
       document.getElementById('pano-coords').textContent = p.x !== undefined
         ? `X: ${p.x.toFixed(2)}  Y: ${p.y.toFixed(2)}  Z: ${p.z.toFixed(2)}` : '';
 
-      const hotspots = [
-        ...computeNeighborHotspots(idx, panoramas),
-        ...measurementHotspots(idx),
-      ];
+      const hotspots = computeNeighborHotspots(idx, panoramas);
       if (pannellumViewer) { pannellumViewer.destroy(); pannellumViewer = null; }
 
       pannellumViewer = pannellum.viewer('panorama', {
@@ -755,18 +727,6 @@
       });
 
       resizeCanvas();
-    }
-
-    // Rebuild the viewer in-place to refresh hotspots after measurement changes.
-    // Preserves current yaw/pitch/hfov so the view doesn't jump.
-    function refreshHotspots() {
-      if (!pannellumViewer) return;
-      showPanorama(
-        currentIdx,
-        pannellumViewer.getYaw(),
-        pannellumViewer.getPitch(),
-        pannellumViewer.getHfov()
-      );
     }
 
     document.getElementById('btn-prev').addEventListener('click', () => {
