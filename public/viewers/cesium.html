@@ -653,7 +653,6 @@
       const [p1, p2] = curPts;
       const d = fmt(Cesium.Cartesian3.distance(p1, p2));
       mkLine([p1, p2], TC.distance.cesium);
-      mkLabel(mid(p1, p2), d);
       commit('distance', d);
     }
 
@@ -665,7 +664,6 @@
       mkLine([p1, projEcef], TC.horizontal.cesium, false);
       mkLine([projEcef, p2], TC.horizontal.cesium, true);
       mkLine([p1, p2],       TC.horizontal.cesium, true);
-      mkLabel(mid(p1, projEcef), fmt(d));
       commit('horizontal', fmt(d));
     }
 
@@ -679,7 +677,6 @@
       mkLine([lower, top], TC.vertical.cesium);
       mkPoint(lower, TC.vertical.cesium);
       mkPoint(top,   TC.vertical.cesium);
-      mkLabel(mid(lower, top), '↕ ' + fmt(dz));
       commit('vertical', '↕ ' + fmt(dz));
     }
 
@@ -688,12 +685,6 @@
       const area = horizontalArea(curPts);
       mkPoly(curPts, TC.area.cesium);
       mkLine([...curPts, curPts[0]], TC.area.cesium);
-      const c = curPts.reduce(
-        (acc, p) => Cesium.Cartesian3.add(acc, p, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3()
-      );
-      Cesium.Cartesian3.divideByScalar(c, curPts.length, c);
-      mkLabel(c, fmtA(area));
       commit('area', fmtA(area));
     }
 
@@ -1746,17 +1737,6 @@
             ctx.lineTo(spts[0].x, spts[0].y);
             ctx.stroke();
           }
-          // Value label: above midpoint for lines, at centroid for area
-          const mx = spts.reduce((s, p) => s + p.x, 0) / spts.length;
-          const my = spts.reduce((s, p) => s + p.y, 0) / spts.length;
-          const labelY = m.tool === 'area' ? my : my - 18;
-          ctx.font = 'bold 12px monospace'; ctx.lineWidth = 3;
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.strokeStyle = 'rgba(13,17,23,0.85)';
-          ctx.strokeText(m.display, mx, labelY);
-          ctx.fillStyle = '#e6edf3';
-          ctx.fillText(m.display, mx, labelY);
-          ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         }
 
         // In-progress (globe or panorama) points
