@@ -368,8 +368,8 @@
       measurements.push(m);
       measurePts = [];
       resetTool();
-      addMeasureHotspots(m);
       renderMeasureList();
+      refreshHotspots();
     }
 
     function doHorizontal() {
@@ -416,10 +416,9 @@
       `).join('');
       el.querySelectorAll('.m-del').forEach(btn => {
         btn.addEventListener('click', () => {
-          const m = measurements.find(x => x.id === +btn.dataset.id);
-          if (m) removeMeasureHotspots(m);
           measurements = measurements.filter(x => x.id !== +btn.dataset.id);
           renderMeasureList();
+          refreshHotspots();
         });
       });
     }
@@ -573,8 +572,7 @@
       btn.addEventListener('click', () => setTool(btn.dataset.tool))
     );
     document.getElementById('clear-all-btn').addEventListener('click', () => {
-      measurements.forEach(m => removeMeasureHotspots(m));
-      cancelCurrent(); resetTool(); measurements = []; renderMeasureList();
+      cancelCurrent(); resetTool(); measurements = []; renderMeasureList(); refreshHotspots();
     });
 
     // Keyboard
@@ -681,19 +679,6 @@
       );
     }
 
-    function addMeasureHotspots(m) {
-      if (!pannellumViewer) return;
-      const scan = panoramas[currentIdx];
-      m.pts.forEach((_, ptIdx) => pannellumViewer.addHotSpot(makeMeasureHotspot(m, ptIdx, scan)));
-    }
-
-    function removeMeasureHotspots(m) {
-      if (!pannellumViewer) return;
-      m.pts.forEach((_, i) => {
-        try { pannellumViewer.removeHotSpot(`m_${m.id}_${i}`); } catch (_) {}
-      });
-    }
-
     function computeNeighborHotspots(idx, panoramas) {
       const cur = panoramas[idx];
       if (cur.x == null) return [];
@@ -743,7 +728,7 @@
         });
     }
 
-    function showPanorama(idx, initialYaw = 0) {
+    function showPanorama(idx, initialYaw = 0, initialPitch = 0, initialHfov = 100) {
       currentIdx = idx;
       cancelCurrent();   // clear in-progress points; keep completed measurements
       const p = panoramas[idx];
@@ -762,13 +747,26 @@
       pannellumViewer = pannellum.viewer('panorama', {
         type: 'equirectangular', panorama: p.path,
         autoLoad: true, autoRotate: 0, compass: true,
-        northOffset: p.northOffset || 0, yaw: initialYaw,
-        hfov: 100, minHfov: 30, maxHfov: 150,
+        northOffset: p.northOffset || 0,
+        yaw: initialYaw, pitch: initialPitch, hfov: initialHfov,
+        minHfov: 30, maxHfov: 150,
         hotSpots: hotspots, showControls: true, showZoomCtrl: true, showFullscreenCtrl: true,
         uiText: { loadButtonLabel: 'Load Panorama' },
       });
 
       resizeCanvas();
+    }
+
+    // Rebuild the viewer in-place to refresh hotspots after measurement changes.
+    // Preserves current yaw/pitch/hfov so the view doesn't jump.
+    function refreshHotspots() {
+      if (!pannellumViewer) return;
+      showPanorama(
+        currentIdx,
+        pannellumViewer.getYaw(),
+        pannellumViewer.getPitch(),
+        pannellumViewer.getHfov()
+      );
     }
 
     document.getElementById('btn-prev').addEventListener('click', () => {
