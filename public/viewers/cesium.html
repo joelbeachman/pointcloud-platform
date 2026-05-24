@@ -1849,42 +1849,52 @@
 
     // Build 6 ClippingPlane objects for a clip box defined as ±metres from the dataset centroid.
     //
-    // Coordinate space analysis (Cesium 1.140 PointCloud.js):
-    //   u_clippingPlanesMatrix = inverseTranspose(view3D × _modelMatrix × planes.modelMatrix)
-    //   test_pos = planes.modelMatrix⁻¹ × _modelMatrix⁻¹ × positionWorld
+    // Coordinate system:
+    //   planes.modelMatrix = shift(E0, N0, H0) — translates planes from LV95-relative (centred at
+    //   the dataset centroid) to LV95 absolute.  The effective bounding-volume transform becomes:
+    //     effectiveMat = clippingPlanesOriginMatrix × planes.modelMatrix
+    //                  = lv95ModelMatrix × shift(E0,N0,H0)
+    //                  = enu_at_centroid   (the LV95→ECEF translation cancels out)
+    //   so the bounding sphere (in ECEF) is tested with planes in ENU-relative metres. ✓
     //
-    // With planes.modelMatrix=Identity and _modelMatrix=lv95ModelMatrix:
-    //   test_pos = lv95ModelMatrix⁻¹ × lv95ModelMatrix × (a_position + RTC_CENTER)
-    //            = LV95 absolute coordinates (e.g. E=2648855, N=1177528, H=649)
+    //   In the shader:
+    //     test_pos = planes.modelMatrix⁻¹ × origin⁻¹ × positionWorld
+    //              = shift(-E0,-N0,-H0) × lv95ModelMatrix⁻¹ × lv95ModelMatrix × LV95_abs
+    //              = (E-E0, N-N0, H-H0)  ← ENU-relative metres from centroid ✓
     //
-    // LV95 is metric and axis-aligned (east=X, north=Y, up=Z), so normals are simply
-    // (±1,0,0), (0,±1,0), (0,0,±1) — no ECEF rotation needed.
+    // ClippingPlane clips the NEGATIVE side: dot(normal, pos) + distance < 0.
     //
-    // ClippingPlane clips when: dot(normal, pos) + distance > 0
-    //
-    // Inside mode (show interior, unionClippingRegions=true):  clip outside each face.
-    // Outside mode (clip interior, unionClippingRegions=false): clip inside box (all conditions met).
+    // Inside mode  (show interior, unionClippingRegions=true):
+    //   Normals point OUTWARD.  Clips the exterior of each face.
+    // Outside mode (show exterior / clip interior, unionClippingRegions=false):
+    //   Normals point INWARD.  Clips the interior half-space for each face;
+    //   with intersection mode a point is only clipped when ALL planes clip it.
     function cbBuildPlanes(cb) {
       const { xmin, xmax, ymin, ymax, zmin, zmax, inside } = cb;
       if (!cbOriginLV95) { console.error('[clipbox] cbOriginLV95 is null — dataset not LV95?'); return []; }
-      const E0 = cbOriginLV95.x, N0 = cbOriginLV95.y, H0 = cbOriginLV95.z;
       if (inside) {
+        // Outward normals: each plane clips one exterior face.
+        // Clip east exterior:  −Erel + xmax < 0  →  Erel > xmax
+        // Clip west exterior:   Erel − xmin < 0  →  Erel < xmin  (xmin < 0)
         return [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1,  0,  0), -(E0 + xmax)), // clip E > E0+xmax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1,  0,  0),   E0 + xmin),  // clip E < E0+xmin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  1,  0), -(N0 + ymax)), // clip N > N0+ymax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, -1,  0),   N0 + ymin),  // clip N < N0+ymin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0,  1), -(H0 + zmax)), // clip H > H0+zmax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0, -1),   H0 + zmin),  // clip H < H0+zmin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1,  0,  0),  xmax),   // east exterior
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1,  0,  0), -xmin),   // west exterior
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, -1,  0),  ymax),   // north exterior
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  1,  0), -ymin),   // south exterior
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0, -1),  zmax),   // top exterior
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0,  1), -zmin),   // bottom exterior
         ];
       } else {
+        // Inward normals: each plane clips one interior half-space.
+        // Clip interior east:   Erel − xmax < 0  →  Erel < xmax
+        // Clip interior west:  −Erel + xmin < 0  →  Erel > xmin  (xmin < 0)
         return [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1,  0,  0), -(E0 + xmin)), // true when E > E0+xmin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1,  0,  0),   E0 + xmax),  // true when E < E0+xmax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  1,  0), -(N0 + ymin)), // true when N > N0+ymin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, -1,  0),   N0 + ymax),  // true when N < N0+ymax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0,  1), -(H0 + zmin)), // true when H > H0+zmin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0, -1),   H0 + zmax),  // true when H < H0+zmax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1,  0,  0), -xmax),   // interior east
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1,  0,  0),  xmin),   // interior west
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  1,  0), -ymax),   // interior north
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, -1,  0),  ymin),   // interior south
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0,  1), -zmax),   // interior top
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0, -1),  zmin),   // interior bottom
         ];
       }
     }
@@ -1892,18 +1902,21 @@
     // Apply the first enabled clip box to all tilesets (one collection per tileset).
     function applyActiveClipBox() {
       const active = clipBoxList.find(x => x.enabled);
-      if (!active || !cbOriginEcef) {
+      if (!active || !cbOriginLV95) {
         layers.forEach(l => {
           if (l.tileset) l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({ enabled: false });
         });
         return;
       }
-      // No modelMatrix — planes are in ECEF world coordinates.
-      // Cesium 1.117+ new renderer tests world ECEF against planes directly.
+      // planes.modelMatrix = translation to LV95 centroid so that plane distances are
+      // expressed in metres relative to the centroid (ENU-relative space).
+      const { x: E0, y: N0, z: H0 } = cbOriginLV95;
+      const planesMM = Cesium.Matrix4.fromTranslation(new Cesium.Cartesian3(E0, N0, H0));
       layers.forEach(l => {
         if (!l.tileset) return;
         l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
           planes: cbBuildPlanes(active),
+          modelMatrix: planesMM,
           unionClippingRegions: active.inside,
           enabled: true,
         });
