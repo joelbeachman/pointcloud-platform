@@ -1497,6 +1497,17 @@
         const ts  = await Cesium.Cesium3DTileset.fromUrl(url);
         viewer.scene.primitives.add(ts);
 
+        // Capture LV95 centroid from raw bounding sphere before any modelMatrix is set.
+        // All branches below may change boundingSphere, so we read it here once.
+        {
+          const raw = ts.boundingSphere.center;
+          if (isLv95(raw.x, raw.y)) {
+            ts._lv95ClipOriginLV95 = { x: raw.x, y: raw.y, z: raw.z };
+            const [_lon, _lat, _h] = lv95ToWgs84(raw.x, raw.y, raw.z);
+            ts._lv95ClipOriginEcef = Cesium.Cartesian3.fromDegrees(_lon, _lat, _h);
+          }
+        }
+
         if (ds.helmertLV95) {
           // Rebuild modelMatrix from Helmert: M_lv95 * M_helmert
           const { R, s, t, center } = ds.helmertLV95;
@@ -1519,12 +1530,6 @@
         } else {
           const c = ts.boundingSphere.center;
           if (isLv95(c.x, c.y)) {
-            // Bounding sphere centre is in Swiss LV95 — auto-place in Switzerland
-            // Compute the ECEF centroid before setting modelMatrix to avoid any
-            // lazy-update timing issues with boundingSphere in Cesium 1.140.
-            const [_lon, _lat, _h] = lv95ToWgs84(c.x, c.y, c.z);
-            ts._lv95ClipOriginEcef = Cesium.Cartesian3.fromDegrees(_lon, _lat, _h);
-            ts._lv95ClipOriginLV95 = { x: c.x, y: c.y, z: c.z };
             ts.modelMatrix = lv95ModelMatrix(c.x, c.y, c.z);
           }
         }
@@ -1861,6 +1866,7 @@
     // Outside mode (clip interior, unionClippingRegions=false): clip inside box (all conditions met).
     function cbBuildPlanes(cb) {
       const { xmin, xmax, ymin, ymax, zmin, zmax, inside } = cb;
+      if (!cbOriginLV95) { console.error('[clipbox] cbOriginLV95 is null — dataset not LV95?'); return []; }
       const E0 = cbOriginLV95.x, N0 = cbOriginLV95.y, H0 = cbOriginLV95.z;
       if (inside) {
         return [
