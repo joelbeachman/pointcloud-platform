@@ -1569,7 +1569,8 @@
       if (!layer) return;
       layer.visible = visible;
       if (layer.tileset) layer.tileset.show = visible;
-      layer.panoEnts.forEach(e => { e.show = visible; });
+      const scanStationsOn = document.getElementById('scan-stations-toggle')?.checked ?? true;
+      layer.panoEnts.forEach(e => { e.show = visible && scanStationsOn; });
     }
 
     function flyToLayer(layer) {
@@ -1831,9 +1832,10 @@
     }
 
     // Build Cesium.ClippingPlane array for a clip box.
-    // Planes are in ENU metres relative to cbOriginEcef.
-    // Inside mode (show interior): normals outward, unionClippingRegions=true.
-    // Outside mode (clip interior): normals inward, unionClippingRegions=false.
+    // Planes are in ENU metres relative to cbOriginEcef (no modelMatrix on the collection —
+    // Cesium's default clippingPlanesOriginMatrix is already the ENU frame at the tileset center).
+    // Inside mode (show interior): clip outside each face, unionClippingRegions=true.
+    // Outside mode (clip interior): clip inside each face, unionClippingRegions=false.
     function cbBuildPlanes(cb) {
       const { xmin: x0, xmax: x1, ymin: y0, ymax: y1, zmin: z0, zmax: z1, inside } = cb;
       if (inside) {
@@ -1866,14 +1868,14 @@
         });
         return;
       }
-      const enuMat = Cesium.Transforms.eastNorthUpToFixedFrame(cbOriginEcef);
       const planes = cbBuildPlanes(active);
       layers.forEach(l => {
         if (!l.tileset) return;
+        // No modelMatrix: Cesium's default clippingPlanesOriginMatrix is the ENU frame at the
+        // tileset bounding sphere center, which matches our plane coordinate space.
         l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
           planes,
           unionClippingRegions: active.inside,
-          modelMatrix: enuMat,
           enabled: true,
         });
       });
