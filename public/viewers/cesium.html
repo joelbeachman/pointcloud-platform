@@ -602,7 +602,8 @@
     // ── Clip Box state ─────────────────────────────────────────────────────────
     let clipBoxList  = [];   // [{id, name, enabled, inside, xmin,xmax,ymin,ymax,zmin,zmax}]
     let cbEditId     = null; // id of box currently open in editor panel
-    let cbOriginEcef = null; // ECEF position used as ENU origin for all clip plane math
+    let cbOriginEcef = null; // ECEF position (for wireframe placement)
+    let cbOriginLV95 = null; // LV95 absolute centroid (for clip plane distances)
     let cbRadius     = 10;
     let cbBoxEdges   = {};   // id → [Cesium entities] wireframe
     let cbCount      = 0;
@@ -1523,6 +1524,7 @@
             // lazy-update timing issues with boundingSphere in Cesium 1.140.
             const [_lon, _lat, _h] = lv95ToWgs84(c.x, c.y, c.z);
             ts._lv95ClipOriginEcef = Cesium.Cartesian3.fromDegrees(_lon, _lat, _h);
+            ts._lv95ClipOriginLV95 = { x: c.x, y: c.y, z: c.z };
             ts.modelMatrix = lv95ModelMatrix(c.x, c.y, c.z);
           }
         }
@@ -1836,52 +1838,47 @@
       cbOriginEcef = ts._lv95ClipOriginEcef
         ? Cesium.Cartesian3.clone(ts._lv95ClipOriginEcef)
         : ts.boundingSphere.center.clone();
+      cbOriginLV95 = ts._lv95ClipOriginLV95 || null;
       cbRadius = ts.boundingSphere.radius;
     }
 
-    // Build 6 ClippingPlane objects for a clip box defined as ±metres from cbOriginEcef.
-    // Planes are in ECEF world coordinates (no modelMatrix on the collection).
-    // In Cesium 1.117+ the new renderer tests clipping against world ECEF position, so
-    // czm_clippingPlanesMatrix = inverse(planes.modelMatrix) = Identity → test in ECEF.
+    // Build 6 ClippingPlane objects for a clip box defined as ±metres from the dataset centroid.
     //
-    // For a face at +offset metres along an ENU axis:
-    //   normal  = axis_ecef (column of enuMat)
-    //   distance = -(dot(axis, C) + offset)   where C = cbOriginEcef
-    //   → clips when: dot(axis, pos) - dot(axis, C) > offset  i.e. when offset from centre > threshold
+    // Coordinate space analysis (Cesium 1.140 PointCloud.js):
+    //   u_clippingPlanesMatrix = inverseTranspose(view3D × _modelMatrix × planes.modelMatrix)
+    //   test_pos = planes.modelMatrix⁻¹ × _modelMatrix⁻¹ × positionWorld
+    //
+    // With planes.modelMatrix=Identity and _modelMatrix=lv95ModelMatrix:
+    //   test_pos = lv95ModelMatrix⁻¹ × lv95ModelMatrix × (a_position + RTC_CENTER)
+    //            = LV95 absolute coordinates (e.g. E=2648855, N=1177528, H=649)
+    //
+    // LV95 is metric and axis-aligned (east=X, north=Y, up=Z), so normals are simply
+    // (±1,0,0), (0,±1,0), (0,0,±1) — no ECEF rotation needed.
+    //
+    // ClippingPlane clips when: dot(normal, pos) + distance > 0
     //
     // Inside mode (show interior, unionClippingRegions=true):  clip outside each face.
-    // Outside mode (clip interior, unionClippingRegions=false): clip inside each face.
+    // Outside mode (clip interior, unionClippingRegions=false): clip inside box (all conditions met).
     function cbBuildPlanes(cb) {
       const { xmin, xmax, ymin, ymax, zmin, zmax, inside } = cb;
-      const C = cbOriginEcef;
-      const m = Cesium.Transforms.eastNorthUpToFixedFrame(C);
-      // ENU column vectors (column-major storage: col 0 = east, col 1 = north, col 2 = up)
-      const ex = m[0], ey = m[1], ez = m[2];    // east
-      const nx = m[4], ny = m[5], nz = m[6];    // north
-      const ux = m[8], uy = m[9], uz = m[10];   // up
-      // Projection of ECEF centroid onto each axis
-      const dE = ex*C.x + ey*C.y + ez*C.z;
-      const dN = nx*C.x + ny*C.y + nz*C.z;
-      const dU = ux*C.x + uy*C.y + uz*C.z;
+      const E0 = cbOriginLV95.x, N0 = cbOriginLV95.y, H0 = cbOriginLV95.z;
       if (inside) {
-        // Each plane clips the region beyond one face; union → clips everything outside the box
         return [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( ex,  ey,  ez), -(dE + xmax)), // E > xmax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-ex, -ey, -ez),   dE + xmin),  // E < xmin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( nx,  ny,  nz), -(dN + ymax)), // N > ymax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-nx, -ny, -nz),   dN + ymin),  // N < ymin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( ux,  uy,  uz), -(dU + zmax)), // U > zmax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-ux, -uy, -uz),   dU + zmin),  // U < zmin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1,  0,  0), -(E0 + xmax)), // clip E > E0+xmax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1,  0,  0),   E0 + xmin),  // clip E < E0+xmin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  1,  0), -(N0 + ymax)), // clip N > N0+ymax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, -1,  0),   N0 + ymin),  // clip N < N0+ymin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0,  1), -(H0 + zmax)), // clip H > H0+zmax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0, -1),   H0 + zmin),  // clip H < H0+zmin
         ];
       } else {
-        // Each plane clips the region inside one face boundary; intersection → clips box interior
         return [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( ex,  ey,  ez), -(dE + xmin)), // E > xmin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-ex, -ey, -ez),   dE + xmax),  // E < xmax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( nx,  ny,  nz), -(dN + ymin)), // N > ymin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-nx, -ny, -nz),   dN + ymax),  // N < ymax
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( ux,  uy,  uz), -(dU + zmin)), // U > zmin
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-ux, -uy, -uz),   dU + zmax),  // U < zmax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1,  0,  0), -(E0 + xmin)), // true when E > E0+xmin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1,  0,  0),   E0 + xmax),  // true when E < E0+xmax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  1,  0), -(N0 + ymin)), // true when N > N0+ymin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, -1,  0),   N0 + ymax),  // true when N < N0+ymax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0,  1), -(H0 + zmin)), // true when H > H0+zmin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0, -1),   H0 + zmax),  // true when H < H0+zmax
         ];
       }
     }
