@@ -14,7 +14,6 @@
     </div>
     <nav>
       <a href="/" class="active">Datasets</a>
-      <a href="/viewers/potree.html">Point Cloud</a>
       <a href="/viewers/cesium.html">Cesium</a>
       <a href="/viewers/splat.html">Gaussian Splat</a>
       <a href="/viewers/compare.html">Compare</a>
@@ -30,12 +29,6 @@
     <section class="viewer-cards">
       <h2>Available Viewers</h2>
       <div class="card-grid">
-        <a href="/viewers/potree.html" class="viewer-card potree">
-          <div class="card-icon">&#9632;</div>
-          <h3>Point Cloud</h3>
-          <p>Large-scale point clouds from LiDAR &amp; photogrammetry. Colour-mapped points, scan positions, adjustable point size.</p>
-          <span class="tag">XYZ / LAS / LAZ</span>
-        </a>
         <a href="/viewers/cesium.html" class="viewer-card cesium">
           <div class="card-icon">&#9679;</div>
           <h3>Cesium</h3>
@@ -57,7 +50,6 @@
         <div style="display:flex;gap:0.5rem;align-items:center;flex:1;margin:0 1rem;">
           <input id="search-input" type="text" placeholder="Search datasets..." style="flex:1;background:#21262d;border:1px solid #30363d;border-radius:6px;padding:0.35rem 0.75rem;color:#e6edf3;font-size:0.85rem;">
           <button class="layout-btn active" data-filter="all">All</button>
-          <button class="layout-btn" data-filter="pointcloud">Point Cloud</button>
           <button class="layout-btn" data-filter="cesium">Cesium</button>
           <button class="layout-btn" data-filter="splat">Splat</button>
           <button class="layout-btn" data-filter="panorama">Panorama</button>
@@ -79,11 +71,9 @@
         <label>Name <input type="text" name="name" required placeholder="My LiDAR Scan"></label>
         <label>Type
           <select name="type">
-            <option value="pointcloud">Point Cloud (LAS/LAZ)</option>
             <option value="cesium">Cesium 3D Tiles</option>
+            <option value="cesium-splat">Cesium Gaussian Splat</option>
             <option value="splat">Gaussian Splat</option>
-            <option value="panorama">Panorama</option>
-            <option value="e57">E57 (with panoramas)</option>
           </select>
         </label>
         <label>Source <input type="text" name="source" placeholder="photogrammetry / lidar / aerial"></label>

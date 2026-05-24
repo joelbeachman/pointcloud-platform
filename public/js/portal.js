@@ -33,9 +33,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 const VIEWER_MAP = {
-  pointcloud: '/viewers/potree.html',
-  e57: '/viewers/potree.html',
   cesium: '/viewers/cesium.html',
+  'cesium-splat': '/viewers/cesium.html',
   splat: '/viewers/splat.html',
   panorama: '/viewers/cesium.html',
 };
@@ -62,10 +61,15 @@ function renderDatasets(datasets) {
     container.innerHTML = `<div class="empty-state"><h3>No datasets found</h3><p>Try a different filter or <a href="#" onclick="document.getElementById('btn-add').click();return false;">add a dataset</a>.</p></div>`;
     return;
   }
-  container.innerHTML = datasets.map(d => `
+  container.innerHTML = datasets.map(d => {
+    const viewerUrl = VIEWER_MAP[d.type];
+    const openBtn = viewerUrl
+      ? `<a href="${viewerUrl}?id=${d.id}">Open</a>`
+      : `<span style="color:#484f58;font-size:0.8rem">No viewer</span>`;
+    return `
       <div class="dataset-row" data-id="${d.id}">
-        <div class="dataset-badge ${BADGE_CLASS[d.type] || 'badge-pointcloud'}">
-          <span>${ICONS[d.type] || '&#9632;'}</span>
+        <div class="dataset-badge ${BADGE_CLASS[d.type] || 'badge-cesium'}">
+          <span>${ICONS[d.type] || '&#9679;'}</span>
         </div>
         <div class="dataset-info">
           <div class="dataset-name">${escHtml(d.name)}</div>
@@ -75,11 +79,12 @@ function renderDatasets(datasets) {
           </div>
         </div>
         <div class="dataset-actions">
-          <a href="${VIEWER_MAP[d.type] || '/viewers/potree.html'}?id=${d.id}">Open</a>
+          ${openBtn}
           <button class="btn-del" onclick="deleteDataset('${d.id}')">Remove</button>
         </div>
       </div>
-    `).join('');
+    `;
+  }).join('');
 }
 
 async function loadDatasets() {
