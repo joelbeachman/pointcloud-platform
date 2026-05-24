@@ -1587,6 +1587,7 @@
     // ── Tool buttons ───────────────────────────────────────────────────────────
     document.getElementById('scan-stations-toggle').addEventListener('change', function () {
       allPanoEnts.forEach(e => { e.show = this.checked; });
+      if (panoDS) loadPanoScan(panoScanIdx, panoViewer?.getYaw() ?? 0);
     });
 
     document.querySelectorAll('.tool-btn[data-tool]').forEach(btn =>
@@ -1890,7 +1891,8 @@
       document.getElementById('pano-btn-prev').disabled = (idx === 0);
       document.getElementById('pano-btn-next').disabled = (idx === panos.length - 1);
 
-      const hotspots = computePanoHotspots(idx, panos);
+      const scanStationsOn = document.getElementById('scan-stations-toggle')?.checked ?? true;
+      const hotspots = scanStationsOn ? computePanoHotspots(idx, panos) : [];
       if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
       panoViewer = pannellum.viewer('pano-div', {
         type: 'equirectangular', panorama: p.path,
