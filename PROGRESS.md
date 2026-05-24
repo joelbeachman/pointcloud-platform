@@ -247,51 +247,38 @@ All `.json`/`.csv` config files survive (tracked). Re-copy binaries from externa
 
 ---
 
-## 2026-05-24 — Clip Box Bug Investigation (in progress)
+## 2026-05-24 — Clip Box Clipping Fixed
 
-### Working
-- Wireframe box renders correctly around the point cloud in the 3D viewer (ECEF centroid
-  computed directly from `lv95ToWgs84` before `modelMatrix` is set, avoiding Cesium 1.140
-  lazy `boundingSphere` update timing)
+### Root cause (commit 7f1a8c0)
+Three bugs found by reading the Cesium 1.140 source directly:
 
-### Still broken
-- Clipping planes have no visible effect — inside/outside modes do not clip the point cloud
+1. **ClippingPlane clips the NEGATIVE side** (`dot(n,p)+d < 0`), not the positive side.
+   The API says "renders the half-space on the outside of each plane", where "outside" means
+   the negative half-space. All 6 planes had their normals reversed.
 
-### Attempts so far (all commits on `main`)
-| commit | `planes.modelMatrix` | plane values | result |
-|--------|----------------------|--------------|--------|
-| v1 | `enuMat` (ENU frame at centroid) | ENU relative metres | no effect |
-| v2 | none (Identity) | ENU relative metres | no effect |
-| v3 + monkey-patch | `enuMat` | ENU relative metres | no effect + wireframe regression |
-| v4 (d21d303) | `tileset.modelMatrix` (lv95ModelMatrix) | ENU relative metres | no effect, wireframe fixed |
+2. **Missing `planes.modelMatrix`** on the `ClippingPlaneCollection`.
+   Cesium's bounding-volume intersection test uses `clippingPlanesOriginMatrix × planes.modelMatrix`
+   as the effective matrix to transform planes into world space for testing against the ECEF
+   bounding sphere. Without a `modelMatrix`, the test was comparing ECEF sphere coordinates
+   against LV95-scale plane distances → degenerate result every time → all-or-nothing behaviour.
 
-### Root cause hypothesis
-Cesium 1.117+ unified 3D Tiles rendering under a new ECS-based Model renderer.
-In that renderer the clipping shader tests `positionEC` (eye-space), and
-`czm_clippingPlanesMatrix = inverse(planes.modelMatrix) × originMatrix × czm_inverseView`.
-The `czm_inverseView` component (missing from all prior attempts) means test position is
-derived from world ECEF, not model-local coordinates.
+3. **Plane distances in LV95 absolute** (millions of metres) instead of ENU-relative.
+   Precision edge cases could cause problems; more importantly, the whole coordinate-space
+   analysis was wrong because of bugs 1+2.
 
-Consequence: `czm_clippingPlanesMatrix = Identity` (from matching planes.modelMatrix to
-originMatrix) still produces wrong results because it then tests in eye-space, not model space.
-
-### Next approach to try
-Define planes in **world ECEF absolute** with `planes.modelMatrix = Identity`:
-- `czm_clippingPlanesMatrix = lv95ModelMatrix × czm_inverseView` (transforms eye→world→LV95-model)
-- But test_pos = `czm_clippingPlanesMatrix × positionEC = lv95ModelMatrix × positionWorld`
-- So actually try: `planes.modelMatrix = enuMat` + planes with ECEF absolute normals/distances.
-  - Normal = east/north/up column of `enuMat` (ECEF axis directions)
-  - Distance = `-(dot(normal_ecef, cbOriginEcef) + metres_offset)`
-  - This defines clip faces in true ECEF space; works if test_pos = ECEF world position
-- OR: add a console.log to the browser to inspect what coordinate values look like at runtime
-  (open browser DevTools → Console, add temporary log of `cbOriginEcef` and plane distances)
+### Fix
+- `planes.modelMatrix = Cesium.Matrix4.fromTranslation(cbOriginLV95)` — shifts planes from
+  ENU-relative into LV95 absolute. Effective bounding-volume matrix becomes `enu_at_centroid`,
+  so the ECEF sphere is tested against ENU-relative planes in metres. ✓
+- Shader: `test_pos = (E−E0, N−N0, H−H0)` (ENU-relative metres). ✓
+- Planes rewritten with correct inward/outward normals and distances in metres from centroid.
 
 ---
 
 ## Pending / Planned
 
 ### High priority
-- [ ] **Fix clip box clipping** — ECEF-absolute planes approach described above (next commit)
+- [ ] Test clip box in browser — verify inside/outside modes both show partial clipping
 - [ ] Verify panorama images are equirectangular — scanner perspective JPEGs may need conversion before Pannellum can display them correctly
 - [ ] Update `scripts/restore_eggiswil.py` to use quaternion-derived `northOffset` formula (currently stores `rotZ_deg` directly)
 - [ ] Restore documentation folder contents (thesis assets, compiled PDF, figures)
