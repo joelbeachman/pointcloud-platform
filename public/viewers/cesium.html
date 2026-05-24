@@ -335,7 +335,7 @@
       <button id="cb-add-btn" title="Add clip box">＋</button>
     </div>
     <div id="clipbox-list">
-      <div style="padding:0.45rem 0.7rem;font-size:0.72rem;color:#484f58" id="clipbox-empty">No clip boxes.</div>
+      <div style="padding:0.45rem 0.7rem;font-size:0.72rem;color:#484f58">No clip boxes.</div>
     </div>
 
     <div class="sec-hdr" style="border-top: 1px solid #21262d;">Measurement Tools</div>
@@ -567,6 +567,24 @@
     viewer.scene.screenSpaceCameraController.minimumZoomDistance = 0.1;
     // Prevent default double-click zoom from interfering with area measurement
     viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+
+    // ── Clipping planes origin patch ────────────────────────────────────────────
+    // Cesium.Cesium3DTileset.getClippingPlanesOriginMatrix computes the ENU origin
+    // from root.computedTransform.translation.  For our lv95ModelMatrix tilesets
+    // that translation is the ECEF position of the LV95 datum origin (not the data
+    // centroid), so the clipping planes coordinate frame would be completely wrong.
+    // We patch the static method to return the correct ENU frame (at the tileset's
+    // ECEF bounding-sphere center) for any tileset we mark with _lv95ClipOriginEcef.
+    (function patchClippingPlanesOrigin() {
+      const orig = Cesium.Cesium3DTileset.getClippingPlanesOriginMatrix;
+      if (typeof orig !== 'function') return;
+      Cesium.Cesium3DTileset.getClippingPlanesOriginMatrix = function(tileset) {
+        if (tileset._lv95ClipOriginEcef) {
+          return Cesium.Transforms.eastNorthUpToFixedFrame(tileset._lv95ClipOriginEcef);
+        }
+        return orig(tileset);
+      };
+    })();
 
     // ── Colour palettes ────────────────────────────────────────────────────────
     const LAYER_COLORS = ['#58a6ff','#3fb950','#f0883e','#a371f7','#e3b341','#79c0ff','#56d364'];
@@ -1520,6 +1538,9 @@
           if (isLv95(c.x, c.y)) {
             // Bounding sphere centre is in Swiss LV95 — auto-place in Switzerland
             ts.modelMatrix = lv95ModelMatrix(c.x, c.y, c.z);
+            // After modelMatrix is applied, boundingSphere.center is in ECEF.
+            // Store it so the getClippingPlanesOriginMatrix patch can use it.
+            ts._lv95ClipOriginEcef = ts.boundingSphere.center.clone();
           }
         }
 
@@ -1832,8 +1853,9 @@
     }
 
     // Build Cesium.ClippingPlane array for a clip box.
-    // Planes are in ENU metres relative to cbOriginEcef (no modelMatrix on the collection —
-    // Cesium's default clippingPlanesOriginMatrix is already the ENU frame at the tileset center).
+    // Planes are in ENU metres relative to cbOriginEcef (East/North/Up = x/y/z).
+    // modelMatrix = enuMat on the collection; the patchClippingPlanesOrigin patch ensures
+    // clippingPlanesOriginMatrix = enuMat too, giving czm_clippingPlanesMatrix = Identity.
     // Inside mode (show interior): clip outside each face, unionClippingRegions=true.
     // Outside mode (clip interior): clip inside each face, unionClippingRegions=false.
     function cbBuildPlanes(cb) {
@@ -1868,14 +1890,19 @@
         });
         return;
       }
+      // enuMat = ENU frame at the dataset ECEF centroid.
+      // The patchClippingPlanesOrigin() patch above makes getClippingPlanesOriginMatrix
+      // return this same matrix, so:
+      //   czm_clippingPlanesMatrix = inverse(enuMat) * enuMat = Identity
+      // Planes are then tested against the per-frame tile-local space (~ENU metres from centroid).
+      const enuMat = Cesium.Transforms.eastNorthUpToFixedFrame(cbOriginEcef);
       const planes = cbBuildPlanes(active);
       layers.forEach(l => {
         if (!l.tileset) return;
-        // No modelMatrix: Cesium's default clippingPlanesOriginMatrix is the ENU frame at the
-        // tileset bounding sphere center, which matches our plane coordinate space.
         l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
           planes,
           unionClippingRegions: active.inside,
+          modelMatrix: enuMat,
           enabled: true,
         });
       });
@@ -1925,10 +1952,8 @@
     // Render the left-panel clip box list
     function renderClipBoxList() {
       const el = document.getElementById('clipbox-list');
-      const empty = document.getElementById('clipbox-empty');
       if (!clipBoxList.length) {
-        el.innerHTML = '';
-        el.appendChild(empty);
+        el.innerHTML = '<div style="padding:0.45rem 0.7rem;font-size:0.72rem;color:#484f58">No clip boxes.</div>';
         return;
       }
       el.innerHTML = clipBoxList.map(cb => `
