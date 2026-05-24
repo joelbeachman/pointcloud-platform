@@ -229,6 +229,24 @@ All `.json`/`.csv` config files survive (tracked). Re-copy binaries from externa
 
 ---
 
+## 2026-05-24 — Clip Box Feature
+
+### Completed
+- **Clip Box** (`public/viewers/cesium.html`)
+  - "Clip Box" tool button in left panel (below measurement tools, gold colour `#e3b341`)
+  - Floating panel (top-left of viewer canvas) with X/Y/Z min/max number inputs (offsets in metres from bounding-sphere centre)
+  - **Seed** button: reads first loaded tileset's bounding sphere, seeds all 6 inputs to ±radius so the box wraps the full dataset
+  - **Inside** mode (default): `ClippingPlaneCollection` with `unionClippingRegions: true` — clips everything outside the box, shows only the interior window
+  - **Outside** mode: flipped plane normals with `unionClippingRegions: false` — clips the box interior, shows everything outside it
+  - **Apply** button: builds and applies 6 `Cesium.ClippingPlane` objects (via `ClippingPlaneCollection.modelMatrix = getRefMatrix()`) to all loaded tilesets
+  - **Remove** button: disables planes, removes wireframe (panel stays open for re-adjustment)
+  - Yellow **wireframe box** (12 polyline edges) updates live as values are typed, disappears when clip box is toggled off
+  - Escape key closes the clip box panel and removes clip planes/wireframe
+  - New layers loaded while clip box is active automatically get the current clip planes applied
+  - Fixed pre-existing bug: duplicate `loadDatasets()` boot call removed (was calling twice, adding default layer twice)
+
+---
+
 ## Pending / Planned
 
 ### High priority
