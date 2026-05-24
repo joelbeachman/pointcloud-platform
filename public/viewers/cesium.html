@@ -330,6 +330,14 @@
       <span class="layer-name">Show scan positions</span>
     </div>
 
+    <div class="sec-hdr" style="border-top: 1px solid #21262d;">
+      Clip Boxes
+      <button id="cb-add-btn" title="Add clip box">＋</button>
+    </div>
+    <div id="clipbox-list">
+      <div style="padding:0.45rem 0.7rem;font-size:0.72rem;color:#484f58" id="clipbox-empty">No clip boxes.</div>
+    </div>
+
     <div class="sec-hdr" style="border-top: 1px solid #21262d;">Measurement Tools</div>
     <div id="tools-scroll">
       <button class="tool-btn" data-tool="distance" style="--tc:#58a6ff" title="3D straight-line distance">
@@ -372,17 +380,6 @@
           <line x1="12" y1="8" x2="15" y2="8"/>
         </svg>
         Coords
-      </button>
-      <button class="tool-btn" id="clipbox-btn" style="--tc:#e3b341" title="Clip/limit box — restrict visible region">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="1,6 10,6 10,14 1,14 1,6"/>
-          <polyline points="1,6 4,3 13,3 10,6"/>
-          <polyline points="10,6 13,3 13,11 10,14"/>
-          <line x1="4" y1="3" x2="4" y2="11" stroke-dasharray="2 2"/>
-          <line x1="4" y1="11" x2="1" y2="14" stroke-dasharray="2 2"/>
-          <line x1="4" y1="11" x2="13" y2="11" stroke-dasharray="2 2"/>
-        </svg>
-        Clip Box
       </button>
       <hr class="tool-sep">
       <button class="tool-btn danger" id="clear-all-btn">
@@ -442,12 +439,16 @@
     </div>
   </div>
 
-  <!-- ── Clip Box Panel ── -->
+  <!-- ── Clip Box Editor Panel ── -->
   <div id="clipbox-panel">
     <div class="cb-title">
-      <span>Clip Box</span>
-      <button class="cb-abtn" id="cb-seed-btn"
-        style="flex:0;padding:0.18rem 0.55rem;font-size:0.72rem;border-radius:4px">Seed</button>
+      <span id="cb-panel-name">Edit Box</span>
+      <div style="display:flex;gap:0.3rem;align-items:center">
+        <button class="cb-abtn" id="cb-seed-btn"
+          style="flex:0;padding:0.18rem 0.55rem;font-size:0.72rem;border-radius:4px">Seed</button>
+        <button class="cb-abtn" id="cb-panel-close"
+          style="flex:0;padding:0.18rem 0.4rem;font-size:0.72rem;border-radius:4px">✕</button>
+      </div>
     </div>
     <div class="cb-row">
       <span class="cb-axis">X</span>
@@ -471,7 +472,6 @@
     </div>
     <div class="cb-acts">
       <button class="cb-abtn" id="cb-apply-btn">Apply</button>
-      <button class="cb-abtn red" id="cb-remove-btn">Remove</button>
     </div>
   </div>
 
@@ -600,15 +600,12 @@
     let allPanoEnts   = [];   // flat list for hit-testing
 
     // ── Clip Box state ─────────────────────────────────────────────────────────
-    let clipBoxActive = false;
-    let clipBoxInside = true;
-    let cbCenter = null;   // Cesium.Cartesian3 in local (getRefMatrix) coords
-    let cbRadius = 10;
-    // Offsets from cbCenter in local metres
-    let cbXmin = -10, cbXmax = 10;
-    let cbYmin = -10, cbYmax = 10;
-    let cbZmin = -5,  cbZmax = 5;
-    let clipBoxEdges = [];   // wireframe polyline entities
+    let clipBoxList  = [];   // [{id, name, enabled, inside, xmin,xmax,ymin,ymax,zmin,zmax}]
+    let cbEditId     = null; // id of box currently open in editor panel
+    let cbOriginEcef = null; // ECEF position used as ENU origin for all clip plane math
+    let cbRadius     = 10;
+    let cbBoxEdges   = {};   // id → [Cesium entities] wireframe
+    let cbCount      = 0;
 
     // ── Measurement coordinate helpers (ENU local ↔ ECEF) ─────────────────────
     function getRefMatrix() {
@@ -1542,9 +1539,9 @@
         renderLayerList();
         flyToLayer(layer);
 
-        // Seed clip box from first layer; re-apply if active
-        if (!cbCenter) seedClipBox();
-        if (clipBoxActive) applyClipBox();
+        // Init clip origin from first layer; re-apply any active clip box
+        if (!cbOriginEcef) initClipOrigin();
+        if (clipBoxList.some(x => x.enabled)) applyActiveClipBox();
       } catch (err) {
         console.error('Layer load error:', err);
         layer.error = err.message || 'Failed to load';
@@ -1563,7 +1560,7 @@
       });
       layers.splice(idx, 1);
       // Reset clip center so next seed uses the new first layer
-      if (!layers.some(l => l.tileset)) { cbCenter = null; removeBoxWireframe(); }
+      if (!layers.some(l => l.tileset)) { cbOriginEcef = null; cbClearAllWireframes(); }
       renderLayerList();
     }
 
@@ -1703,38 +1700,29 @@
     });
 
     // ── Clip Box event listeners ───────────────────────────────────────────────
-    document.getElementById('clipbox-btn').addEventListener('click', toggleClipBox);
-
-    document.getElementById('cb-seed-btn').addEventListener('click', () => {
-      seedClipBox();
-      if (clipBoxActive) applyClipBox();
-      else updateBoxWireframe();
-    });
-
-    document.getElementById('cb-apply-btn').addEventListener('click', applyClipBox);
-
-    document.getElementById('cb-remove-btn').addEventListener('click', () => {
-      removeClipBoxPlanes();
-      removeBoxWireframe();
-    });
+    document.getElementById('cb-add-btn').addEventListener('click', cbAddNew);
+    document.getElementById('cb-seed-btn').addEventListener('click', cbSeedEditor);
+    document.getElementById('cb-apply-btn').addEventListener('click', cbApplyEditor);
+    document.getElementById('cb-panel-close').addEventListener('click', cbCloseEditor);
 
     document.getElementById('cb-inside-btn').addEventListener('click', () => {
-      clipBoxInside = true;
+      const cb = clipBoxList.find(x => x.id === cbEditId);
+      if (cb) { cb.inside = true; renderClipBoxList(); }
       document.getElementById('cb-inside-btn').classList.add('active');
       document.getElementById('cb-outside-btn').classList.remove('active');
     });
-
     document.getElementById('cb-outside-btn').addEventListener('click', () => {
-      clipBoxInside = false;
+      const cb = clipBoxList.find(x => x.id === cbEditId);
+      if (cb) { cb.inside = false; renderClipBoxList(); }
       document.getElementById('cb-outside-btn').classList.add('active');
       document.getElementById('cb-inside-btn').classList.remove('active');
     });
 
-    // Live wireframe update as values are typed
-    ['cb-xmin','cb-xmax','cb-ymin','cb-ymax','cb-zmin','cb-zmax'].forEach(id => {
-      document.getElementById(id).addEventListener('input', () => {
-        readClipBoxInputs();
-        updateBoxWireframe();
+    // Live wireframe update while typing
+    ['cb-xmin','cb-xmax','cb-ymin','cb-ymax','cb-zmin','cb-zmax'].forEach(eid => {
+      document.getElementById(eid).addEventListener('input', () => {
+        cbReadEditor();
+        if (cbEditId) cbBuildWireframe(cbEditId);
       });
     });
 
@@ -1743,7 +1731,7 @@
       if (e.key === 'Escape') {
         if (gcpPickMode) { gcpCancelPick(); return; }
         if (panoDS) { closePanoramaOverlay(); return; }
-        if (clipBoxActive) { toggleClipBox(); return; }
+        if (cbEditId) { cbCloseEditor(); return; }
         cancelCurrent(); resetTool();
       }
       if (e.key === 'Backspace' && activeTool === 'area' && curPts.length > 0) {
@@ -1835,26 +1823,83 @@
 
     // ── Clip Box functions ────────────────────────────────────────────────────
 
-    function removeBoxWireframe() {
-      clipBoxEdges.forEach(e => viewer.entities.remove(e));
-      clipBoxEdges = [];
+    function initClipOrigin() {
+      const ts = layers.find(l => l.tileset)?.tileset;
+      if (!ts) return;
+      cbOriginEcef = ts.boundingSphere.center.clone();
+      cbRadius = ts.boundingSphere.radius;
     }
 
-    function updateBoxWireframe() {
-      removeBoxWireframe();
-      if (!clipBoxActive || !cbCenter) return;
-      const xMin = cbCenter.x + cbXmin, xMax = cbCenter.x + cbXmax;
-      const yMin = cbCenter.y + cbYmin, yMax = cbCenter.y + cbYmax;
-      const zMin = cbCenter.z + cbZmin, zMax = cbCenter.z + cbZmax;
-      const v = (x,y,z) => localToEcef(new Cesium.Cartesian3(x, y, z));
+    // Build Cesium.ClippingPlane array for a clip box.
+    // Planes are in ENU metres relative to cbOriginEcef.
+    // Inside mode (show interior): normals outward, unionClippingRegions=true.
+    // Outside mode (clip interior): normals inward, unionClippingRegions=false.
+    function cbBuildPlanes(cb) {
+      const { xmin: x0, xmax: x1, ymin: y0, ymax: y1, zmin: z0, zmax: z1, inside } = cb;
+      if (inside) {
+        return [
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1, 0, 0),  x0),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1, 0, 0), -x1),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,-1, 0),  y0),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 1, 0), -y1),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0,-1),  z0),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0, 1), -z1),
+        ];
+      } else {
+        return [
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1, 0, 0), -x0),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1, 0, 0),  x1),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 1, 0), -y0),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,-1, 0),  y1),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0, 1), -z0),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0,-1),  z1),
+        ];
+      }
+    }
+
+    // Apply the first enabled clip box to all tilesets (one collection per tileset).
+    function applyActiveClipBox() {
+      const active = clipBoxList.find(x => x.enabled);
+      if (!active || !cbOriginEcef) {
+        layers.forEach(l => {
+          if (l.tileset) l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({ enabled: false });
+        });
+        return;
+      }
+      const enuMat = Cesium.Transforms.eastNorthUpToFixedFrame(cbOriginEcef);
+      const planes = cbBuildPlanes(active);
+      layers.forEach(l => {
+        if (!l.tileset) return;
+        l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
+          planes,
+          unionClippingRegions: active.inside,
+          modelMatrix: enuMat,
+          enabled: true,
+        });
+      });
+    }
+
+    // Build/rebuild wireframe for one box. Shown when enabled OR when editing.
+    function cbBuildWireframe(id) {
+      cbClearWireframe(id);
+      if (!cbOriginEcef) return;
+      const cb = clipBoxList.find(x => x.id === id);
+      if (!cb) return;
+      const enuMat = Cesium.Transforms.eastNorthUpToFixedFrame(cbOriginEcef);
+      const toEcef = (x,y,z) => {
+        const r = Cesium.Matrix4.multiplyByPoint(enuMat, new Cesium.Cartesian3(x,y,z), new Cesium.Cartesian3());
+        return r;
+      };
+      const { xmin:x0, xmax:x1, ymin:y0, ymax:y1, zmin:z0, zmax:z1 } = cb;
       const co = [
-        v(xMin,yMin,zMin), v(xMax,yMin,zMin), v(xMax,yMax,zMin), v(xMin,yMax,zMin),
-        v(xMin,yMin,zMax), v(xMax,yMin,zMax), v(xMax,yMax,zMax), v(xMin,yMax,zMax),
+        toEcef(x0,y0,z0), toEcef(x1,y0,z0), toEcef(x1,y1,z0), toEcef(x0,y1,z0),
+        toEcef(x0,y0,z1), toEcef(x1,y0,z1), toEcef(x1,y1,z1), toEcef(x0,y1,z1),
       ];
       const col = Cesium.Color.fromCssColorString('#e3b341');
+      const edges = [];
       [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]]
         .forEach(([i,j]) => {
-          clipBoxEdges.push(viewer.entities.add({
+          edges.push(viewer.entities.add({
             polyline: {
               positions: [co[i], co[j]], width: 1.5,
               material: new Cesium.ColorMaterialProperty(col),
@@ -1863,105 +1908,159 @@
             }
           }));
         });
+      cbBoxEdges[id] = edges;
     }
 
-    function removeClipBoxPlanes() {
-      layers.forEach(l => {
-        if (l.tileset) l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({ enabled: false });
+    function cbClearWireframe(id) {
+      (cbBoxEdges[id] || []).forEach(e => viewer.entities.remove(e));
+      delete cbBoxEdges[id];
+    }
+
+    function cbClearAllWireframes() {
+      Object.keys(cbBoxEdges).forEach(cbClearWireframe);
+    }
+
+    // Render the left-panel clip box list
+    function renderClipBoxList() {
+      const el = document.getElementById('clipbox-list');
+      const empty = document.getElementById('clipbox-empty');
+      if (!clipBoxList.length) {
+        el.innerHTML = '';
+        el.appendChild(empty);
+        return;
+      }
+      el.innerHTML = clipBoxList.map(cb => `
+        <div class="layer-item">
+          <input type="checkbox" class="layer-vis" ${cb.enabled ? 'checked' : ''}
+            data-cbid="${cb.id}" style="--lc:#e3b341">
+          <div class="layer-dot" style="background:#e3b341;opacity:${cb.enabled?1:0.4}"></div>
+          <span class="layer-name">${cb.name}
+            <span style="color:#484f58;font-size:0.68rem">${cb.inside ? '▣' : '□'}</span>
+          </span>
+          <button class="layer-fly" data-cbid="${cb.id}" title="Edit">✎</button>
+          <button class="layer-del" data-cbid="${cb.id}" title="Remove">✕</button>
+        </div>
+      `).join('');
+      el.querySelectorAll('.layer-vis').forEach(ck =>
+        ck.addEventListener('change', () => cbSetEnabled(ck.dataset.cbid, ck.checked))
+      );
+      el.querySelectorAll('.layer-fly').forEach(btn =>
+        btn.addEventListener('click', () => cbOpenEditor(btn.dataset.cbid))
+      );
+      el.querySelectorAll('.layer-del').forEach(btn =>
+        btn.addEventListener('click', () => cbDelete(btn.dataset.cbid))
+      );
+    }
+
+    function cbSetEnabled(id, enabled) {
+      // Only one box active at a time
+      clipBoxList.forEach(x => {
+        if (x.id !== id && enabled) { x.enabled = false; cbClearWireframe(x.id); }
       });
+      const cb = clipBoxList.find(x => x.id === id);
+      if (!cb) return;
+      cb.enabled = enabled;
+      if (enabled) {
+        cbBuildWireframe(id);
+      } else {
+        // Keep wireframe if currently being edited
+        if (cbEditId !== id) cbClearWireframe(id);
+      }
+      applyActiveClipBox();
+      renderClipBoxList();
     }
 
-    function readClipBoxInputs() {
-      cbXmin = parseFloat(document.getElementById('cb-xmin').value) || 0;
-      cbXmax = parseFloat(document.getElementById('cb-xmax').value) || 0;
-      cbYmin = parseFloat(document.getElementById('cb-ymin').value) || 0;
-      cbYmax = parseFloat(document.getElementById('cb-ymax').value) || 0;
-      cbZmin = parseFloat(document.getElementById('cb-zmin').value) || 0;
-      cbZmax = parseFloat(document.getElementById('cb-zmax').value) || 0;
+    function cbDelete(id) {
+      cbClearWireframe(id);
+      clipBoxList = clipBoxList.filter(x => x.id !== id);
+      if (cbEditId === id) cbCloseEditor();
+      applyActiveClipBox();
+      renderClipBoxList();
     }
 
-    function syncClipBoxInputs() {
-      document.getElementById('cb-xmin').value = cbXmin.toFixed(1);
-      document.getElementById('cb-xmax').value = cbXmax.toFixed(1);
-      document.getElementById('cb-ymin').value = cbYmin.toFixed(1);
-      document.getElementById('cb-ymax').value = cbYmax.toFixed(1);
-      document.getElementById('cb-zmin').value = cbZmin.toFixed(1);
-      document.getElementById('cb-zmax').value = cbZmax.toFixed(1);
-    }
-
-    function seedClipBox() {
-      const ts = layers.find(l => l.tileset)?.tileset;
-      if (!ts) return;
-      const c = ecefToLocal(ts.boundingSphere.center);
-      cbCenter = c;
-      cbRadius = ts.boundingSphere.radius;
+    function cbAddNew() {
+      if (!cbOriginEcef) initClipOrigin();
+      cbCount++;
       const r = cbRadius;
-      cbXmin = -r; cbXmax = r;
-      cbYmin = -r; cbYmax = r;
-      cbZmin = -r; cbZmax = r;
-      syncClipBoxInputs();
+      const cb = {
+        id: 'cb_' + Date.now(),
+        name: 'Box ' + cbCount,
+        enabled: false,
+        inside: true,
+        xmin: -r, xmax: r,
+        ymin: -r, ymax: r,
+        zmin: -r, zmax: r,
+      };
+      clipBoxList.push(cb);
+      renderClipBoxList();
+      cbOpenEditor(cb.id);
     }
 
-    function applyClipBox() {
-      if (!cbCenter && layers.length) { seedClipBox(); }
-      if (!cbCenter) return;
-      readClipBoxInputs();
-      updateBoxWireframe();
-
-      const xMin = cbCenter.x + cbXmin, xMax = cbCenter.x + cbXmax;
-      const yMin = cbCenter.y + cbYmin, yMax = cbCenter.y + cbYmax;
-      const zMin = cbCenter.z + cbZmin, zMax = cbCenter.z + cbZmax;
-
-      let planes, union;
-      if (clipBoxInside) {
-        // Show inside: clip everything outside the box (OR of clipped half-spaces)
-        planes = [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1, 0, 0), xMin),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1, 0, 0), -xMax),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,-1, 0), yMin),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 1, 0), -yMax),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0,-1), zMin),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0, 1), -zMax),
-        ];
-        union = true;
-      } else {
-        // Show outside: clip the box interior (AND of flipped half-spaces)
-        planes = [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1, 0, 0), -xMin),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1, 0, 0), xMax),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 1, 0), -yMin),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,-1, 0), yMax),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0, 1), -zMin),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0,-1), zMax),
-        ];
-        union = false;
-      }
-
-      const refMat = getRefMatrix();
-      layers.forEach(l => {
-        if (!l.tileset) return;
-        l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
-          planes, unionClippingRegions: union,
-          modelMatrix: refMat, enabled: true,
-        });
-      });
+    // Sync editor panel inputs → clip box object, rebuild wireframe
+    function cbReadEditor() {
+      const cb = clipBoxList.find(x => x.id === cbEditId);
+      if (!cb) return;
+      cb.xmin = parseFloat(document.getElementById('cb-xmin').value) || 0;
+      cb.xmax = parseFloat(document.getElementById('cb-xmax').value) || 0;
+      cb.ymin = parseFloat(document.getElementById('cb-ymin').value) || 0;
+      cb.ymax = parseFloat(document.getElementById('cb-ymax').value) || 0;
+      cb.zmin = parseFloat(document.getElementById('cb-zmin').value) || 0;
+      cb.zmax = parseFloat(document.getElementById('cb-zmax').value) || 0;
     }
 
-    function toggleClipBox() {
-      clipBoxActive = !clipBoxActive;
-      const panel = document.getElementById('clipbox-panel');
-      const btn   = document.getElementById('clipbox-btn');
-      if (clipBoxActive) {
-        panel.classList.add('open');
-        btn.classList.add('active');
-        if (!cbCenter && layers.length) seedClipBox();
-        updateBoxWireframe();
-      } else {
-        panel.classList.remove('open');
-        btn.classList.remove('active');
-        removeClipBoxPlanes();
-        removeBoxWireframe();
+    function cbOpenEditor(id) {
+      cbEditId = id;
+      const cb = clipBoxList.find(x => x.id === id);
+      if (!cb) return;
+      document.getElementById('cb-panel-name').textContent = cb.name;
+      document.getElementById('cb-xmin').value = cb.xmin.toFixed(1);
+      document.getElementById('cb-xmax').value = cb.xmax.toFixed(1);
+      document.getElementById('cb-ymin').value = cb.ymin.toFixed(1);
+      document.getElementById('cb-ymax').value = cb.ymax.toFixed(1);
+      document.getElementById('cb-zmin').value = cb.zmin.toFixed(1);
+      document.getElementById('cb-zmax').value = cb.zmax.toFixed(1);
+      document.getElementById('cb-inside-btn').classList.toggle('active', cb.inside);
+      document.getElementById('cb-outside-btn').classList.toggle('active', !cb.inside);
+      document.getElementById('clipbox-panel').classList.add('open');
+      cbBuildWireframe(id);
+    }
+
+    function cbCloseEditor() {
+      const id = cbEditId;
+      cbEditId = null;
+      document.getElementById('clipbox-panel').classList.remove('open');
+      // Remove wireframe if box is not enabled
+      if (id) {
+        const cb = clipBoxList.find(x => x.id === id);
+        if (!cb?.enabled) cbClearWireframe(id);
       }
+    }
+
+    function cbSeedEditor() {
+      if (!cbOriginEcef) initClipOrigin();
+      if (!cbOriginEcef || !cbEditId) return;
+      const cb = clipBoxList.find(x => x.id === cbEditId);
+      if (!cb) return;
+      const r = cbRadius;
+      cb.xmin = -r; cb.xmax = r;
+      cb.ymin = -r; cb.ymax = r;
+      cb.zmin = -r; cb.zmax = r;
+      document.getElementById('cb-xmin').value = (-r).toFixed(1);
+      document.getElementById('cb-xmax').value = (r).toFixed(1);
+      document.getElementById('cb-ymin').value = (-r).toFixed(1);
+      document.getElementById('cb-ymax').value = (r).toFixed(1);
+      document.getElementById('cb-zmin').value = (-r).toFixed(1);
+      document.getElementById('cb-zmax').value = (r).toFixed(1);
+      cbBuildWireframe(cbEditId);
+    }
+
+    function cbApplyEditor() {
+      cbReadEditor();
+      const cb = clipBoxList.find(x => x.id === cbEditId);
+      if (!cb) return;
+      cbBuildWireframe(cbEditId);
+      if (cb.enabled) applyActiveClipBox();
+      renderClipBoxList();
     }
 
     // ── Panorama overlay ──────────────────────────────────────────────────────
