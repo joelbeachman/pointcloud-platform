@@ -209,6 +209,26 @@ All `.json`/`.csv` config files survive (tracked). Re-copy binaries from externa
 
 ---
 
+## 2026-05-24 — Measurement Refinements + Potree Removal + Scan Station Toggle
+
+### Completed
+- **Measurement display cleanup** (`public/viewers/cesium.html`)
+  - Removed all text labels from Cesium 3D scene and panorama canvas
+  - Measurements show only geometry (points, lines, polygons) + a sequential number label
+  - Sequential number (`m.num`) shown in panel # column, 3D scene, and panorama canvas
+  - Coords tool: dot only in scene, full coordinates in panel only
+  - Area polygons close in panorama canvas; number floats above line midpoint / at area centroid
+- **Potree viewer removed** — Cesium is now the sole point cloud viewer
+  - Deleted `public/viewers/potree.html`
+  - Removed Point Cloud nav from all pages; compare viewer defaults to Cesium vs Cesium
+  - Portal simplified: only cesium / cesium-splat / splat types in Add Dataset modal
+- **Scan station visibility toggle** (`public/viewers/cesium.html`)
+  - Checkbox in left panel (between Layers and Measurement Tools) toggles all scan position billboards
+  - Also hides/shows Pannellum navigation hotspots in the panorama overlay
+  - Toggling while panorama is open reloads the current scan at the same yaw immediately
+
+---
+
 ## Pending / Planned
 
 ### High priority
