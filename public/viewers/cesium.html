@@ -280,6 +280,15 @@
       <div id="layer-empty">No layers loaded.</div>
     </div>
 
+    <div class="sec-hdr" style="border-top: 1px solid #21262d;">
+      Scan Stations
+    </div>
+    <div class="layer-item">
+      <input type="checkbox" id="scan-stations-toggle" class="layer-vis" checked style="--lc:#f0883e">
+      <div class="layer-dot" style="background:#f0883e"></div>
+      <span class="layer-name">Show scan positions</span>
+    </div>
+
     <div class="sec-hdr" style="border-top: 1px solid #21262d;">Measurement Tools</div>
     <div id="tools-scroll">
       <button class="tool-btn" data-tool="distance" style="--tc:#58a6ff" title="3D straight-line distance">
@@ -856,6 +865,7 @@
 
     function addPanoMarkers(layer, ds) {
       if (!ds.panoramas?.length) return;
+      const visible = document.getElementById('scan-stations-toggle')?.checked ?? true;
       ds.panoramas.forEach(scan => {
         const world = Cesium.Matrix4.multiplyByPoint(
           layer.tileset.modelMatrix,
@@ -863,6 +873,7 @@
           new Cesium.Cartesian3()
         );
         const e = viewer.entities.add({
+          show: visible,
           position: world,
           billboard: {
             image: PANO_IMG, width: 48, height: 48,
@@ -1574,6 +1585,10 @@
     });
 
     // ── Tool buttons ───────────────────────────────────────────────────────────
+    document.getElementById('scan-stations-toggle').addEventListener('change', function () {
+      allPanoEnts.forEach(e => { e.show = this.checked; });
+    });
+
     document.querySelectorAll('.tool-btn[data-tool]').forEach(btn =>
       btn.addEventListener('click', () => setTool(btn.dataset.tool))
     );
