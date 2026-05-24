@@ -1839,31 +1839,49 @@
       cbRadius = ts.boundingSphere.radius;
     }
 
-    // Build Cesium.ClippingPlane array for a clip box.
-    // Planes are in RTC-relative metres from the dataset centroid (East/North/Up = x/y/z).
-    // applyActiveClipBox sets planes.modelMatrix = tileset.modelMatrix = lv95ModelMatrix,
-    // giving czm_clippingPlanesMatrix = Identity, so planes are tested in a_position space.
-    // Inside mode (show interior): clip outside each face, unionClippingRegions=true.
-    // Outside mode (clip interior): clip inside each face, unionClippingRegions=false.
+    // Build 6 ClippingPlane objects for a clip box defined as ±metres from cbOriginEcef.
+    // Planes are in ECEF world coordinates (no modelMatrix on the collection).
+    // In Cesium 1.117+ the new renderer tests clipping against world ECEF position, so
+    // czm_clippingPlanesMatrix = inverse(planes.modelMatrix) = Identity → test in ECEF.
+    //
+    // For a face at +offset metres along an ENU axis:
+    //   normal  = axis_ecef (column of enuMat)
+    //   distance = -(dot(axis, C) + offset)   where C = cbOriginEcef
+    //   → clips when: dot(axis, pos) - dot(axis, C) > offset  i.e. when offset from centre > threshold
+    //
+    // Inside mode (show interior, unionClippingRegions=true):  clip outside each face.
+    // Outside mode (clip interior, unionClippingRegions=false): clip inside each face.
     function cbBuildPlanes(cb) {
-      const { xmin: x0, xmax: x1, ymin: y0, ymax: y1, zmin: z0, zmax: z1, inside } = cb;
+      const { xmin, xmax, ymin, ymax, zmin, zmax, inside } = cb;
+      const C = cbOriginEcef;
+      const m = Cesium.Transforms.eastNorthUpToFixedFrame(C);
+      // ENU column vectors (column-major storage: col 0 = east, col 1 = north, col 2 = up)
+      const ex = m[0], ey = m[1], ez = m[2];    // east
+      const nx = m[4], ny = m[5], nz = m[6];    // north
+      const ux = m[8], uy = m[9], uz = m[10];   // up
+      // Projection of ECEF centroid onto each axis
+      const dE = ex*C.x + ey*C.y + ez*C.z;
+      const dN = nx*C.x + ny*C.y + nz*C.z;
+      const dU = ux*C.x + uy*C.y + uz*C.z;
       if (inside) {
+        // Each plane clips the region beyond one face; union → clips everything outside the box
         return [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1, 0, 0),  x0),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1, 0, 0), -x1),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,-1, 0),  y0),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 1, 0), -y1),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0,-1),  z0),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0, 1), -z1),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( ex,  ey,  ez), -(dE + xmax)), // E > xmax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-ex, -ey, -ez),   dE + xmin),  // E < xmin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( nx,  ny,  nz), -(dN + ymax)), // N > ymax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-nx, -ny, -nz),   dN + ymin),  // N < ymin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( ux,  uy,  uz), -(dU + zmax)), // U > zmax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-ux, -uy, -uz),   dU + zmin),  // U < zmin
         ];
       } else {
+        // Each plane clips the region inside one face boundary; intersection → clips box interior
         return [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1, 0, 0), -x0),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1, 0, 0),  x1),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 1, 0), -y0),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,-1, 0),  y1),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0, 1), -z0),
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, 0,-1),  z1),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( ex,  ey,  ez), -(dE + xmin)), // E > xmin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-ex, -ey, -ez),   dE + xmax),  // E < xmax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( nx,  ny,  nz), -(dN + ymin)), // N > ymin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-nx, -ny, -nz),   dN + ymax),  // N < ymax
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( ux,  uy,  uz), -(dU + zmin)), // U > zmin
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-ux, -uy, -uz),   dU + zmax),  // U < zmax
         ];
       }
     }
@@ -1877,17 +1895,13 @@
         });
         return;
       }
-      // planes.modelMatrix = tileset.modelMatrix (= lv95ModelMatrix).
-      // getClippingPlanesOriginMatrix(ts) returns root.computedTransform = lv95ModelMatrix.
-      // czm_clippingPlanesMatrix = inverse(lv95ModelMatrix) * lv95ModelMatrix = Identity.
-      // Planes are therefore tested against a_position (RTC-relative, metres from centroid).
-      const planes = cbBuildPlanes(active);
+      // No modelMatrix — planes are in ECEF world coordinates.
+      // Cesium 1.117+ new renderer tests world ECEF against planes directly.
       layers.forEach(l => {
         if (!l.tileset) return;
         l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
-          planes,
+          planes: cbBuildPlanes(active),
           unionClippingRegions: active.inside,
-          modelMatrix: l.tileset.modelMatrix.clone(),
           enabled: true,
         });
       });
