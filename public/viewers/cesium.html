@@ -2423,14 +2423,23 @@
           if (!m.pts?.length) continue;
           const spts = projectEcefPts(m.pts);
           if (!spts.length) continue;
-          drawCircles(ctx, spts, TC[m.tool]?.hex || '#fff');
-          // Close area polygon
+          const mhex = TC[m.tool]?.hex || '#fff';
           if (m.tool === 'area' && spts.length >= 3) {
-            ctx.strokeStyle = TC[m.tool]?.hex || '#fff'; ctx.lineWidth = 1.8;
+            // Filled polygon: fill → outline → dots (bottom to top)
             ctx.beginPath();
-            ctx.moveTo(spts[spts.length - 1].x, spts[spts.length - 1].y);
-            ctx.lineTo(spts[0].x, spts[0].y);
-            ctx.stroke();
+            ctx.moveTo(spts[0].x, spts[0].y);
+            for (let j = 1; j < spts.length; j++) ctx.lineTo(spts[j].x, spts[j].y);
+            ctx.closePath();
+            ctx.fillStyle = mhex + '33';   // ~20% opacity fill
+            ctx.fill();
+            ctx.strokeStyle = mhex; ctx.lineWidth = 1.8; ctx.stroke();
+            for (const sp of spts) {
+              ctx.beginPath(); ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
+              ctx.fillStyle = mhex; ctx.fill();
+              ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+            }
+          } else {
+            drawCircles(ctx, spts, mhex);
           }
           // One number per measurement at centroid (above midpoint for lines, inside for area)
           const mx = spts.reduce((s, p) => s + p.x, 0) / spts.length;
@@ -2448,7 +2457,25 @@
         // In-progress (globe or panorama) points
         if (activeTool && curPts.length > 0) {
           const spts = projectEcefPts(curPts);
-          if (spts.length) drawCircles(ctx, spts, TC[activeTool]?.hex || '#fff');
+          if (spts.length) {
+            const ahex = TC[activeTool]?.hex || '#fff';
+            if (activeTool === 'area' && spts.length >= 3) {
+              ctx.beginPath();
+              ctx.moveTo(spts[0].x, spts[0].y);
+              for (let j = 1; j < spts.length; j++) ctx.lineTo(spts[j].x, spts[j].y);
+              ctx.closePath();
+              ctx.fillStyle = ahex + '22';   // lighter fill while in progress
+              ctx.fill();
+              ctx.strokeStyle = ahex; ctx.lineWidth = 1.8; ctx.stroke();
+              for (const sp of spts) {
+                ctx.beginPath(); ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
+                ctx.fillStyle = ahex; ctx.fill();
+                ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+              }
+            } else {
+              drawCircles(ctx, spts, ahex);
+            }
+          }
         }
       }
 
