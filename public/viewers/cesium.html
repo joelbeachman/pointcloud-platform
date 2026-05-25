@@ -229,7 +229,8 @@
       z-index: 10; pointer-events: none; white-space: nowrap;
     }
     body.measuring #pano-overlay.open #pano-measure-hint { display: block; }
-    body.measuring #pano-overlay.open #pano-div { cursor: crosshair; }
+    body.measuring #pano-overlay.open #pano-div,
+    body.measuring #pano-overlay.open #pano-div * { cursor: crosshair !important; }
     #pano-canvas { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 
     /* ── Clip Box Panel ── */
