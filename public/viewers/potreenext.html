@@ -615,9 +615,14 @@
 	function installPanoInterceptor() {
 		if (_panoInterceptor) return;
 		_panoInterceptor = (e) => {
-			const btn = e.target.closest('.potree_sidebar_button');
+			const sidebarBtn = e.target.closest('.potree_sidebar_button');
+			const toolbarBtn = e.target.closest('.potree_toolbar_button');
+			const btn = sidebarBtn || toolbarBtn;
 			if (!btn) return;
-			const toolMap = { 'Point': 'point', 'Distance': 'distance', 'Height': 'horizontal', 'Circle': 'area' };
+			const toolMap = {
+				'Point': 'point', 'Distance': 'distance', 'Height': 'horizontal', 'Circle': 'area',
+				'Point Measure': 'point', 'Distance Measure': 'distance', 'Circle Measure': 'area',
+			};
 			const tool = toolMap[btn.title];
 			if (!tool) return;
 			e.stopImmediatePropagation();
