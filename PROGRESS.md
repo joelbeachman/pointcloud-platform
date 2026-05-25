@@ -336,6 +336,32 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-25 — Panorama Measurement Bug Fixes
+
+### Completed
+- **Panorama canvas projection precision fix** (`public/viewers/cesium.html`)
+  - Old click handler used decoupled `atan(dx/f)` / `atan(dy/f)` — independent formulas that
+    are only exact at the image center; off-center clicks mapped to a slightly wrong yaw/pitch
+    due to missing cross-coupling between horizontal and vertical angles
+  - Fix: replaced with the exact inverse of the perspective projection: unproject canvas pixel
+    into a camera-space ray `(dx/f, -dy/f, 1)`, rotate to world space using the same camera
+    axes as `yawPitchToPanoCanvas`, then extract `yaw = atan2(wx, wz)` and
+    `pitch = atan2(wy, sqrt(wx²+wz²))`. Clicks now round-trip exactly at any position.
+- **Panorama cursor override** (`public/viewers/cesium.html`)
+  - Pannellum sets `cursor: grab` inline on its inner canvas, overriding CSS class rules.
+  - Fix: added `!important` and `*` child selector — `body.measuring #pano-div *` — so
+    crosshair takes effect during active measurement for precise click placement.
+- **Area polygon anchor preservation when vertices leave the viewport**
+  - Phase 1: `projectEcefPts` now keeps off-canvas-but-in-front vertices (`vis=false`)
+    instead of filtering them. Area paths include all vertices; canvas clips rendering at
+    boundary. Vertex dots suppressed for off-canvas points.
+  - Phase 2: `yawPitchToPanoCanvas` no longer returns `null` for `dotFwd ≤ 0` (point >90°
+    from camera direction). Instead clamps `dotFwd` to `0.05`, projecting behind-camera
+    vertices far off-canvas in the correct lateral direction. Canvas clipping cuts the
+    fill/outline at the canvas edge — polygon shape stays intact when a corner pans off-screen.
+
+---
+
 ## Pending / Planned
 
 ### High priority
