@@ -108,7 +108,8 @@
 		padding: 0.25rem 0.75rem; font-family: monospace; font-size: 0.78rem; color: #8b949e;
 		pointer-events: none; display: none; z-index: 20; white-space: nowrap;
 	}
-	body.pano-measuring #pano-div * { cursor: crosshair !important; }
+	#pano-measure-capture { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+	body.pano-measuring #pano-measure-capture { pointer-events: all; cursor: crosshair; }
 	.pnlm-hotspot.pano-nav-hotspot {
 		width: 40px; height: 40px;
 		background: none !important; background-image: none !important;
@@ -169,6 +170,7 @@
 	<div id="pano-inner">
 		<div id="pano-div"></div>
 		<canvas id="pano-measure-canvas"></canvas>
+		<div id="pano-measure-capture"></div>
 		<div id="pano-measure-bar">
 			<button class="pm-btn" data-tool="distance"   style="--tc:#58a6ff">Distance</button>
 			<button class="pm-btn" data-tool="horizontal" style="--tc:#3fb950">Horiz.</button>
@@ -218,6 +220,7 @@
 
 	import {Potree} from "potree";
 	import {Vector3, Vector4, Matrix4, Points, Mesh, geometries} from "potree";
+	import {DistanceMeasure} from "../libs/potreenext/src/interaction/measure.js";
 	import "range-select";
 
 	import {installToolbar} from "toolbar";
@@ -374,18 +377,29 @@
 	let measurements = [];
 	let measureCount = 0;
 	let measRafRunning = false;
+	let bridgedNextMeasures = [];
+
+	function bridgeToPotreeNext(tool, pts) {
+		if (!pts.length) return;
+		const m = new DistanceMeasure();
+		for (const pt of pts) m.addMarker(new Vector3(pt.x, pt.y, pt.z));
+		potree.measure.measures.push(m);
+		bridgedNextMeasures.push(m);
+		const btn = window.sidebar?.elSectionSelection?.querySelectorAll('.potree_sidebar_section_button')[2];
+		btn?.click();
+	}
 
 	function panoFloorPick(yawDeg, pitchDeg) {
 		const scan = panos[panoIdx];
 		if (!scan || scan.x == null) return null;
 		const pitchRad = pitchDeg * Math.PI / 180;
-		if (pitchRad >= 0) return null;
 		const floorOffset = parseFloat(document.getElementById('pano-floor-offset').value) || 1.5;
 		const bearing = (yawDeg + (scan.northOffset || 0)) * Math.PI / 180;
 		const cp = Math.cos(pitchRad);
 		const dirX = Math.sin(bearing) * cp;
 		const dirY = Math.cos(bearing) * cp;
 		const dirZ = Math.sin(pitchRad);
+		if (Math.abs(dirZ) < 0.02) return null;
 		const t = -floorOffset / dirZ;
 		if (t <= 0) return null;
 		return { x: scan.x + t * dirX, y: scan.y + t * dirY, z: scan.z - floorOffset };
@@ -537,10 +551,12 @@
 	function fmt(m) { return m < 100 ? m.toFixed(2) + ' m' : m.toFixed(1) + ' m'; }
 
 	function commitMeasurement(tool, display) {
-		measurements.push({ id: Date.now(), num: ++measureCount, tool, display, pts: [...curMeasPts] });
+		const pts = [...curMeasPts];
+		measurements.push({ id: Date.now(), num: ++measureCount, tool, display, pts });
 		curMeasPts = [];
 		resetMeasTool();
 		renderMeasResults();
+		bridgeToPotreeNext(tool, pts);
 	}
 
 	function doDistance() {
@@ -589,12 +605,17 @@
 	});
 
 	document.getElementById('pm-clear-btn').addEventListener('click', () => {
+		for (const m of bridgedNextMeasures) {
+			const idx = potree.measure.measures.indexOf(m);
+			if (idx !== -1) potree.measure.measures.splice(idx, 1);
+		}
+		bridgedNextMeasures = [];
 		measurements = []; measureCount = 0;
 		resetMeasTool();
 		renderMeasResults();
 	});
 
-	document.getElementById('pano-div').addEventListener('mousedown', e => {
+	document.getElementById('pano-measure-capture').addEventListener('mousedown', e => {
 		if (e.button !== 0 || !activeMeasTool || !panoViewer) return;
 		const div = document.getElementById('pano-div');
 		const rect = div.getBoundingClientRect();
@@ -621,7 +642,7 @@
 		else if (activeMeasTool === 'horizontal' && curMeasPts.length === 2) doHorizontal();
 	});
 
-	document.getElementById('pano-div').addEventListener('contextmenu', e => {
+	document.getElementById('pano-measure-capture').addEventListener('contextmenu', e => {
 		if (!activeMeasTool) return;
 		e.preventDefault(); e.stopPropagation();
 		if (activeMeasTool === 'area' && curMeasPts.length >= 3) doArea();
