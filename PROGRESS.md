@@ -275,10 +275,34 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-24 — Clip Box UX Fixes + "None" Mode
+
+### Completed
+- **"Untoggle to activate" bug fixed** (`cbApplyEditor`)
+  - Root cause: `cbApplyEditor` only called `applyActiveClipBox()` when `cb.enabled` was already true.
+    New boxes start as `enabled: false`, so Apply had no effect on first use.
+  - Fix: Apply always sets `cb.enabled = true` (disabling other boxes first), then always calls
+    `applyActiveClipBox()`. No need to toggle the checkbox before clicking Apply.
+- **Clip stops when wireframe hidden bug fixed** (`cbBuildWireframe`, `cbSetEnabled`)
+  - Root cause: `cbSetEnabled(id, true)` always called `cbBuildWireframe`, and the only way to
+    hide the wireframe was to call `cbSetEnabled(id, false)`, which also disabled clipping.
+    Wireframe visibility and clipping state were fully coupled.
+  - Fix: Added `showWireframe` flag to clip box objects (default `true`). `cbBuildWireframe` returns
+    early if `cb.showWireframe === false`. `cbSetEnabled` only builds wireframe when flag allows it.
+    `applyActiveClipBox` reads only `cb.enabled` — unaffected by wireframe flag.
+- **"None" mode button added** (clip active, wireframe hidden)
+  - Third button `&#x25A1; None` in the mode row alongside Inside/Outside.
+  - Clicking None sets `cb.showWireframe = false` and clears the wireframe immediately;
+    clipping planes stay active using the last Inside/Outside mode.
+  - Clicking Inside or Outside sets `cb.showWireframe = true` and rebuilds the wireframe.
+  - `cbOpenEditor` syncs all three buttons correctly when re-opening the editor panel.
+
+---
+
 ## Pending / Planned
 
 ### High priority
-- [ ] Test clip box in browser — verify inside/outside modes both show partial clipping
+- [ ] Clip box: continue testing — some behaviours not yet working perfectly (reported by user)
 - [ ] Verify panorama images are equirectangular — scanner perspective JPEGs may need conversion before Pannellum can display them correctly
 - [ ] Update `scripts/restore_eggiswil.py` to use quaternion-derived `northOffset` formula (currently stores `rotZ_deg` directly)
 - [ ] Restore documentation folder contents (thesis assets, compiled PDF, figures)

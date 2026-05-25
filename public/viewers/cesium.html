@@ -469,6 +469,10 @@
     <div class="cb-mode">
       <button class="cb-mbtn active" id="cb-inside-btn">&#x25A3; Inside</button>
       <button class="cb-mbtn" id="cb-outside-btn">&#x25A2; Outside</button>
+      <button class="cb-mbtn" id="cb-none-btn">&#x25A1; None</button>
+    </div>
+    <div class="cb-mode" style="margin-bottom:0.3rem">
+      <button class="cb-mbtn active" id="cb-wf-btn" style="flex:1">&#x25A1; Show box</button>
     </div>
     <div class="cb-acts">
       <button class="cb-abtn" id="cb-apply-btn">Apply</button>
@@ -1717,17 +1721,39 @@
     document.getElementById('cb-apply-btn').addEventListener('click', cbApplyEditor);
     document.getElementById('cb-panel-close').addEventListener('click', cbCloseEditor);
 
+    function cbSetModeBtn(mode) {
+      document.getElementById('cb-inside-btn').classList.toggle('active', mode === 'inside');
+      document.getElementById('cb-outside-btn').classList.toggle('active', mode === 'outside');
+      document.getElementById('cb-none-btn').classList.toggle('active', mode === 'none');
+    }
     document.getElementById('cb-inside-btn').addEventListener('click', () => {
       const cb = clipBoxList.find(x => x.id === cbEditId);
-      if (cb) { cb.inside = true; renderClipBoxList(); }
-      document.getElementById('cb-inside-btn').classList.add('active');
-      document.getElementById('cb-outside-btn').classList.remove('active');
+      if (!cb) return;
+      cb.inside = true;
+      cbSetModeBtn('inside');
+      renderClipBoxList();
     });
     document.getElementById('cb-outside-btn').addEventListener('click', () => {
       const cb = clipBoxList.find(x => x.id === cbEditId);
-      if (cb) { cb.inside = false; renderClipBoxList(); }
-      document.getElementById('cb-outside-btn').classList.add('active');
-      document.getElementById('cb-inside-btn').classList.remove('active');
+      if (!cb) return;
+      cb.inside = false;
+      cbSetModeBtn('outside');
+      renderClipBoxList();
+    });
+    document.getElementById('cb-none-btn').addEventListener('click', () => {
+      const cb = clipBoxList.find(x => x.id === cbEditId);
+      if (!cb) return;
+      cb.inside = null;
+      cbSetModeBtn('none');
+      renderClipBoxList();
+    });
+    document.getElementById('cb-wf-btn').addEventListener('click', () => {
+      const cb = clipBoxList.find(x => x.id === cbEditId);
+      if (!cb) return;
+      cb.showWireframe = !cb.showWireframe;
+      if (cb.showWireframe) cbBuildWireframe(cbEditId); else cbClearWireframe(cbEditId);
+      document.getElementById('cb-wf-btn').classList.toggle('active', cb.showWireframe);
+      renderClipBoxList(); // sync list checkbox
     });
 
     // Live wireframe update while typing
@@ -1902,7 +1928,7 @@
     // Apply the first enabled clip box to all tilesets (one collection per tileset).
     function applyActiveClipBox() {
       const active = clipBoxList.find(x => x.enabled);
-      if (!active || !cbOriginLV95) {
+      if (!active || !cbOriginLV95 || active.inside === null) {
         layers.forEach(l => {
           if (l.tileset) l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({ enabled: false });
         });
@@ -1929,6 +1955,7 @@
       if (!cbOriginEcef) return;
       const cb = clipBoxList.find(x => x.id === id);
       if (!cb) return;
+      if (cb.showWireframe === false) return;
       const enuMat = Cesium.Transforms.eastNorthUpToFixedFrame(cbOriginEcef);
       const toEcef = (x,y,z) => {
         const r = Cesium.Matrix4.multiplyByPoint(enuMat, new Cesium.Cartesian3(x,y,z), new Cesium.Cartesian3());
@@ -1973,18 +2000,18 @@
       }
       el.innerHTML = clipBoxList.map(cb => `
         <div class="layer-item">
-          <input type="checkbox" class="layer-vis" ${cb.enabled ? 'checked' : ''}
-            data-cbid="${cb.id}" style="--lc:#e3b341">
+          <input type="checkbox" class="layer-vis" ${cb.showWireframe !== false ? 'checked' : ''}
+            data-cbid="${cb.id}" style="--lc:#e3b341" title="Show wireframe">
           <div class="layer-dot" style="background:#e3b341;opacity:${cb.enabled?1:0.4}"></div>
           <span class="layer-name">${cb.name}
-            <span style="color:#484f58;font-size:0.68rem">${cb.inside ? '▣' : '□'}</span>
+            <span style="color:#484f58;font-size:0.68rem">${cb.inside === null ? '○' : cb.inside ? '▣' : '□'}</span>
           </span>
           <button class="layer-fly" data-cbid="${cb.id}" title="Edit">✎</button>
           <button class="layer-del" data-cbid="${cb.id}" title="Remove">✕</button>
         </div>
       `).join('');
       el.querySelectorAll('.layer-vis').forEach(ck =>
-        ck.addEventListener('change', () => cbSetEnabled(ck.dataset.cbid, ck.checked))
+        ck.addEventListener('change', () => cbToggleWireframe(ck.dataset.cbid, ck.checked))
       );
       el.querySelectorAll('.layer-fly').forEach(btn =>
         btn.addEventListener('click', () => cbOpenEditor(btn.dataset.cbid))
@@ -1992,6 +2019,17 @@
       el.querySelectorAll('.layer-del').forEach(btn =>
         btn.addEventListener('click', () => cbDelete(btn.dataset.cbid))
       );
+    }
+
+    function cbToggleWireframe(id, show) {
+      const cb = clipBoxList.find(x => x.id === id);
+      if (!cb) return;
+      cb.showWireframe = show;
+      if (show) cbBuildWireframe(id); else cbClearWireframe(id);
+      if (cbEditId === id) {
+        document.getElementById('cb-wf-btn').classList.toggle('active', show);
+      }
+      renderClipBoxList();
     }
 
     function cbSetEnabled(id, enabled) {
@@ -2003,7 +2041,7 @@
       if (!cb) return;
       cb.enabled = enabled;
       if (enabled) {
-        cbBuildWireframe(id);
+        if (cb.showWireframe !== false) cbBuildWireframe(id);
       } else {
         // Keep wireframe if currently being edited
         if (cbEditId !== id) cbClearWireframe(id);
@@ -2029,6 +2067,7 @@
         name: 'Box ' + cbCount,
         enabled: false,
         inside: true,
+        showWireframe: true,
         xmin: -r, xmax: r,
         ymin: -r, ymax: r,
         zmin: -r, zmax: r,
@@ -2061,8 +2100,9 @@
       document.getElementById('cb-ymax').value = cb.ymax.toFixed(1);
       document.getElementById('cb-zmin').value = cb.zmin.toFixed(1);
       document.getElementById('cb-zmax').value = cb.zmax.toFixed(1);
-      document.getElementById('cb-inside-btn').classList.toggle('active', cb.inside);
-      document.getElementById('cb-outside-btn').classList.toggle('active', !cb.inside);
+      const mode = cb.inside === null ? 'none' : cb.inside ? 'inside' : 'outside';
+      cbSetModeBtn(mode);
+      document.getElementById('cb-wf-btn').classList.toggle('active', cb.showWireframe !== false);
       document.getElementById('clipbox-panel').classList.add('open');
       cbBuildWireframe(id);
     }
@@ -2100,8 +2140,11 @@
       cbReadEditor();
       const cb = clipBoxList.find(x => x.id === cbEditId);
       if (!cb) return;
+      // Disable all other boxes so this one becomes the active one
+      clipBoxList.forEach(x => { if (x.id !== cb.id) { x.enabled = false; cbClearWireframe(x.id); } });
+      cb.enabled = true;
       cbBuildWireframe(cbEditId);
-      if (cb.enabled) applyActiveClipBox();
+      applyActiveClipBox();
       renderClipBoxList();
     }
 
