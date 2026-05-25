@@ -50,6 +50,41 @@
 		}
 		#pano-scan-nav button:hover { background: #30363d; }
 		#pano-scan-nav button:disabled { opacity: 0.35; cursor: default; }
+		/* ── Panorama measurement tools ── */
+		#pano-measure-canvas { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+		#pano-measure-bar {
+			position: absolute; top: 8px; left: 8px; z-index: 20;
+			display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+			background: rgba(13,17,23,0.9); border: 1px solid #30363d; border-radius: 6px;
+			padding: 0.3rem 0.5rem; font-family: monospace; font-size: 0.78rem; color: #8b949e;
+		}
+		.pm-btn {
+			background: none; border: 1px solid #30363d; color: #8b949e;
+			border-radius: 4px; padding: 0.15rem 0.5rem; cursor: pointer;
+			font-size: 0.78rem; white-space: nowrap;
+		}
+		.pm-btn:hover { background: #21262d; color: #e6edf3; }
+		.pm-btn.active { background: color-mix(in srgb, var(--tc) 18%, transparent); border-color: var(--tc); color: var(--tc); }
+		.pm-sep { width: 1px; height: 16px; background: #30363d; margin: 0 2px; flex-shrink: 0; }
+		#pano-floor-offset {
+			width: 46px; background: #0d1117; border: 1px solid #30363d; color: #e6edf3;
+			border-radius: 3px; padding: 0.1rem 0.25rem; font-family: monospace; font-size: 0.78rem;
+		}
+		#pano-measure-results {
+			position: absolute; top: 8px; right: 8px; z-index: 20;
+			background: rgba(13,17,23,0.9); border: 1px solid #30363d; border-radius: 6px;
+			padding: 0.3rem 0.5rem; font-family: monospace; font-size: 0.75rem;
+			display: none; max-width: 180px;
+		}
+		.mr-row { display: flex; gap: 0.4rem; align-items: center; margin: 1px 0; }
+		.mr-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+		#pano-measure-hint {
+			position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%);
+			background: rgba(13,17,23,0.85); border: 1px solid #30363d; border-radius: 4px;
+			padding: 0.25rem 0.75rem; font-family: monospace; font-size: 0.78rem; color: #8b949e;
+			pointer-events: none; display: none; z-index: 20; white-space: nowrap;
+		}
+		body.pano-measuring #pano-div * { cursor: crosshair !important; }
 		.pnlm-hotspot.pano-nav-hotspot {
 			width: 40px; height: 40px;
 			background: none !important; background-image: none !important;
@@ -100,6 +135,20 @@
 		</div>
 		<div id="pano-inner">
 			<div id="pano-div"></div>
+			<canvas id="pano-measure-canvas"></canvas>
+			<div id="pano-measure-bar">
+				<button class="pm-btn" data-tool="distance"   style="--tc:#58a6ff">Distance</button>
+				<button class="pm-btn" data-tool="horizontal" style="--tc:#3fb950">Horiz.</button>
+				<button class="pm-btn" data-tool="area"       style="--tc:#a371f7">Area</button>
+				<div class="pm-sep"></div>
+				<span>Floor</span>
+				<input id="pano-floor-offset" type="number" value="1.5" step="0.1" min="-10" max="10">
+				<span>m</span>
+				<div class="pm-sep"></div>
+				<button class="pm-btn" id="pm-clear-btn">Clear</button>
+			</div>
+			<div id="pano-measure-results"></div>
+			<div id="pano-measure-hint">Click in panorama to place point — right-click to finish area</div>
 			<div id="pano-scan-nav">
 				<button id="pano-btn-prev">&#8592; Prev</button>
 				<span id="pano-scan-label">Scan 1 / 1</span>
@@ -147,11 +196,14 @@
 			panoIdx = idx >= 0 ? idx : 0;
 			document.getElementById('pano-overlay').classList.add('open');
 			loadPanoScan(panoIdx);
+			resizePanoMeasureCanvas();
+			if (!measRafRunning) { measRafRunning = true; requestAnimationFrame(drawPanoMeasureCanvas); }
 		};
 
 		window.closePanoramaOverlay = function() {
 			if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
 			document.getElementById('pano-overlay').classList.remove('open');
+			resetMeasTool();
 		};
 
 		function panoCameraSVG(s) {
@@ -237,6 +289,283 @@
 		});
 		document.getElementById('pano-btn-next').addEventListener('click', () => {
 			if (panoIdx < panos.length - 1) loadPanoScan(panoIdx + 1);
+		});
+
+		// ── Panorama measurement tools ─────────────────────────────────────────
+		const MTC = {
+			distance:   { hex: '#58a6ff', label: 'Distance' },
+			horizontal: { hex: '#3fb950', label: 'Horiz.' },
+			area:       { hex: '#a371f7', label: 'Area' },
+		};
+		let activeMeasTool = null;
+		let curMeasPts = [];
+		let measurements = [];
+		let measureCount = 0;
+		let measRafRunning = false;
+
+		function panoFloorPick(yawDeg, pitchDeg) {
+			const scan = panos[panoIdx];
+			if (!scan || scan.x == null) return null;
+			const pitchRad = pitchDeg * Math.PI / 180;
+			if (pitchRad >= 0) return null;
+			const floorOffset = parseFloat(document.getElementById('pano-floor-offset').value) || 1.5;
+			const bearing = (yawDeg + (scan.northOffset || 0)) * Math.PI / 180;
+			const cp = Math.cos(pitchRad);
+			const dirX = Math.sin(bearing) * cp;
+			const dirY = Math.cos(bearing) * cp;
+			const dirZ = Math.sin(pitchRad);
+			const t = -floorOffset / dirZ;
+			if (t <= 0) return null;
+			return { x: scan.x + t * dirX, y: scan.y + t * dirY, z: scan.z - floorOffset };
+		}
+
+		function lv95ToPanoYawPitch(pt) {
+			const scan = panos[panoIdx];
+			const dx = pt.x - scan.x, dy = pt.y - scan.y, dz = pt.z - scan.z;
+			const horiz = Math.sqrt(dx*dx + dy*dy);
+			const bearing = Math.atan2(dx, dy) * 180 / Math.PI;
+			const pitch = Math.atan2(dz, horiz) * 180 / Math.PI;
+			let yaw = bearing - (scan.northOffset || 0);
+			while (yaw >  180) yaw -= 360;
+			while (yaw < -180) yaw += 360;
+			return { yaw, pitch };
+		}
+
+		function yawPitchToMeasCanvas(yaw, pitch) {
+			if (!panoViewer) return null;
+			const hfov = panoViewer.getHfov();
+			if (!hfov || !isFinite(hfov) || hfov <= 0) return null;
+			const canvas = document.getElementById('pano-measure-canvas');
+			if (!canvas.width || !canvas.height) return null;
+			const toRad = Math.PI / 180;
+			const ptY = yaw * toRad, ptP = pitch * toRad;
+			const cY = panoViewer.getYaw() * toRad, cP = panoViewer.getPitch() * toRad;
+			const px = Math.cos(ptP)*Math.sin(ptY), py = Math.sin(ptP), pz = Math.cos(ptP)*Math.cos(ptY);
+			const fx = Math.cos(cP)*Math.sin(cY), fy = Math.sin(cP), fz = Math.cos(cP)*Math.cos(cY);
+			const rx = Math.cos(cY), rz = -Math.sin(cY);
+			const ux = -Math.sin(cP)*Math.sin(cY), uy = Math.cos(cP), uz = -Math.sin(cP)*Math.cos(cY);
+			const dotFwd = px*fx + py*fy + pz*fz;
+			const dotRight = px*rx + pz*rz;
+			const dotUp = px*ux + py*uy + pz*uz;
+			const safeFwd = dotFwd <= 0 ? 0.05 : dotFwd;
+			const tanH2 = Math.tan(hfov * toRad / 2);
+			if (!tanH2 || !isFinite(tanH2)) return null;
+			const cx = canvas.width / 2, cy = canvas.height / 2, f = cx / tanH2;
+			const x = cx + f * dotRight / safeFwd, y = cy - f * dotUp / safeFwd;
+			if (!isFinite(x) || !isFinite(y)) return null;
+			return { x, y, behind: dotFwd <= 0 };
+		}
+
+		function projectMeasPts(pts) {
+			const canvas = document.getElementById('pano-measure-canvas');
+			return pts.map((pt, i) => {
+				const yw = lv95ToPanoYawPitch(pt);
+				if (!yw) return null;
+				const pos = yawPitchToMeasCanvas(yw.yaw, yw.pitch);
+				if (!pos) return null;
+				const vis = !pos.behind && pos.x >= 0 && pos.x <= canvas.width && pos.y >= 0 && pos.y <= canvas.height;
+				return { x: pos.x, y: pos.y, i, vis };
+			}).filter(Boolean);
+		}
+
+		function resizePanoMeasureCanvas() {
+			const inner = document.getElementById('pano-inner');
+			const canvas = document.getElementById('pano-measure-canvas');
+			const rect = inner.getBoundingClientRect();
+			canvas.width  = Math.max(1, Math.round(rect.width));
+			canvas.height = Math.max(1, Math.round(rect.height));
+		}
+
+		function drawMeasCircles(ctx, spts, color) {
+			if (spts.length >= 2) {
+				ctx.strokeStyle = color; ctx.lineWidth = 1.8;
+				ctx.beginPath(); ctx.moveTo(spts[0].x, spts[0].y);
+				for (let j = 1; j < spts.length; j++) ctx.lineTo(spts[j].x, spts[j].y);
+				ctx.stroke();
+			}
+			for (const sp of spts) {
+				ctx.beginPath(); ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
+				ctx.fillStyle = color; ctx.fill();
+				ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+			}
+		}
+
+		function drawPanoMeasureCanvas() {
+			const canvas = document.getElementById('pano-measure-canvas');
+			const ctx = canvas.getContext('2d');
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			if (panoViewer) {
+				for (const m of measurements) {
+					if (!m.pts?.length) continue;
+					const spts = projectMeasPts(m.pts);
+					if (!spts.length) continue;
+					const mhex = MTC[m.tool]?.hex || '#fff';
+					if (m.tool === 'area' && spts.length >= 3) {
+						ctx.beginPath(); ctx.moveTo(spts[0].x, spts[0].y);
+						for (let j = 1; j < spts.length; j++) ctx.lineTo(spts[j].x, spts[j].y);
+						ctx.closePath();
+						ctx.fillStyle = mhex + '33'; ctx.fill();
+						ctx.strokeStyle = mhex; ctx.lineWidth = 1.8; ctx.stroke();
+						for (const sp of spts) {
+							if (!sp.vis) continue;
+							ctx.beginPath(); ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
+							ctx.fillStyle = mhex; ctx.fill();
+							ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+						}
+					} else {
+						drawMeasCircles(ctx, spts.filter(p => p.vis), mhex);
+					}
+					const vpts = spts.filter(p => p.vis);
+					const lpts = vpts.length ? vpts : spts;
+					const mx = lpts.reduce((s, p) => s + p.x, 0) / lpts.length;
+					const my = lpts.reduce((s, p) => s + p.y, 0) / lpts.length;
+					const ny = m.tool === 'area' ? my : my - 18;
+					ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+					ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(13,17,23,0.9)';
+					ctx.strokeText(String(m.num), mx, ny);
+					ctx.fillStyle = '#e6edf3'; ctx.fillText(String(m.num), mx, ny);
+					ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+				}
+				if (activeMeasTool && curMeasPts.length > 0) {
+					const spts = projectMeasPts(curMeasPts);
+					if (spts.length) {
+						const ahex = MTC[activeMeasTool]?.hex || '#fff';
+						if (activeMeasTool === 'area' && spts.length >= 3) {
+							ctx.beginPath(); ctx.moveTo(spts[0].x, spts[0].y);
+							for (let j = 1; j < spts.length; j++) ctx.lineTo(spts[j].x, spts[j].y);
+							ctx.closePath();
+							ctx.fillStyle = ahex + '22'; ctx.fill();
+							ctx.strokeStyle = ahex; ctx.lineWidth = 1.8; ctx.stroke();
+							for (const sp of spts) {
+								if (!sp.vis) continue;
+								ctx.beginPath(); ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
+								ctx.fillStyle = ahex; ctx.fill();
+								ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+							}
+						} else {
+							drawMeasCircles(ctx, spts.filter(p => p.vis), ahex);
+						}
+					}
+				}
+			}
+			if (document.getElementById('pano-overlay').classList.contains('open')) {
+				requestAnimationFrame(drawPanoMeasureCanvas);
+			} else {
+				measRafRunning = false;
+			}
+		}
+
+		function resetMeasTool() {
+			activeMeasTool = null; curMeasPts = [];
+			document.querySelectorAll('.pm-btn[data-tool]').forEach(b => b.classList.remove('active'));
+			document.getElementById('pano-measure-hint').style.display = 'none';
+			document.body.classList.remove('pano-measuring');
+		}
+
+		function fmt(m) { return m < 100 ? m.toFixed(2) + ' m' : m.toFixed(1) + ' m'; }
+
+		function commitMeasurement(tool, display) {
+			measurements.push({ id: Date.now(), num: ++measureCount, tool, display, pts: [...curMeasPts] });
+			curMeasPts = [];
+			resetMeasTool();
+			renderMeasResults();
+		}
+
+		function doDistance() {
+			const [p1, p2] = curMeasPts;
+			commitMeasurement('distance', fmt(Math.sqrt((p2.x-p1.x)**2+(p2.y-p1.y)**2+(p2.z-p1.z)**2)));
+		}
+		function doHorizontal() {
+			const [p1, p2] = curMeasPts;
+			commitMeasurement('horizontal', fmt(Math.sqrt((p2.x-p1.x)**2+(p2.y-p1.y)**2)));
+		}
+		function doArea() {
+			if (curMeasPts.length < 3) return;
+			let area = 0;
+			const n = curMeasPts.length;
+			for (let i = 0; i < n; i++) {
+				const a = curMeasPts[i], b = curMeasPts[(i+1) % n];
+				area += a.x * b.y - b.x * a.y;
+			}
+			area = Math.abs(area) / 2;
+			commitMeasurement('area', area < 100 ? area.toFixed(2) + ' m²' : area.toFixed(1) + ' m²');
+		}
+
+		function renderMeasResults() {
+			const el = document.getElementById('pano-measure-results');
+			if (!measurements.length) { el.style.display = 'none'; return; }
+			el.style.display = 'block';
+			el.innerHTML = measurements.map(m =>
+				`<div class="mr-row">
+					<span style="color:#8b949e;min-width:14px">${m.num}</span>
+					<div class="mr-dot" style="background:${MTC[m.tool].hex}"></div>
+					<span style="color:#e6edf3">${m.display}</span>
+				</div>`
+			).join('');
+		}
+
+		document.querySelectorAll('.pm-btn[data-tool]').forEach(btn => {
+			btn.addEventListener('click', () => {
+				const tool = btn.dataset.tool;
+				if (activeMeasTool === tool) { resetMeasTool(); return; }
+				resetMeasTool();
+				activeMeasTool = tool;
+				btn.classList.add('active');
+				document.getElementById('pano-measure-hint').style.display = 'block';
+				document.body.classList.add('pano-measuring');
+			});
+		});
+
+		document.getElementById('pm-clear-btn').addEventListener('click', () => {
+			measurements = []; measureCount = 0;
+			resetMeasTool();
+			renderMeasResults();
+		});
+
+		document.getElementById('pano-div').addEventListener('mousedown', e => {
+			if (e.button !== 0 || !activeMeasTool || !panoViewer) return;
+			const div = document.getElementById('pano-div');
+			const rect = div.getBoundingClientRect();
+			const dx = e.clientX - (rect.left + rect.width  / 2);
+			const dy = e.clientY - (rect.top  + rect.height / 2);
+			const toRad = Math.PI / 180;
+			const f  = (rect.width / 2) / Math.tan(panoViewer.getHfov() * toRad / 2);
+			const cY = panoViewer.getYaw()   * toRad;
+			const cP = panoViewer.getPitch() * toRad;
+			const rx = Math.cos(cY),                   rz = -Math.sin(cY);
+			const ux = -Math.sin(cP)*Math.sin(cY), uy = Math.cos(cP), uz = -Math.sin(cP)*Math.cos(cY);
+			const fx = Math.cos(cP)*Math.sin(cY),  fy = Math.sin(cP), fz = Math.cos(cP)*Math.cos(cY);
+			const dr = dx / f, du = -dy / f;
+			const wx = dr*rx + du*ux + fx;
+			const wy =         du*uy + fy;
+			const wz = dr*rz + du*uz + fz;
+			const yaw   = Math.atan2(wx, wz) * 180 / Math.PI;
+			const pitch = Math.atan2(wy, Math.sqrt(wx*wx + wz*wz)) * 180 / Math.PI;
+			const pt = panoFloorPick(yaw, pitch);
+			if (!pt) return;
+			e.stopPropagation();
+			curMeasPts.push(pt);
+			if (activeMeasTool === 'distance' && curMeasPts.length === 2) doDistance();
+			else if (activeMeasTool === 'horizontal' && curMeasPts.length === 2) doHorizontal();
+		});
+
+		document.getElementById('pano-div').addEventListener('contextmenu', e => {
+			if (!activeMeasTool) return;
+			e.preventDefault(); e.stopPropagation();
+			if (activeMeasTool === 'area' && curMeasPts.length >= 3) doArea();
+			else resetMeasTool();
+		});
+
+		document.addEventListener('keydown', e => {
+			if (!document.getElementById('pano-overlay').classList.contains('open')) return;
+			if (e.key === 'Escape') resetMeasTool();
+			else if (e.key === 'Backspace' && activeMeasTool === 'area' && curMeasPts.length > 0) {
+				e.preventDefault(); curMeasPts.pop();
+			}
+		});
+
+		window.addEventListener('resize', () => {
+			if (document.getElementById('pano-overlay').classList.contains('open')) resizePanoMeasureCanvas();
 		});
 
 		// ── Point cloud + scan markers ────────────────────────────────────────
