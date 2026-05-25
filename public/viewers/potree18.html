@@ -17,9 +17,9 @@
 		header { position: relative; z-index: 100; }
 
 		#pano-overlay {
-			display: none; position: fixed; inset: 0; top: 56px;
+			display: none; position: absolute; inset: 0;
 			flex-direction: column; background: #0d1117;
-			z-index: 200; border-top: 1px solid #30363d;
+			z-index: 200;
 		}
 		#pano-overlay.open { display: flex; }
 		#pano-overlay-bar {
@@ -123,12 +123,9 @@
   </header>
 
 	<div class="potree_container" style="position:absolute;width:100%;height:calc(100% - 56px);left:0;top:56px;">
-		<div id="potree_render_area" style="background-image:url('../libs/potree18/build/resources/images/background.jpg');"></div>
-		<div id="potree_sidebar_container"></div>
-	</div>
-
-	<!-- Panorama overlay -->
-	<div id="pano-overlay">
+		<div id="potree_render_area" style="background-image:url('../libs/potree18/build/resources/images/background.jpg');">
+			<!-- Panorama overlay — inside render area so sidebar stays visible -->
+			<div id="pano-overlay">
 		<div id="pano-overlay-bar">
 			<span id="pano-overlay-title">Panorama</span>
 			<span id="pano-overlay-coords"></span>
@@ -155,9 +152,12 @@
 				<button id="pano-btn-prev">&#8592; Prev</button>
 				<span id="pano-scan-label">Scan 1 / 1</span>
 				<button id="pano-btn-next">Next &#8594;</button>
-			</div>
-		</div>
-	</div>
+			</div><!-- /pano-inner -->
+			</div><!-- /pano-overlay -->
+		</div><!-- /potree_render_area (pano-overlay closes here) -->
+		</div><!-- closes potree_render_area -->
+		<div id="potree_sidebar_container"></div>
+	</div><!-- /potree_container -->
 
 	<script src="../libs/potree18/jquery/jquery-3.1.1.min.js"></script>
 	<script src="../libs/potree18/spectrum/spectrum.js"></script>
@@ -356,20 +356,50 @@
 			$('#menu_measurements').next().slideDown();
 		}
 
-		function panoFloorPick(yawDeg, pitchDeg) {
+		function raycastPointCloud18(origin, dir) {
+			const pcs = viewer.scene.pointclouds;
+			if (!pcs?.length) return null;
+			let bestT = Infinity, bestPt = null;
+			const maxCone = 0.008;
+			for (const pc of pcs) {
+				for (const node of (pc.visibleNodes || [])) {
+					const gn = node.geometryNode;
+					if (!gn?.geometry?.attributes?.position) continue;
+					const m = node.sceneNode?.matrixWorld?.elements;
+					if (!m) continue;
+					const ox = m[12], oy = m[13], oz = m[14];
+					const arr = gn.geometry.attributes.position.array;
+					const n = gn.numPoints;
+					for (let i = 0; i < n; i++) {
+						const px = arr[i*3  ] + ox - origin.x;
+						const py = arr[i*3+1] + oy - origin.y;
+						const pz = arr[i*3+2] + oz - origin.z;
+						const t = px*dir.x + py*dir.y + pz*dir.z;
+						if (t < 0.05) continue;
+						if ((px*px+py*py+pz*pz) - t*t > (maxCone*t)**2) continue;
+						if (t < bestT) { bestT = t; bestPt = { x: arr[i*3]+ox, y: arr[i*3+1]+oy, z: arr[i*3+2]+oz }; }
+					}
+				}
+			}
+			return bestPt;
+		}
+
+		function panoPick(yawDeg, pitchDeg) {
 			const scan = panos[panoIdx];
 			if (!scan || scan.x == null) return null;
 			const pitchRad = pitchDeg * Math.PI / 180;
-			const floorOffset = parseFloat(document.getElementById('pano-floor-offset').value) || 1.5;
 			const bearing = (yawDeg + (scan.northOffset || 0)) * Math.PI / 180;
 			const cp = Math.cos(pitchRad);
-			const dirX = Math.sin(bearing) * cp;
-			const dirY = Math.cos(bearing) * cp;
-			const dirZ = Math.sin(pitchRad);
-			if (Math.abs(dirZ) < 0.02) return null;
-			const t = -floorOffset / dirZ;
+			const dir = { x: Math.sin(bearing)*cp, y: Math.cos(bearing)*cp, z: Math.sin(pitchRad) };
+			const origin = { x: scan.x, y: scan.y, z: scan.z };
+			const hit = raycastPointCloud18(origin, dir);
+			if (hit) return hit;
+			// Floor-plane fallback
+			const floorOffset = parseFloat(document.getElementById('pano-floor-offset').value) || 1.5;
+			if (Math.abs(dir.z) < 0.02) return null;
+			const t = -floorOffset / dir.z;
 			if (t <= 0) return null;
-			return { x: scan.x + t * dirX, y: scan.y + t * dirY, z: scan.z - floorOffset };
+			return { x: scan.x + t*dir.x, y: scan.y + t*dir.y, z: scan.z - floorOffset };
 		}
 
 		function lv95ToPanoYawPitch(pt) {
@@ -598,7 +628,7 @@
 			const wz = dr*rz + du*uz + fz;
 			const yaw   = Math.atan2(wx, wz) * 180 / Math.PI;
 			const pitch = Math.atan2(wy, Math.sqrt(wx*wx + wz*wz)) * 180 / Math.PI;
-			const pt = panoFloorPick(yaw, pitch);
+			const pt = panoPick(yaw, pitch);
 			if (!pt) return;
 			e.stopPropagation();
 			curMeasPts.push(pt);

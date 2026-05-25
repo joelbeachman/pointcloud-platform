@@ -41,9 +41,9 @@
 	}
 
 	#pano-overlay {
-		display: none; position: fixed; inset: 0; top: 56px;
+		display: none; position: absolute; inset: 0;
 		flex-direction: column; background: #0d1117;
-		z-index: 200; border-top: 1px solid #30363d;
+		z-index: 200;
 	}
 	#pano-overlay.open { display: flex; }
 	#pano-overlay-bar {
@@ -235,6 +235,9 @@
 	installToolbar(potree.renderer.canvas, potree);
 	installSidebar(elPotree, potree).then(sidebar => {
 		window.sidebar = sidebar;
+		// Reparent pano overlay so it covers only the canvas column, not the sidebar
+		const canvasSpan = potree.renderer.canvas.parentElement;
+		if (canvasSpan) canvasSpan.appendChild(document.getElementById('pano-overlay'));
 	});
 
 	window.Potree = Potree;
@@ -389,20 +392,63 @@
 		btn?.click();
 	}
 
-	function panoFloorPick(yawDeg, pitchDeg) {
+	function raycastPotreeNext(origin, dir) {
+		const pc = potree.scene.root.children.find(c => c.root != null && c.loader != null);
+		if (!pc) return null;
+		const ox = pc.position.x, oy = pc.position.y, oz = pc.position.z;
+		let bestT = Infinity, bestPt = null;
+		const maxCone = 0.008;
+
+		function rayAABB(bbox) {
+			const lo = [origin.x - ox, origin.y - oy, origin.z - oz];
+			const d  = [dir.x, dir.y, dir.z];
+			const bMin = [bbox.min.x, bbox.min.y, bbox.min.z];
+			const bMax = [bbox.max.x, bbox.max.y, bbox.max.z];
+			let tMin = 0, tMax = Infinity;
+			for (let i = 0; i < 3; i++) {
+				if (Math.abs(d[i]) < 1e-9) { if (lo[i] < bMin[i] || lo[i] > bMax[i]) return false; }
+				else { const t1 = (bMin[i]-lo[i])/d[i], t2 = (bMax[i]-lo[i])/d[i]; tMin = Math.max(tMin, Math.min(t1,t2)); tMax = Math.min(tMax, Math.max(t1,t2)); }
+			}
+			return tMax >= tMin;
+		}
+
+		function visit(node) {
+			if (!node) return;
+			if (node.boundingBox && !rayAABB(node.boundingBox)) return;
+			if (node.loaded && node.geometry?.buffer && node.numPoints > 0) {
+				const pos = new Float32Array(node.geometry.buffer, 0, node.numPoints * 3);
+				for (let i = 0; i < node.numPoints; i++) {
+					const px = pos[i*3  ] + ox - origin.x;
+					const py = pos[i*3+1] + oy - origin.y;
+					const pz = pos[i*3+2] + oz - origin.z;
+					const t = px*dir.x + py*dir.y + pz*dir.z;
+					if (t < 0.05) continue;
+					if ((px*px+py*py+pz*pz) - t*t > (maxCone*t)**2) continue;
+					if (t < bestT) { bestT = t; bestPt = { x: pos[i*3]+ox, y: pos[i*3+1]+oy, z: pos[i*3+2]+oz }; }
+				}
+			}
+			if (node.children) for (const child of node.children) visit(child);
+		}
+		if (pc.root) visit(pc.root);
+		return bestPt;
+	}
+
+	function panoPick(yawDeg, pitchDeg) {
 		const scan = panos[panoIdx];
 		if (!scan || scan.x == null) return null;
 		const pitchRad = pitchDeg * Math.PI / 180;
-		const floorOffset = parseFloat(document.getElementById('pano-floor-offset').value) || 1.5;
 		const bearing = (yawDeg + (scan.northOffset || 0)) * Math.PI / 180;
 		const cp = Math.cos(pitchRad);
-		const dirX = Math.sin(bearing) * cp;
-		const dirY = Math.cos(bearing) * cp;
-		const dirZ = Math.sin(pitchRad);
-		if (Math.abs(dirZ) < 0.02) return null;
-		const t = -floorOffset / dirZ;
+		const dir = { x: Math.sin(bearing)*cp, y: Math.cos(bearing)*cp, z: Math.sin(pitchRad) };
+		const origin = { x: scan.x, y: scan.y, z: scan.z };
+		const hit = raycastPotreeNext(origin, dir);
+		if (hit) return hit;
+		// Floor-plane fallback
+		const floorOffset = parseFloat(document.getElementById('pano-floor-offset').value) || 1.5;
+		if (Math.abs(dir.z) < 0.02) return null;
+		const t = -floorOffset / dir.z;
 		if (t <= 0) return null;
-		return { x: scan.x + t * dirX, y: scan.y + t * dirY, z: scan.z - floorOffset };
+		return { x: scan.x + t*dir.x, y: scan.y + t*dir.y, z: scan.z - floorOffset };
 	}
 
 	function lv95ToPanoYawPitch(pt) {
@@ -634,7 +680,7 @@
 		const wz = dr*rz + du*uz + fz;
 		const yaw   = Math.atan2(wx, wz) * 180 / Math.PI;
 		const pitch = Math.atan2(wy, Math.sqrt(wx*wx + wz*wz)) * 180 / Math.PI;
-		const pt = panoFloorPick(yaw, pitch);
+		const pt = panoPick(yaw, pitch);
 		if (!pt) return;
 		e.stopPropagation();
 		curMeasPts.push(pt);
