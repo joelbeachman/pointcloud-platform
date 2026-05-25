@@ -293,6 +293,54 @@
       white-space: nowrap; pointer-events: none; z-index: 100; line-height: 1.5;
     }
     .pnlm-hotspot.pano-nav-hotspot:hover .pano-nav-popup { display: block; }
+    /* ── Elevation Profile Panel ── */
+    #profile-panel {
+      position: absolute;
+      bottom: 0; left: 220px; right: 220px;
+      height: 250px;
+      background: rgba(13,17,23,0.97);
+      border-top: 1px solid #30363d;
+      border-left: 1px solid #30363d;
+      border-right: 1px solid #30363d;
+      border-radius: 6px 6px 0 0;
+      z-index: 50;
+      display: none; flex-direction: column;
+    }
+    #profile-panel.open { display: flex; }
+    #profile-header {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.3rem 0.7rem;
+      border-bottom: 1px solid #30363d;
+      font-size: 0.8rem; color: #8b949e;
+      flex-shrink: 0; flex-wrap: wrap;
+    }
+    #profile-header .ph-title { color: #f0883e; font-weight: 600; margin-right: 0.3rem; }
+    #profile-header label { display: flex; align-items: center; gap: 0.3rem; }
+    #profile-header input[type=number] {
+      width: 52px; background: #21262d; border: 1px solid #30363d;
+      color: #e6edf3; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.75rem;
+    }
+    #profile-header select {
+      background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+      padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.75rem;
+    }
+    #profile-close {
+      margin-left: auto; background: none; border: none;
+      color: #8b949e; font-size: 1rem; cursor: pointer; padding: 0 0.2rem;
+    }
+    #profile-close:hover { color: #f85149; }
+    #profile-body { flex: 1; position: relative; min-height: 0; }
+    #profile-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+    #profile-tooltip {
+      display: none; position: absolute;
+      background: rgba(22,27,34,0.95); border: 1px solid #30363d; border-radius: 4px;
+      padding: 3px 7px; font-size: 0.72rem; color: #e6edf3; pointer-events: none; z-index: 10;
+    }
+    #profile-status {
+      padding: 0.25rem 0.7rem; font-size: 0.75rem; color: #f0883e;
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      pointer-events: none;
+    }
   </style>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
@@ -387,6 +435,13 @@
           <line x1="12" y1="8" x2="15" y2="8"/>
         </svg>
         Coords
+      </button>
+      <button class="tool-btn" data-tool="profile" style="--tc:#f0883e" title="Elevation profile — click waypoints, right-click to finish">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="1,13 4,8 7,10 10,4 13,7 15,3"/>
+          <line x1="1" y1="15" x2="15" y2="15"/>
+        </svg>
+        Profile
       </button>
       <hr class="tool-sep">
       <button class="tool-btn danger" id="clear-all-btn">
@@ -567,6 +622,21 @@
     </div>
   </div>
 
+  <!-- ── Elevation Profile Panel ── -->
+  <div id="profile-panel">
+    <div id="profile-header">
+      <span class="ph-title">Elevation Profile</span>
+      <label>Width <input id="profile-width" type="number" min="0.5" max="100" step="0.5" value="2"> m</label>
+      <label>Layer <select id="profile-layer-select"></select></label>
+      <button id="profile-close">✕</button>
+    </div>
+    <div id="profile-body">
+      <canvas id="profile-canvas"></canvas>
+      <div id="profile-tooltip"></div>
+      <div id="profile-status">Draw a profile line on the scene, then right-click to finish.</div>
+    </div>
+  </div>
+
   <script>
     // ── CesiumJS viewer (open source, Apache 2.0 — no Ion) ────────────────────
     const viewer = new Cesium.Viewer('cesiumContainer', {
@@ -599,6 +669,7 @@
       vertical:   { cesium: Cesium.Color.fromCssColorString('#f0883e'), hex: '#f0883e', label: 'Vertical' },
       area:       { cesium: Cesium.Color.fromCssColorString('#a371f7'), hex: '#a371f7', label: 'Area' },
       coords:     { cesium: Cesium.Color.fromCssColorString('#79c0ff'), hex: '#79c0ff', label: 'Coords' },
+      profile:    { cesium: Cesium.Color.fromCssColorString('#f0883e'), hex: '#f0883e', label: 'Profile' },
     };
 
     // ── State ──────────────────────────────────────────────────────────────────
@@ -621,6 +692,15 @@
     let measurements  = [];
     let measureCount  = 0;
     let allPanoEnts   = [];   // flat list for hit-testing
+
+    // ── Elevation profile state ────────────────────────────────────────────────
+    let profLinePts   = [];   // ECEF waypoints placed by user
+    let profLineEnt   = null; // polyline entity in 3D scene
+    let profDotEnts   = [];   // dot entities at waypoints
+    let profData      = null; // [{d, z, r?, g?, b?}] last result from server
+    let profLoading   = false;
+    let profHalfWidth = 2;
+    let profLayerId   = null; // dataset ID to query
 
     // ── Clip Box state ─────────────────────────────────────────────────────────
     let clipBoxList      = [];   // [{id, name, enabled, inside, showWireframe, xmin..zmax}]
@@ -897,6 +977,8 @@
       curEnts = []; curPts = [];
       previewEnt.show = false; previewPos = [];
       panoCurPts = [];
+      // Clear in-progress profile line drawing
+      if (activeTool === 'profile') profClearLine();
     }
 
     function resetTool() {
@@ -922,6 +1004,7 @@
       vertical:   ['Click first point', 'Click second point'],
       area:       ['Click first point', 'Keep clicking — right-click or double-click to finish'],
       coords:     ['Click a centroid to inspect coordinates'],
+      profile:    ['Click first waypoint', 'Click more waypoints — right-click to compute profile'],
     };
     function setStatus() {
       const bar = document.getElementById('status-bar');
@@ -930,9 +1013,11 @@
       let extra  = '';
       if (activeTool === 'area' && curPts.length >= 3)
         extra = ` <span style="color:#8b949e">(${curPts.length} pts)</span>`;
+      if (activeTool === 'profile' && profLinePts.length >= 1)
+        extra = ` <span style="color:#8b949e">(${profLinePts.length} pts)</span>`;
       bar.style.display = 'block';
       bar.innerHTML = `<strong style="color:${TC[activeTool].hex}">${TC[activeTool].label}</strong>`
-        + ` &nbsp; ${msgs[curPts.length > 0 ? 1 : 0]}${extra}`;
+        + ` &nbsp; ${msgs[profLinePts.length > 0 && activeTool === 'profile' ? 1 : (curPts.length > 0 ? 1 : 0)]}${extra}`;
     }
 
     // ── Measurements list ──────────────────────────────────────────────────────
@@ -1803,6 +1888,7 @@
         if (gcpPickMode) { gcpCancelPick(); return; }
         if (panoDS) { closePanoramaOverlay(); return; }
         if (cbEditId) { cbCloseEditor(); return; }
+        if (document.getElementById('profile-panel').classList.contains('open')) { closeProfile(); return; }
         cancelCurrent(); resetTool();
       }
       if (e.key === 'Backspace' && activeTool === 'area' && curPts.length > 0) {
@@ -1840,6 +1926,12 @@
         return;
       }
 
+      // ── Elevation profile: add waypoint ─────────────────────────────────────
+      if (activeTool === 'profile') {
+        profAddWaypoint(pos);
+        return;
+      }
+
       const col = TC[activeTool].cesium;
       mkPoint(pos, col);
       if (activeTool === 'area') {
@@ -1863,6 +1955,8 @@
 
     handler.setInputAction(() => {
       if (activeTool === 'area' && curPts.length >= 3) doArea();
+      else if (activeTool === 'profile' && profLinePts.length >= 2) profFinishLine();
+      else if (activeTool === 'profile') { profClearLine(); resetTool(); }
       else if (activeTool) { cancelCurrent(); if (curPts.length === 0) resetTool(); }
     }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
 
@@ -3012,6 +3106,286 @@
     });
 
     window.addEventListener('resize', resizePanoCanvas);
+
+    // ── Elevation Profile ──────────────────────────────────────────────────────
+
+    // Viridis-like colormap: t ∈ [0,1] → [r,g,b]
+    function profElevColor(t) {
+      const stops = [[68,1,84],[58,82,139],[32,144,141],[94,201,97],[253,231,37]];
+      const idx = t * (stops.length - 1);
+      const i = Math.floor(Math.min(idx, stops.length - 2));
+      const f = idx - i;
+      return stops[i].map((v, k) => Math.round(v + (stops[i+1][k] - v) * f));
+    }
+
+    // Clear the in-progress 3D line entities (called on cancel / tool switch)
+    function profClearLine() {
+      if (profLineEnt) { viewer.entities.remove(profLineEnt); profLineEnt = null; }
+      profDotEnts.forEach(e => viewer.entities.remove(e));
+      profDotEnts = [];
+      profLinePts = [];
+    }
+
+    // Add one waypoint to the profile line
+    function profAddWaypoint(ecef) {
+      profLinePts.push(ecef);
+
+      // Dot at each waypoint
+      profDotEnts.push(viewer.entities.add({
+        position: ecef,
+        point: { pixelSize: 8, color: Cesium.Color.fromCssColorString('#f0883e'),
+                 outlineColor: Cesium.Color.WHITE, outlineWidth: 1 },
+      }));
+
+      // Rebuild the polyline entity
+      if (profLineEnt) viewer.entities.remove(profLineEnt);
+      if (profLinePts.length >= 2) {
+        profLineEnt = viewer.entities.add({
+          polyline: {
+            positions: profLinePts.slice(),
+            width: 2,
+            material: new Cesium.PolylineDashMaterialProperty({
+              color: Cesium.Color.fromCssColorString('#f0883e'),
+              dashLength: 12,
+            }),
+            clampToGround: false,
+          },
+        });
+      }
+      setStatus();
+    }
+
+    // Called on right-click when ≥2 waypoints are placed
+    function profFinishLine() {
+      document.getElementById('profile-panel').classList.add('open');
+      profPopulateLayerSelect();
+      profFetch();
+      resetTool();
+    }
+
+    // Populate the layer dropdown with cesium datasets
+    function profPopulateLayerSelect() {
+      const sel = document.getElementById('profile-layer-select');
+      const opts = layers.filter(l => l.tileset).map(l =>
+        `<option value="${l.dsId}" ${l.dsId === profLayerId ? 'selected' : ''}>${l.name}</option>`
+      );
+      sel.innerHTML = opts.length ? opts.join('') : '<option value="">No layers</option>';
+      if (!profLayerId && layers.find(l => l.tileset)) {
+        profLayerId = layers.find(l => l.tileset).dsId;
+      }
+    }
+
+    // Convert ECEF → tileset-local using inverse(tileset.modelMatrix)
+    function profEcefToLocal(ecef, tileset) {
+      const inv = Cesium.Matrix4.inverseTransformation(tileset.modelMatrix, new Cesium.Matrix4());
+      return Cesium.Matrix4.multiplyByPoint(inv, ecef, new Cesium.Cartesian3());
+    }
+
+    async function profFetch() {
+      if (profLinePts.length < 2) return;
+      const layer = layers.find(l => l.dsId === profLayerId && l.tileset);
+      if (!layer) {
+        document.getElementById('profile-status').textContent = 'No tileset layer selected.';
+        document.getElementById('profile-status').style.display = 'block';
+        return;
+      }
+
+      // Convert profile line to tileset-local space
+      const localLine = profLinePts.map(p => {
+        const lp = profEcefToLocal(p, layer.tileset);
+        return { x: lp.x, y: lp.y, z: lp.z };
+      });
+
+      document.getElementById('profile-status').textContent = 'Computing profile…';
+      document.getElementById('profile-status').style.display = 'block';
+      profLoading = true;
+      profData = null;
+      drawProfileCanvas();
+
+      try {
+        const resp = await fetch('/api/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            datasetId: profLayerId,
+            line: localLine,
+            halfWidth: profHalfWidth,
+            maxPoints: 150000,
+            stride: 3,
+          }),
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.error || resp.statusText);
+        }
+        profData = await resp.json();
+        document.getElementById('profile-status').style.display =
+          profData.length ? 'none' : 'block';
+        if (!profData.length)
+          document.getElementById('profile-status').textContent = 'No points found within the profile slab.';
+      } catch (e) {
+        document.getElementById('profile-status').textContent = 'Error: ' + e.message;
+        document.getElementById('profile-status').style.display = 'block';
+      } finally {
+        profLoading = false;
+        drawProfileCanvas();
+      }
+    }
+
+    function closeProfile() {
+      document.getElementById('profile-panel').classList.remove('open');
+      profClearLine();
+      profData = null;
+    }
+
+    // ── 2D profile canvas rendering ──────────────────────────────────────────
+    function drawProfileCanvas() {
+      const canvas = document.getElementById('profile-canvas');
+      if (!canvas) return;
+      const W = canvas.width  = canvas.offsetWidth  || canvas.clientWidth  || 800;
+      const H = canvas.height = canvas.offsetHeight || canvas.clientHeight || 200;
+      const ctx = canvas.getContext('2d');
+
+      // Clear
+      ctx.fillStyle = '#0d1117';
+      ctx.fillRect(0, 0, W, H);
+
+      if (!profData || profData.length === 0) return;
+
+      const M = { top: 20, right: 20, bottom: 36, left: 58 };
+      const pw = W - M.left - M.right;
+      const ph = H - M.top  - M.bottom;
+
+      // Ranges
+      let dMax = 0, zMin = Infinity, zMax = -Infinity;
+      for (const p of profData) {
+        if (p.d > dMax) dMax = p.d;
+        if (p.z < zMin) zMin = p.z;
+        if (p.z > zMax) zMax = p.z;
+      }
+      if (dMax === 0 || zMin === zMax) return;
+      const zPad = (zMax - zMin) * 0.06;
+      zMin -= zPad; zMax += zPad;
+
+      const toX = d => M.left + (d / dMax) * pw;
+      const toY = z => M.top + ph - ((z - zMin) / (zMax - zMin)) * ph;
+
+      // Grid
+      ctx.strokeStyle = '#21262d';
+      ctx.lineWidth = 1;
+      const zSteps = 5;
+      for (let i = 0; i <= zSteps; i++) {
+        const z = zMin + (zMax - zMin) * i / zSteps;
+        const y = toY(z);
+        ctx.beginPath(); ctx.moveTo(M.left, y); ctx.lineTo(M.left + pw, y); ctx.stroke();
+      }
+
+      // Draw all points via ImageData (efficient for 150k pts)
+      const imgW = Math.max(1, pw | 0), imgH = Math.max(1, ph | 0);
+      const imgData = ctx.createImageData(imgW, imgH);
+      const buf = imgData.data;
+      const useRGB = profData[0]?.r !== undefined;
+
+      for (const p of profData) {
+        const ix = Math.round((p.d / dMax) * (imgW - 1));
+        const iy = Math.round((1 - (p.z - zMin) / (zMax - zMin)) * (imgH - 1));
+        if (ix < 0 || ix >= imgW || iy < 0 || iy >= imgH) continue;
+        let r, g, b;
+        if (useRGB) { r = p.r; g = p.g; b = p.b; }
+        else { [r, g, b] = profElevColor((p.z - zMin) / (zMax - zMin)); }
+        // Paint a 2×2 dot for visibility
+        for (let dy = 0; dy <= 1; dy++) {
+          for (let dx = 0; dx <= 1; dx++) {
+            const nx = ix + dx, ny = iy + dy;
+            if (nx >= imgW || ny >= imgH) continue;
+            const idx = (ny * imgW + nx) * 4;
+            buf[idx] = r; buf[idx+1] = g; buf[idx+2] = b; buf[idx+3] = 255;
+          }
+        }
+      }
+      ctx.putImageData(imgData, M.left, M.top);
+
+      // Border around plot area
+      ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+      ctx.strokeRect(M.left, M.top, pw, ph);
+
+      // Y axis labels (elevation)
+      ctx.fillStyle = '#8b949e'; ctx.font = '11px monospace'; ctx.textAlign = 'right';
+      for (let i = 0; i <= zSteps; i++) {
+        const z = zMin + (zMax - zMin) * i / zSteps;
+        ctx.fillText(z.toFixed(1) + 'm', M.left - 5, toY(z) + 3);
+      }
+
+      // X axis labels (distance)
+      ctx.textAlign = 'center';
+      const nXTicks = Math.min(8, Math.floor(pw / 70));
+      for (let i = 0; i <= nXTicks; i++) {
+        const d = dMax * i / nXTicks;
+        const x = toX(d);
+        ctx.fillText(d.toFixed(1) + 'm', x, M.top + ph + 16);
+        ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x, M.top + ph); ctx.lineTo(x, M.top + ph + 4); ctx.stroke();
+      }
+
+      // Axis title
+      ctx.save(); ctx.translate(13, M.top + ph / 2);
+      ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center';
+      ctx.fillStyle = '#6e7681'; ctx.font = '10px sans-serif';
+      ctx.fillText('Elevation (m)', 0, 0); ctx.restore();
+      ctx.textAlign = 'center'; ctx.fillStyle = '#6e7681';
+      ctx.fillText('Distance (m)', M.left + pw / 2, H - 4);
+
+      // Store transform for hover
+      canvas._profTransform = { M, pw, ph, dMax, zMin, zMax };
+    }
+
+    // Hover tooltip on the profile canvas
+    document.getElementById('profile-canvas').addEventListener('mousemove', ev => {
+      const canvas = document.getElementById('profile-canvas');
+      const tip    = document.getElementById('profile-tooltip');
+      const tx     = canvas._profTransform;
+      if (!tx || !profData || !profData.length) { tip.style.display = 'none'; return; }
+      const rect = canvas.getBoundingClientRect();
+      const mx = ev.clientX - rect.left;
+      const my = ev.clientY - rect.top;
+      const { M, pw, ph, dMax, zMin, zMax } = tx;
+      if (mx < M.left || mx > M.left + pw || my < M.top || my > M.top + ph) {
+        tip.style.display = 'none'; return;
+      }
+      const d = ((mx - M.left) / pw) * dMax;
+      // Find nearest point by d
+      let best = null, bestDist = Infinity;
+      for (const p of profData) {
+        const dd = Math.abs(p.d - d);
+        if (dd < bestDist) { bestDist = dd; best = p; }
+      }
+      if (!best || bestDist > dMax * 0.05) { tip.style.display = 'none'; return; }
+      tip.textContent = `d: ${best.d.toFixed(2)}m  z: ${best.z.toFixed(3)}m`;
+      tip.style.display = 'block';
+      tip.style.left = (mx + 12) + 'px';
+      tip.style.top  = (my - 6) + 'px';
+    });
+    document.getElementById('profile-canvas').addEventListener('mouseleave', () => {
+      document.getElementById('profile-tooltip').style.display = 'none';
+    });
+
+    // Redraw on panel resize (window resize)
+    window.addEventListener('resize', () => {
+      if (document.getElementById('profile-panel').classList.contains('open')) {
+        requestAnimationFrame(drawProfileCanvas);
+      }
+    });
+
+    // Header controls
+    document.getElementById('profile-close').addEventListener('click', closeProfile);
+    document.getElementById('profile-width').addEventListener('change', ev => {
+      profHalfWidth = Math.max(0.1, parseFloat(ev.target.value) || 2);
+      profFetch();
+    });
+    document.getElementById('profile-layer-select').addEventListener('change', ev => {
+      profLayerId = ev.target.value;
+      profFetch();
+    });
 
     // ── Boot ───────────────────────────────────────────────────────────────────
     loadDatasets();

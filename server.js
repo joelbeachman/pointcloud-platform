@@ -210,6 +210,159 @@ app.post('/api/helmert', (req, res) => {
   child.stdin.end();
 });
 
+// ── Elevation profile endpoint ────────────────────────────────────────────────
+// POST /api/profile
+// Body: { datasetId, line:[{x,y,z},...], halfWidth, maxPoints, stride }
+// line is in the tileset's LOCAL space — the client applies inverse(modelMatrix)
+// before sending so the server can directly compare against .pnts positions.
+// Returns [{d, z, r?, g?, b?}] sorted by d (distance along the profile line).
+app.post('/api/profile', (req, res) => {
+  const { datasetId, line, halfWidth = 2, maxPoints = 150000, stride = 1 } = req.body || {};
+  if (!datasetId || !Array.isArray(line) || line.length < 2) {
+    return res.status(400).json({ error: 'datasetId and line (≥2 points) required' });
+  }
+
+  const dbPath = path.join(DATA_DIR, 'datasets.json');
+  let datasets;
+  try { datasets = JSON.parse(fs.readFileSync(dbPath, 'utf8')); }
+  catch (e) { return res.status(500).json({ error: 'cannot read datasets.json' }); }
+
+  const ds = datasets.find(d => d.id === datasetId);
+  if (!ds) return res.status(404).json({ error: 'dataset not found' });
+
+  const tilesetRelPath = ds.path.replace(/^\/data\//, '');
+  const tilesetPath    = path.join(DATA_DIR, tilesetRelPath);
+  const tilesetDir     = path.dirname(tilesetPath);
+
+  let tileset;
+  try { tileset = JSON.parse(fs.readFileSync(tilesetPath, 'utf8')); }
+  catch (e) { return res.status(500).json({ error: 'cannot read tileset: ' + e.message }); }
+
+  // ── Build profile segments (XY only — Z is the elevation we display) ─────
+  const segs = [];
+  let cumDist = 0;
+  for (let i = 0; i < line.length - 1; i++) {
+    const p1 = line[i], p2 = line[i + 1];
+    const dx = p2.x - p1.x, dy = p2.y - p1.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    segs.push({ x1: p1.x, y1: p1.y, dx, dy, len, dStart: cumDist });
+    cumDist += len;
+  }
+
+  // Project (px, py) onto the polyline; return { dist, d } or null if polyline has zero length.
+  function projectXY(px, py) {
+    let bestDist = Infinity, bestD = 0;
+    for (const s of segs) {
+      if (s.len < 1e-10) continue;
+      let t = ((px - s.x1) * s.dx + (py - s.y1) * s.dy) / (s.len * s.len);
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const cx = s.x1 + t * s.dx, cy = s.y1 + t * s.dy;
+      const dist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+      if (dist < bestDist) { bestDist = dist; bestD = s.dStart + t * s.len; }
+    }
+    return { dist: bestDist, d: bestD };
+  }
+
+  // ── 4×4 column-major matrix helpers ──────────────────────────────────────
+  const ID4 = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+  function m4mul(A, B) {
+    const R = new Float64Array(16);
+    for (let r = 0; r < 4; r++)
+      for (let c = 0; c < 4; c++)
+        for (let k = 0; k < 4; k++) R[c * 4 + r] += A[k * 4 + r] * B[c * 4 + k];
+    return Array.from(R);
+  }
+  function m4pt(M, x, y, z) {
+    return [
+      M[0]*x + M[4]*y + M[8]*z + M[12],
+      M[1]*x + M[5]*y + M[9]*z + M[13],
+      M[2]*x + M[6]*y + M[10]*z + M[14],
+    ];
+  }
+  function isIdentity(M) { return M.every((v, i) => v === ID4[i]); }
+
+  // ── Walk tileset tree, collect .pnts tiles with cumulative transforms ─────
+  const tiles = [];
+  function collectTiles(node, baseDir, parentTx) {
+    const tx = node.transform ? m4mul(parentTx, node.transform) : parentTx;
+    if (node.content?.uri?.endsWith('.pnts')) {
+      const fp = path.join(baseDir, node.content.uri);
+      if (fs.existsSync(fp)) tiles.push({ fp, tx });
+    }
+    for (const child of (node.children || [])) collectTiles(child, baseDir, tx);
+  }
+  collectTiles(tileset.root, tilesetDir, ID4.slice());
+
+  if (tiles.length === 0) return res.status(404).json({ error: 'no .pnts tiles found' });
+
+  // ── Parse each tile ───────────────────────────────────────────────────────
+  const results = [];
+  const hw = Number(halfWidth);
+  const maxPts = Math.min(Number(maxPoints) || 150000, 500000);
+  const eff_stride = Math.max(1, Math.round(Number(stride) || 1));
+  const BLOCK = 262144; // points per I/O block (~3 MB for positions)
+
+  for (const tile of tiles) {
+    if (results.length >= maxPts) break;
+
+    let fd;
+    try { fd = fs.openSync(tile.fp, 'r'); }
+    catch (e) { continue; }
+
+    try {
+      const hdr = Buffer.alloc(28);
+      if (fs.readSync(fd, hdr, 0, 28, 0) < 28) continue;
+      if (hdr.slice(0, 4).toString('ascii') !== 'pnts') continue;
+
+      const ftJSONLen = hdr.readUInt32LE(12);
+      const ftJSONBuf = Buffer.alloc(ftJSONLen);
+      if (fs.readSync(fd, ftJSONBuf, 0, ftJSONLen, 28) < ftJSONLen) continue;
+      const ft = JSON.parse(ftJSONBuf.toString('utf8'));
+
+      const nPts    = ft.POINTS_LENGTH;
+      const rtc     = ft.RTC_CENTER || [0, 0, 0];
+      const posOff  = ft.POSITION?.byteOffset ?? 0;
+      const rgbOff  = ft.RGB?.byteOffset ?? null;
+      const hasRGB  = rgbOff !== null;
+      const binStart = 28 + ftJSONLen;
+      const hasTx   = !isIdentity(tile.tx);
+      const tx      = tile.tx;
+
+      const posBuf = Buffer.alloc(BLOCK * 12);
+      const rgbBuf = hasRGB ? Buffer.alloc(BLOCK * 3) : null;
+
+      for (let blk = 0; blk < nPts && results.length < maxPts; blk += BLOCK) {
+        const cnt = Math.min(BLOCK, nPts - blk);
+        if (fs.readSync(fd, posBuf, 0, cnt * 12, binStart + posOff + blk * 12) < cnt * 12) break;
+        if (hasRGB && rgbBuf) fs.readSync(fd, rgbBuf, 0, cnt * 3, binStart + rgbOff + blk * 3);
+
+        for (let i = 0; i < cnt && results.length < maxPts; i += eff_stride) {
+          const o = i * 12;
+          let px = rtc[0] + posBuf.readFloatLE(o);
+          let py = rtc[1] + posBuf.readFloatLE(o + 4);
+          let pz = rtc[2] + posBuf.readFloatLE(o + 8);
+          if (hasTx) { [px, py, pz] = m4pt(tx, px, py, pz); }
+
+          const proj = projectXY(px, py);
+          if (proj.dist <= hw) {
+            const pt = { d: proj.d, z: pz };
+            if (hasRGB && rgbBuf) {
+              const ri = i * 3;
+              pt.r = rgbBuf[ri]; pt.g = rgbBuf[ri + 1]; pt.b = rgbBuf[ri + 2];
+            }
+            results.push(pt);
+          }
+        }
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+
+  results.sort((a, b) => a.d - b.d);
+  res.json(results);
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });

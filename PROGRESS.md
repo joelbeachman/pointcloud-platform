@@ -388,6 +388,33 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-25 — Elevation Profile (Höhenprofil)
+
+### Completed
+- **Elevation Profile tool** (`public/viewers/cesium.html`, `server.js`)
+  - New "Profile" tool button in the left panel (orange, chart icon), below the existing measurement tools
+  - **Drawing**: click to add waypoints on the 3D scene (same pick logic as measurement tools);
+    orange dashed polyline with dots shows the drawn line; right-click (≥2 pts) computes the profile
+  - Profile line waypoints are converted from ECEF → tileset-local space
+    (`Matrix4.inverseTransformation(tileset.modelMatrix)`) before sending to the server, so the
+    comparison with .pnts binary positions works regardless of which coordinate system the dataset uses
+  - **Server endpoint** `POST /api/profile` (`server.js`)
+    - Accepts `{datasetId, line, halfWidth, maxPoints, stride}` (line in tileset-local space)
+    - Walks the tileset tree (`tileset.json`), accumulates per-tile `transform` matrices
+    - Streams each `.pnts` file in 262K-point blocks; parses `POINTS_LENGTH`, `RTC_CENTER`,
+      `POSITION` and `RGB` from the feature table; applies cumulative tile transforms
+    - Filters points within `halfWidth` meters of the profile polyline (perpendicular distance)
+    - Projects surviving points to `(d, z)` — distance along the line and elevation
+    - Returns up to 150K points as `[{d, z, r?, g?, b?}]` sorted by `d`
+  - **Profile panel** — floating panel at the bottom of the viewer (between the two sidebars)
+    - Width input (m) and layer selector in the header; Esc or ✕ to close
+    - 2D scatter plot on a `<canvas>` with axis labels (elevation vs. distance)
+    - Points drawn via `ImageData` as 2×2px dots — efficient for 150K points
+    - Coloured by original RGB if available, otherwise viridis-like elevation gradient
+    - Hover tooltip showing `d` and `z` at cursor position
+
+---
+
 ## Pending / Planned
 
 ### High priority
