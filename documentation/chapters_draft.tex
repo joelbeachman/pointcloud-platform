@@ -1,0 +1,582 @@
+%% ============================================================
+%% CHAPTER DRAFT — VP2: Integration and Visualization of 3D Data
+%%                 for the Ballenberg Open-Air Museum
+%%
+%% Usage: \input{chapters_draft} in pointclouds.tex after the
+%%        State of the Art chapter.
+%% ============================================================
+
+
+% ============================================================
+\chapter{System Architecture and Implementation}
+\label{ch:implementation}
+% ============================================================
+
+This chapter describes the platform that was designed and built during the
+implementation workpackage (calendar weeks 13--17). The system addresses the
+pipeline and visualization challenges identified in the State of the Art review:
+it converts heterogeneous survey data to 3D Tiles for web delivery (Research
+Question 3), provides a web-based CesiumJS viewer with measurement, annotation,
+and analysis tools suited to the target user groups (Research Question 2), and
+introduces a structured dataset registry with a minimum metadata schema as a
+first step toward a scalable archive (Research Question 1).
+
+All source code is maintained in the GitHub repository
+\texttt{joelbeachman/pointcloud-platform} and runs inside a Docker container
+for reproducible deployment.
+
+% ------------------------------------------------------------
+\section{Platform Architecture}
+\label{sec:arch}
+% ------------------------------------------------------------
+
+The system follows a lightweight three-tier architecture
+(Figure~\ref{fig:architecture}): a Node.js/Express HTTP server handles the REST
+API and serves static assets; a JSON-based dataset registry on disk stores
+metadata for all registered datasets; and a browser-based frontend delivers
+the interactive viewers.
+
+\begin{figure}[h]
+\centering
+% Placeholder: replace with actual architecture diagram
+\fbox{\parbox{0.7\textwidth}{\centering\vspace{2cm}%
+  [Architecture diagram: Browser → Express server → Data directory /
+  datasets.json → 3D Tiles / panoramas / splats]\vspace{2cm}}}
+\caption{High-level platform architecture. All components run in a single
+  Docker container; the data volume is mounted externally.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Server and REST API}
+
+The server (\texttt{server.js}) is built on Express and exposes the following
+principal endpoints:
+
+\begin{itemize}
+  \item \texttt{GET /api/datasets} — returns all registered datasets.
+  \item \texttt{POST /api/datasets} — registers a new dataset entry.
+  \item \texttt{PATCH /api/datasets/:id} — updates metadata, including the
+    \texttt{modelMatrix} that aligns the tileset to the LV95 coordinate
+    reference system.
+  \item \texttt{DELETE /api/datasets/:id} — removes a dataset from the
+    registry.
+  \item \texttt{POST /api/helmert} — applies a seven-parameter Helmert
+    transformation computed from ground control points, returns the derived
+    model matrix.
+  \item \texttt{POST /api/profile} — elevation profile query: accepts a polyline
+    drawn on the scene and a half-width, reads the relevant \texttt{.pnts} tiles
+    from disk, and returns projected $(d,\,z)$ point data for display
+    (Section~\ref{sec:profile}).
+  \item \texttt{GET /cesium-proxy/*} — transparently proxies the CesiumJS
+    library and Web Workers from the CDN, patching the source to remove
+    float-precision artefacts introduced by the proprietary Cesium ion
+    coordinate path, and to fix the polar orbit constraint on the
+    \texttt{ScreenSpaceCameraController}.
+\end{itemize}
+
+\subsection{Dataset Registry}
+
+All datasets are described in a single file \texttt{data/datasets.json}. Each
+entry contains at minimum the fields listed in Table~\ref{tab:metadata_min},
+which aligns with the minimum metadata schema proposed in
+Section~\ref{sec:structuring} of the State of the Art review. Optional fields
+include \texttt{modelMatrix} (a 4\,$\times$\,4 column-major LV95\,$\to$\,ECEF
+transformation matrix), \texttt{helmertLV95} (the seven Helmert parameters
+used to derive it), \texttt{panoramas} (scan station positions and paths for
+equirectangular images), and a set of Ballenberg-specific provenance fields
+(\texttt{buildingId}, \texttt{captureDate}, \texttt{captureMethod},
+\texttt{scannerModel}).
+
+\begin{table}[h]
+\centering
+\caption{Minimum required metadata fields per dataset entry.}
+\label{tab:metadata_min}
+\begin{tabular}{lll}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\midrule
+\texttt{id}         & string    & Unique identifier (slug) \\
+\texttt{name}       & string    & Human-readable label \\
+\texttt{type}       & enum      & \texttt{cesium | cesium-splat | splat | e57 | pointcloud} \\
+\texttt{path}       & string    & Server-relative path to the primary asset \\
+\texttt{createdAt}  & ISO 8601  & Registration timestamp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Coordinate Reference System}
+
+All geospatial datasets in the Ballenberg project are captured in the Swiss
+national reference frame LV95 (EPSG:2056), which uses East ($E$), North ($N$),
+and ellipsoidal height ($H$) coordinates in metres with values on the order of
+$2.6 \times 10^6$\,m East and $1.2 \times 10^6$\,m North. CesiumJS, in
+contrast, places all geometry in ECEF (Earth-Centered, Earth-Fixed) coordinates.
+
+The model matrix that transforms LV95 absolute coordinates into ECEF is
+constructed via:
+\begin{equation}
+  \mathbf{M}_{\text{LV95}} = \mathbf{M}_{\text{ENU}}(E_0, N_0, H_0)
+    \cdot \mathbf{T}(-E_0, -N_0, -H_0),
+\end{equation}
+where $(E_0, N_0, H_0)$ is the dataset centroid converted to WGS\,84 via the
+approximate LV95\,$\to$\,WGS\,84 formula implemented in
+\texttt{lv95ToWgs84()}, $\mathbf{M}_{\text{ENU}}$ is the
+east-north-up frame at that ECEF point, and $\mathbf{T}$ is a translation
+that brings the origin of the LV95 frame to the centroid. The effect is that
+the tileset's bounding sphere sits at the correct geographic position without
+any offset, and plane or shader computations operating in tileset-local
+coordinates directly work in metric East/North/Up units centred on the
+dataset.
+
+% ------------------------------------------------------------
+\section{Data Processing Pipeline}
+\label{sec:pipeline}
+% ------------------------------------------------------------
+
+The processing script \texttt{scripts/process.py} implements a universal
+converter that auto-detects the format of a given input file and produces
+the appropriate streaming asset together with a registry entry. The following
+input modalities are supported:
+
+\begin{description}
+  \item[Point clouds (LAS/LAZ, E57, XYZ/TXT/PTS, PTX, PCD, PLY)] — converted
+    to a single-tile 3D Tiles 1.0 \texttt{.pnts} asset with an accompanying
+    \texttt{tileset.json}. XYZ colour attributes are preserved; the dataset
+    centroid is used as the \texttt{RTC\_CENTER} for float32 precision. A
+    LV95 model matrix is computed and stored.
+  \item[Meshes (OBJ, STL, GLB, GLTF, mesh PLY)] — converted to a
+    \texttt{.b3dm}-based 3D Tiles scene.
+  \item[Gaussian splats (.splat, 3DGS PLY)] — the \texttt{.splat} binary is
+    served directly to the \texttt{@mkkellogg/gaussian-splats-3d} viewer;
+    a companion 3D Tiles representation is generated from the DC spherical
+    harmonics coefficients.
+\end{description}
+
+\subsection{Haus Eggiwil Dataset}
+
+The primary real-world dataset used during the implementation phase is the
+terrestrial laser scan of Haus Eggiwil (building code used internally:
+\texttt{haus-eggiwil}), captured with a Leica scanner and stored in a LAS file
+\texttt{351\_Haus-Eggiwil.las}. After processing, the resulting 3D Tiles asset
+contains 5\,023\,669 points covering the building exterior and immediate
+surroundings. In addition, 185 panoramic scan positions were extracted from the
+E57 archive and stored as equirectangular JPEGs in
+\texttt{data/panoramas/haus-eggiwil/}, with a \texttt{metadata.json} file
+encoding LV95 coordinates, scanner orientation, and north-offset angles.
+
+The north-offset angles — required to orient Pannellum's equirectangular
+viewer to true north — were derived directly from the quaternion columns of
+the \texttt{image\_poses.csv} file using
+\begin{equation}
+  \alpha_N = \operatorname{atan2}\!\left(1 - 2(q_y^2 + q_z^2),\;
+    2(q_x q_y + q_w q_z)\right),
+\end{equation}
+which avoids the ambiguity introduced by Euler ZYX decomposition near
+$|R| \approx 180°$ (gimbal-lock variant).
+
+% ------------------------------------------------------------
+\section{Web Visualization Layer}
+\label{sec:viewer}
+% ------------------------------------------------------------
+
+The primary viewer is built on CesiumJS 1.140 (Apache 2.0), served through the
+local proxy that caches and patches the library. The viewer window fills the
+area between two 220\,px sidebars: a left panel for layer management and tools,
+and a right panel for measurement results.
+
+\subsection{Multi-Layer Management}
+
+Any number of datasets can be added as layers via the portal dashboard or the
+in-viewer ``Add Layer'' button. Each layer maintains its own CesiumJS
+\texttt{Cesium3DTileset} instance. The viewer supports three layer types:
+
+\begin{itemize}
+  \item \textbf{Cesium (3D Tiles)} — loaded via \texttt{Cesium3DTileset} and
+    positioned via the LV95 model matrix.
+  \item \textbf{Gaussian Splat} — rendered by a Three.js canvas overlaid on
+    the Cesium canvas; the viewer cameras are synchronized every frame by
+    decomposing the Cesium camera ECEF matrix into the ENU frame at the
+    dataset centroid and transferring the resulting translation and quaternion
+    to the Three.js camera.
+  \item \textbf{Panorama} — scan station billboards added to the Cesium scene;
+    clicking a billboard opens the equirectangular overlay.
+\end{itemize}
+
+\subsection{Coordinate Alignment: Helmert Registration}
+
+Datasets that arrive in a scanner-local coordinate system rather than LV95
+absolute can be aligned using the in-viewer GCP registration tool. The user
+clicks corresponding points in the Cesium scene (ECEF, converted internally to
+tileset-local) and enters the known LV95 coordinates. A seven-parameter Helmert
+transformation (rotation, uniform scale, translation) is computed via SVD of
+the centred point pairs, yielding the $4 \times 4$ model matrix
+$\mathbf{M} = \mathbf{M}_{\text{LV95}} \cdot \mathbf{M}_{\text{Helmert}}$
+that is stored persistently in the dataset registry.
+
+% ------------------------------------------------------------
+\section{Measurement Tools}
+\label{sec:measurement}
+% ------------------------------------------------------------
+
+Five measurement tools are available in the left panel and operate on pick
+positions obtained from \texttt{scene.pickPosition()} with a bounding-sphere
+fallback for Gaussian splat layers (which do not populate the depth buffer):
+
+\begin{enumerate}
+  \item \textbf{Distance} — 3D straight-line distance between two clicked
+    points, displayed as a labelled polyline entity.
+  \item \textbf{Horizontal distance} — horizontal plan distance (XY component
+    only in tileset-local space).
+  \item \textbf{Vertical distance} — signed height difference ($\Delta Z$).
+  \item \textbf{Area} — polygon area computed via the shoelace formula on
+    points projected into the local XY plane; right-click or double-click
+    finishes the polygon.
+  \item \textbf{Coords} — displays LV95 coordinates and ellipsoidal height for
+    a clicked point; the ECEF position is converted back through
+    $\mathbf{M}_{\text{LV95}}^{-1}$.
+\end{enumerate}
+
+All committed measurements are stored in an in-memory array and rendered both
+in the 3D Cesium scene (polyline/polygon entities) and projected onto the
+panorama canvas whenever the overlay is open.
+
+% ------------------------------------------------------------
+\section{Integrated Panorama Overlay}
+\label{sec:pano}
+% ------------------------------------------------------------
+
+The panorama viewer is embedded as an overlay covering the central viewer
+canvas (leaving both sidebars visible) and powered by Pannellum~2.5.6
+(MIT licence). Clicking a camera-marker billboard in the Cesium scene opens
+the corresponding equirectangular image at the correct initial heading.
+
+\subsection{Spatial Navigation}
+
+Hotspot icons appear at the projected positions of nearby scan stations
+(horizontal distance $\leq 10$\,m). The bearing to each neighbour is computed
+as:
+\begin{equation}
+  \beta = \operatorname{atan2}(\Delta E,\, \Delta N) - \alpha_{N,\,\text{src}},
+\end{equation}
+where $\alpha_{N,\,\text{src}}$ is the north-offset of the current station.
+Icon size scales with inverse distance (56\,px at 0.5\,m to 24\,px at
+$\geq 6.25$\,m). On navigation, the heading offset relative to the source
+view direction is preserved, so the user arrives at the next station looking
+in the same geographic direction.
+
+\subsection{Panorama Measurement Integration}
+
+When a measurement tool is active, clicking inside the panorama casts a ray
+from the scanner position in the direction given by the inverse perspective
+projection of the click:
+
+\begin{equation}
+  \hat{\mathbf{w}} = \frac{\Delta x}{f}\hat{\mathbf{r}}
+    - \frac{\Delta y}{f}\hat{\mathbf{u}} + \hat{\mathbf{f}},
+  \quad
+  f = \frac{W/2}{\tan(\text{HFOV}/2)},
+\end{equation}
+where $\hat{\mathbf{r}}$, $\hat{\mathbf{u}}$, $\hat{\mathbf{f}}$ are the
+right, up, and forward unit vectors of the current Pannellum view in world
+space, and $(\Delta x, \Delta y)$ is the click offset from the image centre.
+The world-space ray is then intersected with the Cesium scene via
+\texttt{scene.pickFromRay()}, or falls back to a floor-plane intersection at
+a configurable height offset when the ray misses the point cloud geometry.
+
+Committed measurement markers are reprojected onto the panorama canvas each
+animation frame so they remain visible regardless of whether the points were
+placed in the 3D view or the panorama overlay.
+
+% ------------------------------------------------------------
+\section{Clip Box Tool}
+\label{sec:clipbox}
+% ------------------------------------------------------------
+
+The clip box tool allows any number of axis-aligned boxes — optionally rotated
+— to be defined and applied simultaneously as spatial filters on all loaded
+tilesets.
+
+\subsection{Box Definition and Rotation}
+
+Each box is parameterized by six face offsets ($x_{\min}$, $x_{\max}$,
+$y_{\min}$, $y_{\max}$, $z_{\min}$, $z_{\max}$) in ENU-relative metres from
+the dataset centroid, plus three rotation angles $(\theta_x, \theta_y,
+\theta_z)$ in degrees. The combined rotation matrix is:
+\begin{equation}
+  \mathbf{R} = \mathbf{R}_z(\theta_z)\,\mathbf{R}_y(\theta_y)\,
+    \mathbf{R}_x(\theta_x) \quad \text{(row-major)},
+\end{equation}
+and the six face normals in tileset-local space are the column vectors of
+$\mathbf{R}$, scaled and offset to the face positions.
+
+\subsection{Clipping Modes and Boolean Combinations}
+
+Each box can be set to one of three modes:
+\begin{description}
+  \item[Inside] — retains only points within the box. The six rotated plane
+    normals point outward; \texttt{unionClippingRegions = true} clips anything
+    outside any plane (intersection of the six half-spaces).
+  \item[Outside] — removes points within the box (subtraction). Plane normals
+    point inward; \texttt{unionClippingRegions = false}.
+  \item[None] — the box acts as a visual reference only (wireframe displayed,
+    no clipping planes applied).
+\end{description}
+
+When only inside boxes or only outside boxes are active, the standard
+\texttt{ClippingPlaneCollection} API is used, which operates at tile-level
+culling granularity (fast). When both inside and outside boxes are
+simultaneously active — a boolean combination that cannot be expressed as a
+flat list of planes — a \texttt{Cesium.CustomShader} is generated at runtime.
+The fragment shader receives each point's position in eye space from
+\texttt{czm\_modelView}, transforms it to ENU via a per-frame uniform
+\texttt{u\_eyeToEnu}:
+\begin{equation}
+  \mathbf{M}_{\text{eye}\to\text{ENU}} = \mathbf{M}_{\text{ECEF}\to\text{ENU}}
+    \cdot \mathbf{M}_{\text{eye}}^{-1},
+\end{equation}
+and evaluates all box conditions per fragment with \texttt{discard}
+statements. This avoids the float32 ECEF precision errors ($\approx 0.5$\,m at
+Ballenberg latitudes) by keeping numerical operations in camera-relative eye
+space, where the translation to the scene origin is already encoded in the
+view matrix.
+
+\subsection{Interactive 3D Handles}
+
+Six face handles (coloured red/green/blue by axis) and one centre handle are
+placed at the face and centroid positions of the active box. Dragging a face
+handle constrains movement along the corresponding local axis. Dragging the
+centre handle translates the entire box. Three rotation rings (one per axis)
+allow free angular adjustment by projecting the mouse arc onto the screen
+plane at the box centre. All geometry updates — wireframe, clipping planes,
+and editor inputs — are applied continuously during drag.
+
+% ------------------------------------------------------------
+\section{Elevation Profile}
+\label{sec:profile}
+% ------------------------------------------------------------
+
+The elevation profile tool (Ger.\ \textit{Höhenprofil}) provides a
+functionality similar to Potree's built-in cross-section profile. It is
+motivated by Research Questions 2 and 3: it directly addresses the
+conservation and survey use case of extracting a vertical section through a
+point cloud along an arbitrary path.
+
+\subsection{Workflow}
+
+The user activates the Profile tool in the left panel and clicks waypoints on
+the Cesium scene to define a multi-segment profile line (right-click finishes
+the line). Each waypoint position is converted from ECEF to tileset-local
+space via $\mathbf{M}_{\text{LV95}}^{-1}$ before being sent to the server.
+
+\subsection{Server-Side Point Extraction}
+
+The \texttt{POST /api/profile} endpoint:
+\begin{enumerate}
+  \item Reads the dataset's \texttt{tileset.json} and walks the tile tree,
+    accumulating the column-major $4 \times 4$ tile transform matrices at
+    each node.
+  \item For each leaf \texttt{.pnts} tile, reads the 28-byte header and
+    the feature table JSON to extract \texttt{POINTS\_LENGTH},
+    \texttt{RTC\_CENTER}, and the byte offsets for \texttt{POSITION}
+    (float32 XYZ) and \texttt{RGB} (uint8).
+  \item Streams positions in blocks of 262\,144 points ($\approx 3$\,MB per
+    read), applies the cumulative tile transform, and for each point computes
+    the perpendicular distance to the nearest profile segment:
+    \begin{equation}
+      d_\perp = \min_k \left\|
+        (p_{xy} - q_k)\,-\,
+        \frac{(p_{xy}-q_k)\cdot\hat{s}_k}{\|s_k\|}\hat{s}_k
+      \right\|,
+    \end{equation}
+    where $q_k$ is the start of segment $k$ and $\hat{s}_k$ its unit direction.
+  \item Points with $d_\perp \leq w/2$ (half the user-specified slab width)
+    are retained; their projected distance along the polyline $d$ and
+    elevation $z$ are recorded together with the RGB colour.
+  \item Up to 150\,000 output points are returned as JSON, sorted by $d$.
+\end{enumerate}
+
+\subsection{Profile Panel}
+
+A floating panel at the bottom of the viewer renders the profile as a 2D
+scatter plot (elevation vs.\ distance along line) on an HTML5 canvas. Points
+are drawn as $2 \times 2$\,px dots using the \texttt{ImageData} API for
+efficient rendering at 150\,000 points. If the dataset has RGB attributes, the
+original point colours are used; otherwise, points are coloured by a
+Viridis-like gradient mapping elevation to colour. Axis labels, a hover
+tooltip showing $(d,\,z)$, and a width control are provided. The panel can be
+dismissed with Escape.
+
+\medskip
+
+Table~\ref{tab:tools} provides a summary of all implemented interactive tools
+and their primary use cases for the target user groups identified in
+Section~\ref{sec:introduction}.
+
+\begin{table}[h]
+\centering
+\caption{Summary of implemented interactive tools and target user groups.}
+\label{tab:tools}
+\begin{tabular}{llll}
+\toprule
+\textbf{Tool} & \textbf{Panel} & \textbf{Primary use case} & \textbf{User group} \\
+\midrule
+Distance, Horizontal, Vertical & Left & Dimension checking & Conservation staff \\
+Area                           & Left & Floor area estimation & Conservation staff \\
+Coordinates                    & Left & Position inspection & Survey team \\
+Elevation Profile              & Left & Cross-section analysis & Survey / conservation \\
+Clip Box (Inside/Outside)      & Left & Selective visibility & All \\
+Panorama Overlay               & Toolbar & Contextual imagery & All \\
+Panorama Measurement           & Panorama & In-photo measurement & Survey team \\
+GCP Registration (Helmert)     & Right & Coordinate alignment & Survey team \\
+Scan Station Navigation        & Scene  & Site exploration & All \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ============================================================
+\chapter{Open Tasks and Future Work}
+\label{ch:open_tasks}
+% ============================================================
+
+The following tasks remain open before the platform can be considered complete
+for the purposes of this project. They are grouped by priority.
+
+% ------------------------------------------------------------
+\section{High Priority}
+\label{sec:tasks_high}
+% ------------------------------------------------------------
+
+\subsection{Panorama Image Verification}
+
+The equirectangular JPEGs stored in \texttt{data/panoramas/haus-eggiwil/}
+have not yet been verified as geometrically correct equirectangular
+projections. Leica scanners store panoramic imagery in a scanner-specific
+format that may require resampling to true equirectangular before Pannellum
+can display them without distortion. A systematic check — and, where
+necessary, a reprojection step using the scanner's calibration parameters
+— is required before the panorama tool can be considered validated on real data.
+
+\subsection{North-Offset Recovery Script Update}
+
+The script \texttt{scripts/restore\_eggiswil.py}, which documents and
+automates the restoration of panorama metadata from backup, currently derives
+the north-offset angle from the \texttt{rotZ\_deg} column of
+\texttt{image\_poses.csv}. As noted in Section~\ref{sec:pipeline}, the
+correct formula uses the quaternion columns directly. The script must be
+updated to use Equation~(2) to ensure north-offsets can be recovered
+consistently after any future data loss.
+
+\subsection{Documentation Folder Restoration}
+
+Thesis source assets — figures, compiled PDF, and ancillary documentation
+— were lost during a \texttt{git reset --hard} operation in calendar
+week 15. These must be recovered from external backup before the final report
+can be compiled. A \texttt{.gitignore} rule and a data safety protocol have
+since been established to prevent recurrence.
+
+\subsection{End-to-End Validation and v0.1.0 Tag}
+
+Before tagging a stable release, the full pipeline from raw LAS input to
+interactive CesiumJS viewer should be run end-to-end on the Haus Eggiwil
+dataset with a fresh environment to verify reproducibility. This includes
+verifying that the LV95 model matrix, panorama positions, north-offsets, and
+measurement tools all produce geometrically consistent results at the same
+scan position.
+
+% ------------------------------------------------------------
+\section{Medium Priority}
+\label{sec:tasks_medium}
+% ------------------------------------------------------------
+
+\subsection{COPC Streaming Support}
+
+The current processing pipeline generates a single-tile \texttt{.pnts} asset
+for each point cloud dataset. For large datasets such as a multi-building
+Ballenberg scan (tens of millions of points), single-tile loading creates
+significant latency and limits progressive rendering. Converting LAS files to
+Cloud Optimized Point Cloud (COPC) format, as discussed in
+Section~\ref{sec:formats}, would enable streaming from the existing server
+without structural changes. COPC is directly supported by recent versions of
+PotreeConverter and can be served as a static file from any HTTP server.
+
+\subsection{Metadata Schema Validation}
+
+The minimum metadata schema defined in Table~\ref{tab:metadata_min} has been
+implemented in the dataset registry but has not been validated against the
+actual documentation and conservation workflows of the Ballenberg museum. A
+structured review with domain experts — identifying which additional fields
+(capture method, scanner model, coordinate accuracy, conservation status) are
+necessary for operational use — is required before the schema can be
+considered stable. The schema should ultimately be alignable with
+CIDOC-CRM~/ CRMdig, as identified in Gap~2 of the synthesis
+(Section~\ref{sec:synthesis}).
+
+\subsection{Semantic Annotations Layer}
+
+A clickable annotation layer — allowing conservators to attach free-text notes,
+image links, or structured condition reports to spatial regions in the Cesium
+viewer — would directly address Research Question~4 (semantic metadata linked
+to 3D visualization). A minimal viable implementation would store annotations
+as GeoJSON-compatible objects in the dataset registry, render them as
+\texttt{BillboardCollection} entities in CesiumJS, and display a detail panel
+on click. Full CIDOC-CRM property sets would be a subsequent extension.
+
+\subsection{Mobile Optimization Audit}
+
+The current viewer has not been tested on mobile browsers. As noted in
+Section~\ref{sec:visualization}, mobile performance for WebGL point cloud
+viewers varies strongly by device. CesiumJS 1.140 has better mobile
+compatibility than Potree~1.8, but the current viewer uses several features
+(Gaussian splat Three.js canvas overlay, WebGL depth buffer read for pick
+positions) that may degrade on mobile GPUs. A systematic audit and
+optimization pass — reducing shader complexity, disabling the splat overlay
+on low-memory devices, and testing on representative Android and iOS hardware
+— is required before the platform can be offered to museum visitors.
+
+% ------------------------------------------------------------
+\section{Long-Term / Future Research}
+\label{sec:tasks_future}
+% ------------------------------------------------------------
+
+\subsection{Multi-Building Archive Structure}
+
+The current dataset registry is flat: each entry represents one dataset
+regardless of its relationship to a building, site, or documentation campaign.
+For a full Ballenberg deployment covering more than 100 buildings, a
+hierarchical structure — grouping datasets by building ID, campaign, and
+processing level — is required. This connects directly to the file naming and
+folder structure conventions discussed in Section~\ref{sec:structuring}. A
+migration of the current flat JSON registry to a more structured schema (or a
+lightweight SQLite database) should be planned once the number of registered
+datasets exceeds a practical threshold for manual management.
+
+\subsection{Potree-Next Integration Pathway}
+
+As discussed in Section~\ref{subsec:potree}, the Potree-Next rewrite is
+progressing toward WebGPU-based rendering with compute shaders and explicit
+mobile support. Once Potree-Next reaches a stable release with feature parity
+to Potree~1.8, the point cloud viewer layer of this platform should be
+re-evaluated for migration. The 3D Tiles assets and metadata already generated
+are format-compatible, so the migration effort is concentrated in the viewer
+layer rather than the data layer.
+
+\subsection{CIDOC-CRM Metadata Export}
+
+The dataset-level metadata currently stored in \texttt{datasets.json} contains
+the fields required for a CIDOC-CRM serialization (capture method, date,
+instrument, coordinate reference system, processing status). A machine-readable
+export in JSON-LD conforming to the CRMdig extension would allow the Ballenberg
+inventory to be linked to national and European heritage databases. This
+addresses Gap~4 from the synthesis and is a longer-term research deliverable
+beyond the scope of VP2.
+
+\subsection{User Study}
+
+The three target user groups hypothesized in Section~\ref{sec:introduction} —
+conservation staff, museum visitors, and student workshop participants — have
+not yet been evaluated. A structured user study, using the implemented platform
+as a prototype, would validate or revise the interaction requirements, identify
+missing functionality, and provide the evidence base for Research
+Question~2. This is the primary task of the evaluation workpackage scheduled
+for calendar weeks 17--20.
