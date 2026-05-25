@@ -75,6 +75,8 @@
       <a href="/">Datasets</a>
       <a href="/viewers/cesium.html">Cesium</a>
       <a href="/viewers/splat.html">Splat</a>
+      <a href="/viewers/potree18.html">Potree 1.8</a>
+      <a href="/viewers/potreenext.html">Potree-Next</a>
       <a href="/viewers/compare.html" class="active">Compare</a>
     </nav>
   </header>
@@ -85,11 +87,15 @@
     <select id="left-viewer" class="small">
       <option value="/viewers/cesium.html">Cesium</option>
       <option value="/viewers/splat.html">Splat</option>
+      <option value="/viewers/potree18.html">Potree 1.8</option>
+      <option value="/viewers/potreenext.html">Potree-Next</option>
     </select>
     <span class="toolbar-label">Right:</span>
     <select id="right-viewer" class="small">
       <option value="/viewers/cesium.html">Cesium</option>
       <option value="/viewers/splat.html">Splat</option>
+      <option value="/viewers/potree18.html" selected>Potree 1.8</option>
+      <option value="/viewers/potreenext.html">Potree-Next</option>
     </select>
     <button class="layout-btn active" id="btn-split-h">&#8942; Split H</button>
     <button class="layout-btn" id="btn-split-v">&#8286; Split V</button>
@@ -104,8 +110,8 @@
     </div>
     <div id="divider"></div>
     <div class="split-pane" id="right-pane">
-      <div class="pane-label" id="right-label">Cesium</div>
-      <iframe id="right-frame" src="/viewers/cesium.html" title="Right viewer"></iframe>
+      <div class="pane-label" id="right-label">Potree 1.8</div>
+      <iframe id="right-frame" src="/viewers/potree18.html" title="Right viewer"></iframe>
     </div>
   </div>
 

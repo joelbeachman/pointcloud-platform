@@ -276,9 +276,11 @@
 		loadPanoScan(panoIdx);
 		resizePanoMeasureCanvas();
 		if (!measRafRunning) { measRafRunning = true; requestAnimationFrame(drawPanoMeasureCanvas); }
+		installPanoInterceptor();
 	};
 
 	window.closePanoramaOverlay = function() {
+		uninstallPanoInterceptor();
 		if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
 		document.getElementById('pano-overlay').classList.remove('open');
 		resetMeasTool();
@@ -587,11 +589,40 @@
 		}
 	}
 
+	function activatePanoTool(tool) {
+		resetMeasTool();
+		activeMeasTool = tool;
+		document.querySelector(`.pm-btn[data-tool="${tool}"]`)?.classList.add('active');
+		document.getElementById('pano-measure-hint').style.display = 'block';
+		document.body.classList.add('pano-measuring');
+	}
+
 	function resetMeasTool() {
 		activeMeasTool = null; curMeasPts = [];
 		document.querySelectorAll('.pm-btn[data-tool]').forEach(b => b.classList.remove('active'));
 		document.getElementById('pano-measure-hint').style.display = 'none';
 		document.body.classList.remove('pano-measuring');
+	}
+
+	let _panoInterceptor = null;
+	function installPanoInterceptor() {
+		if (_panoInterceptor) return;
+		_panoInterceptor = (e) => {
+			const btn = e.target.closest('.potree_sidebar_button');
+			if (!btn) return;
+			const toolMap = { 'Distance': 'distance', 'Height': 'horizontal', 'Circle': 'area' };
+			const tool = toolMap[btn.title];
+			if (!tool) return;
+			e.stopImmediatePropagation();
+			activatePanoTool(tool);
+		};
+		document.addEventListener('click', _panoInterceptor, true);
+	}
+	function uninstallPanoInterceptor() {
+		if (_panoInterceptor) {
+			document.removeEventListener('click', _panoInterceptor, true);
+			_panoInterceptor = null;
+		}
 	}
 
 	function fmt(m) { return m < 100 ? m.toFixed(2) + ' m' : m.toFixed(1) + ' m'; }
@@ -642,11 +673,7 @@
 		btn.addEventListener('click', () => {
 			const tool = btn.dataset.tool;
 			if (activeMeasTool === tool) { resetMeasTool(); return; }
-			resetMeasTool();
-			activeMeasTool = tool;
-			btn.classList.add('active');
-			document.getElementById('pano-measure-hint').style.display = 'block';
-			document.body.classList.add('pano-measuring');
+			activatePanoTool(tool);
 		});
 	});
 

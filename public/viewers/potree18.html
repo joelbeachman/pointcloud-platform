@@ -200,6 +200,7 @@
 			loadPanoScan(panoIdx);
 			resizePanoMeasureCanvas();
 			if (!measRafRunning) { measRafRunning = true; requestAnimationFrame(drawPanoMeasureCanvas); }
+			installPanoInterceptor();
 			// Gray out tools not available in panorama mode
 			document.querySelectorAll('#tools img.button-icon').forEach(img => {
 				const src = img.getAttribute('src') || '';
@@ -213,6 +214,7 @@
 		};
 
 		window.closePanoramaOverlay = function() {
+			uninstallPanoInterceptor();
 			if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
 			document.getElementById('pano-overlay').classList.remove('open');
 			resetMeasTool();
@@ -538,11 +540,44 @@
 			}
 		}
 
+		function activatePanoTool(tool) {
+			resetMeasTool();
+			activeMeasTool = tool;
+			document.querySelector(`.pm-btn[data-tool="${tool}"]`)?.classList.add('active');
+			document.getElementById('pano-measure-hint').style.display = 'block';
+			document.body.classList.add('pano-measuring');
+		}
+
 		function resetMeasTool() {
 			activeMeasTool = null; curMeasPts = [];
 			document.querySelectorAll('.pm-btn[data-tool]').forEach(b => b.classList.remove('active'));
 			document.getElementById('pano-measure-hint').style.display = 'none';
 			document.body.classList.remove('pano-measuring');
+		}
+
+		let _panoInterceptor = null;
+		function installPanoInterceptor() {
+			if (_panoInterceptor) return;
+			_panoInterceptor = (e) => {
+				const img = e.target;
+				if (!img.classList?.contains('button-icon')) return;
+				const src = img.getAttribute('src') || '';
+				let tool = null;
+				if (/\/distance\.svg/.test(src)) tool = 'distance';
+				else if (/\/height\.svg/.test(src)) tool = 'horizontal';
+				else if (/\/area\.svg/.test(src)) tool = 'area';
+				else if (/\/circle\.svg/.test(src)) tool = 'area';
+				if (!tool) return;
+				e.stopImmediatePropagation();
+				activatePanoTool(tool);
+			};
+			document.addEventListener('click', _panoInterceptor, true);
+		}
+		function uninstallPanoInterceptor() {
+			if (_panoInterceptor) {
+				document.removeEventListener('click', _panoInterceptor, true);
+				_panoInterceptor = null;
+			}
 		}
 
 		function fmt(m) { return m < 100 ? m.toFixed(2) + ' m' : m.toFixed(1) + ' m'; }

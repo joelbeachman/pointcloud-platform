@@ -437,6 +437,45 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-25 — Potree Viewers: Measurement Bridge + Raycast Picking + UI Layout
+
+### Completed
+- **Measurement bridge to Potree native systems** (both Potree viewers)
+  - `bridgeToPotreeNext(tool, pts)`: creates a `DistanceMeasure`, adds markers via `addMarker(new Vector3(...))`,
+    pushes to `potree.measure.measures[]`, opens the measurements tab by clicking sidebar section button [2]
+  - `bridgeToPotree18(tool, pts)`: creates `Potree.Measure` with `showDistances`/`showArea`/`closed` flags,
+    calls `viewer.scene.addMeasurement(m)`; opens measurements panel via `$('#menu_measurements').next().slideDown()`
+  - Panorama measurements committed via right-click → saved in Potree's own measurement panel
+  - "Clear" button calls `viewer.scene.removeMeasurement` / removes from `potree.measure.measures[]`
+- **Point cloud raycast picking** (both Potree viewers)
+  - `raycastPotreeNext(origin, dir)`: walks loaded octree nodes, AABB prune, 0.008 rad cone test,
+    positions from `node.geometry.buffer` as Float32 at offset 0, relative to `pc.position` (LV95_min)
+  - `raycastPointCloud18(origin, dir)`: iterates `pc.visibleNodes`, reads
+    `node.geometryNode.geometry.attributes.position.array` (node-local Float32), translates via
+    `node.sceneNode.matrixWorld.elements[12,13,14]` (world translation = LV95_node_min)
+  - Floor-plane fallback retained: used only when raycast returns null
+  - `panoFloorPick` bug fixed: `pitchRad >= 0` guard replaced with `Math.abs(dirZ) < 0.02`
+    (was blocking all measurements looking slightly downward)
+- **Panorama replaces render area only** (sidebar stays visible)
+  - Potree-Next: `#pano-overlay` moved into canvas span (second grid column) in `installSidebar().then()`
+    callback; `position: absolute; inset: 0; z-index: 200` fills only the render column
+  - Potree 1.8: `#pano-overlay` placed inside `#potree_render_area` in HTML; render area has
+    `left: 350px` transition so panorama follows the sidebar automatically
+  - `#pano-measure-capture`: `position: absolute; inset: 0; z-index: 6; pointer-events: none`;
+    activated via `body.pano-measuring` class; intercepts canvas clicks before Pannellum
+- **Potree measurement button interception** (both viewers)
+  - Capture-phase `document.addEventListener('click', handler, true)` with `stopImmediatePropagation()`
+  - Potree-Next: matches `.potree_sidebar_button[title]` — Distance→distance, Height→horizontal, Circle→area
+  - Potree 1.8: matches `img.button-icon` by `src` pattern — `/distance.svg`, `/height.svg`, `/area.svg`,
+    `/circle.svg`
+  - `installPanoInterceptor()` / `uninstallPanoInterceptor()` called on open/close
+  - Tools not available in panorama mode (angle, azimuth, volume) grayed out on open, restored on close
+- **Potree viewers added to navigation** (`public/index.html`, nav bars in all viewer pages)
+  - Potree 1.8 and Potree-Next appear in the portal dashboard and nav menus
+  - Compare viewer dropdown now includes both Potree viewers as options
+
+---
+
 ## Pending / Planned
 
 ### High priority

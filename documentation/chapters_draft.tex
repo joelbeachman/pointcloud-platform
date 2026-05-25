@@ -60,18 +60,22 @@ principal endpoints:
     reference system.
   \item \texttt{DELETE /api/datasets/:id} — removes a dataset from the
     registry.
-  \item \texttt{POST /api/helmert} — applies a seven-parameter Helmert
-    transformation computed from ground control points, returns the derived
-    model matrix.
+  \item \texttt{POST /api/helmert} — computes a six- or seven-parameter
+    Helmert transformation from ground control point pairs and returns the
+    rotation matrix, scale, translation, per-point residuals, and RMS error.
   \item \texttt{POST /api/profile} — elevation profile query: accepts a polyline
     drawn on the scene and a half-width, reads the relevant \texttt{.pnts} tiles
     from disk, and returns projected $(d,\,z)$ point data for display
     (Section~\ref{sec:profile}).
   \item \texttt{GET /cesium-proxy/*} — transparently proxies the CesiumJS
-    library and Web Workers from the CDN, patching the source to remove
-    float-precision artefacts introduced by the proprietary Cesium ion
-    coordinate path, and to fix the polar orbit constraint on the
-    \texttt{ScreenSpaceCameraController}.
+    library and the \texttt{decodeSpz.js} Web Worker from the CDN, patching
+    both with safe typed-array helpers. The patch replaces calls to
+    \texttt{.typedArray.slice()} and \texttt{.value.slice()} that occur in
+    the Gaussian splat decoder path, where the Emscripten WASM module returns
+    vector objects that do not implement the standard \texttt{.slice()} method,
+    causing a runtime error when loading splat assets. All other workers and
+    static assets (\texttt{Assets/}, \texttt{ThirdParty/}) are redirected to
+    the CDN unchanged.
 \end{itemize}
 
 \subsection{Dataset Registry}
@@ -97,7 +101,7 @@ equirectangular images), and a set of Ballenberg-specific provenance fields
 \midrule
 \texttt{id}         & string    & Unique identifier (slug) \\
 \texttt{name}       & string    & Human-readable label \\
-\texttt{type}       & enum      & \texttt{cesium | cesium-splat | splat | e57 | pointcloud} \\
+\texttt{type}       & enum      & \texttt{cesium | cesium-splat | splat | e57 | pointcloud | potree} \\
 \texttt{path}       & string    & Server-relative path to the primary asset \\
 \texttt{createdAt}  & ISO 8601  & Registration timestamp \\
 \bottomrule
@@ -118,9 +122,9 @@ constructed via:
   \mathbf{M}_{\text{LV95}} = \mathbf{M}_{\text{ENU}}(E_0, N_0, H_0)
     \cdot \mathbf{T}(-E_0, -N_0, -H_0),
 \end{equation}
-where $(E_0, N_0, H_0)$ is the dataset centroid converted to WGS\,84 via the
-approximate LV95\,$\to$\,WGS\,84 formula implemented in
-\texttt{lv95ToWgs84()}, $\mathbf{M}_{\text{ENU}}$ is the
+where $(E_0, N_0, H_0)$ is the bounding-sphere centre of the tileset in
+LV95 coordinates, converted to WGS\,84 via the approximate
+LV95\,$\to$\,WGS\,84 formula implemented in \texttt{lv95ToWgs84()}, $\mathbf{M}_{\text{ENU}}$ is the
 east-north-up frame at that ECEF point, and $\mathbf{T}$ is a translation
 that brings the origin of the LV95 frame to the centroid. The effect is that
 the tileset's bounding sphere sits at the correct geographic position without
@@ -141,15 +145,18 @@ input modalities are supported:
 \begin{description}
   \item[Point clouds (LAS/LAZ, E57, XYZ/TXT/PTS, PTX, PCD, PLY)] — converted
     to a single-tile 3D Tiles 1.0 \texttt{.pnts} asset with an accompanying
-    \texttt{tileset.json}. XYZ colour attributes are preserved; the dataset
-    centroid is used as the \texttt{RTC\_CENTER} for float32 precision. A
-    LV95 model matrix is computed and stored.
+    \texttt{tileset.json}. XYZ colour attributes are preserved; the floor of
+    the bounding-box minimum coordinate is stored as \texttt{RTC\_CENTER},
+    keeping all float32 position offsets small and positive. A LV95 model
+    matrix is computed and stored.
   \item[Meshes (OBJ, STL, GLB, GLTF, mesh PLY)] — converted to a
     \texttt{.b3dm}-based 3D Tiles scene.
-  \item[Gaussian splats (.splat, 3DGS PLY)] — the \texttt{.splat} binary is
-    served directly to the \texttt{@mkkellogg/gaussian-splats-3d} viewer;
-    a companion 3D Tiles representation is generated from the DC spherical
-    harmonics coefficients.
+  \item[Gaussian splats (.splat, 3DGS PLY)] — \texttt{.splat} inputs are
+    copied directly; 3DGS PLY inputs are converted by decoding the DC
+    spherical harmonics coefficients ($f\_dc\_0/1/2$) to RGB via a sigmoid
+    activation, normalising the quaternion rotation, and packing all
+    attributes into the compact 32-byte-per-Gaussian layout expected by
+    \texttt{@mkkellogg/gaussian-splats-3d}.
 \end{description}
 
 \subsection{Haus Eggiwil Dataset}
@@ -207,11 +214,13 @@ in-viewer ``Add Layer'' button. Each layer maintains its own CesiumJS
 Datasets that arrive in a scanner-local coordinate system rather than LV95
 absolute can be aligned using the in-viewer GCP registration tool. The user
 clicks corresponding points in the Cesium scene (ECEF, converted internally to
-tileset-local) and enters the known LV95 coordinates. A seven-parameter Helmert
-transformation (rotation, uniform scale, translation) is computed via SVD of
-the centred point pairs, yielding the $4 \times 4$ model matrix
+tileset-local) and enters the known LV95 coordinates. A six- or seven-parameter Helmert transformation (rotation and translation,
+optionally with uniform scale) is computed via SVD of the centred point pairs
+by the server-side \texttt{POST /api/helmert} endpoint; the resulting
+rotation matrix $\mathbf{R}$, scale $s$, and translation $\mathbf{t}$ are
+returned to the client, which assembles the $4 \times 4$ model matrix
 $\mathbf{M} = \mathbf{M}_{\text{LV95}} \cdot \mathbf{M}_{\text{Helmert}}$
-that is stored persistently in the dataset registry.
+and stores it persistently in the dataset registry.
 
 % ------------------------------------------------------------
 \section{Measurement Tools}
@@ -446,6 +455,18 @@ for the purposes of this project. They are grouped by priority.
 \section{High Priority}
 \label{sec:tasks_high}
 % ------------------------------------------------------------
+
+\subsection{GCP Registration: Missing \texttt{helmert.py}}
+
+The in-viewer GCP georeferencing tool sends point-pair data to the
+\texttt{POST /api/helmert} server endpoint, which is configured to execute
+\texttt{scripts/helmert.py}. This script does not currently exist in the
+repository, so any attempt to compute a Helmert transformation from the
+viewer will return a \texttt{500} error. The SVD algorithm is already
+implemented as a JavaScript function \texttt{solveHelmert()} in the viewer
+source (kept as a fallback reference) and can be ported to a short Python
+script using NumPy. This script must be created before the GCP registration
+feature can be considered functional.
 
 \subsection{Panorama Image Verification}
 
