@@ -362,6 +362,32 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-25 — Multiple Clip Boxes + Box Rotation + Boolean Clipping
+
+### Completed
+- **Multiple simultaneous clip boxes** (`public/viewers/cesium.html`)
+  - Any number of clip boxes can be active at once; each has an independent enabled toggle
+  - Scrollable clip box list in left panel; gold dot = clipping active, faded = disabled
+  - `applyClipBoxes()` combines all enabled boxes into a single `ClippingPlaneCollection`
+    per tileset — efficient tile-level culling
+- **Box rotation handles** — three draggable rotation rings (X=red, Y=green, Z=blue)
+  - Each ring is a 40-segment circle on the corresponding face plane, radius = 1.35× face diagonal
+  - Drag angle computed from projected box center on screen; delta applied to `cb.rotX/Y/Z`
+  - `cbRotMatrix(cb)` builds Rz·Ry·Rx row-major 3×3; plane normals rotated via matrix columns
+  - Rotation angle inputs (X°, Y°, Z°) in editor panel; rings and wireframe update live
+- **Boolean inside+outside clipping** (`applyClipBoxes`, `cbBuildMixedShader`)
+  - Pure inside-only or outside-only: fast `ClippingPlaneCollection` path (unchanged)
+  - Mixed mode (any inside box + any outside box active simultaneously): switches to
+    `Cesium.CustomShader` for per-fragment GLSL boolean evaluation
+  - Shader transforms `positionMC → eye-space (czm_modelView) → ENU (u_eyeToEnu uniform)`
+    to avoid float32 ECEF precision errors (~0.5 m) — computation stays in camera-relative
+    space where values are small
+  - `u_eyeToEnu = ecefToEnu × invView` updated every frame via `scene.preRender` listener
+  - Switching back to pure mode or disabling all boxes removes the shader and listener
+    (`cbClearCustomShader`)
+
+---
+
 ## Pending / Planned
 
 ### High priority

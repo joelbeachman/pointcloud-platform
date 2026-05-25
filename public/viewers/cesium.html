@@ -634,6 +634,8 @@
     let cbRotRingEntities = {};  // id → [3 polyline entities] rotation rings
     let cbDragState      = null; // active drag: {boxId,key,axis,isCenter,dragPlane,initHitEnu,initCb}
     let cbCount          = 0;
+    let cbMixedShader    = null; // CustomShader instance for mixed inside+outside mode
+    let cbPreRenderHandle = null; // removeEventListener fn for scene.preRender uniform update
 
     // ── Measurement coordinate helpers (ENU local ↔ ECEF) ─────────────────────
     function getRefMatrix() {
@@ -2015,10 +2017,54 @@
       }
     }
 
+    // Clear any active CustomShader and its per-frame preRender listener.
+    function cbClearCustomShader() {
+      if (cbPreRenderHandle) { cbPreRenderHandle(); cbPreRenderHandle = null; }
+      if (cbMixedShader) {
+        layers.forEach(l => { if (l.tileset && l.tileset.customShader === cbMixedShader) l.tileset.customShader = undefined; });
+        cbMixedShader = null;
+      }
+    }
+
+    // Build a CustomShader for mixed inside+outside boolean clipping.
+    // Coordinates: positionMC → eye space via czm_modelView → ENU via u_eyeToEnu uniform.
+    // u_eyeToEnu = ecefToEnu * invView, updated each frame in preRender.
+    function cbBuildMixedShader(insideBoxes, outsideBoxes) {
+      const G = n => n.toFixed(8);
+      const lines = [];
+      lines.push('void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {');
+      lines.push('  vec3 posEC = (czm_modelView * vec4(fsInput.attributes.positionMC, 1.0)).xyz;');
+      lines.push('  vec3 posENU = (u_eyeToEnu * vec4(posEC, 1.0)).xyz;');
+      for (const cb of insideBoxes) {
+        const R  = cbRotMatrix(cb);
+        const bx = (cb.xmin+cb.xmax)/2, by = (cb.ymin+cb.ymax)/2, bz = (cb.zmin+cb.zmax)/2;
+        const hx = (cb.xmax-cb.xmin)/2, hy = (cb.ymax-cb.ymin)/2, hz = (cb.zmax-cb.zmin)/2;
+        lines.push(`  { vec3 d=posENU-vec3(${G(bx)},${G(by)},${G(bz)});`);
+        lines.push(`    vec3 l=vec3(${G(R[0])}*d.x+${G(R[1])}*d.y+${G(R[2])}*d.z,${G(R[3])}*d.x+${G(R[4])}*d.y+${G(R[5])}*d.z,${G(R[6])}*d.x+${G(R[7])}*d.y+${G(R[8])}*d.z);`);
+        lines.push(`    if(abs(l.x)>${G(hx)}||abs(l.y)>${G(hy)}||abs(l.z)>${G(hz)}) discard; }`);
+      }
+      for (const cb of outsideBoxes) {
+        const R  = cbRotMatrix(cb);
+        const bx = (cb.xmin+cb.xmax)/2, by = (cb.ymin+cb.ymax)/2, bz = (cb.zmin+cb.zmax)/2;
+        const hx = (cb.xmax-cb.xmin)/2, hy = (cb.ymax-cb.ymin)/2, hz = (cb.zmax-cb.zmin)/2;
+        lines.push(`  { vec3 d=posENU-vec3(${G(bx)},${G(by)},${G(bz)});`);
+        lines.push(`    vec3 l=vec3(${G(R[0])}*d.x+${G(R[1])}*d.y+${G(R[2])}*d.z,${G(R[3])}*d.x+${G(R[4])}*d.y+${G(R[5])}*d.z,${G(R[6])}*d.x+${G(R[7])}*d.y+${G(R[8])}*d.z);`);
+        lines.push(`    if(abs(l.x)<=${G(hx)}&&abs(l.y)<=${G(hy)}&&abs(l.z)<=${G(hz)}) discard; }`);
+      }
+      lines.push('}');
+      return new Cesium.CustomShader({
+        uniforms: {
+          u_eyeToEnu: { type: Cesium.UniformType.MAT4, value: new Cesium.Matrix4() },
+        },
+        fragmentShaderText: lines.join('\n'),
+      });
+    }
+
     // Apply all enabled clip boxes to all tilesets (combined into one collection per tileset).
     function applyClipBoxes() {
       const enabled = clipBoxList.filter(x => x.enabled && x.inside !== null);
       if (!enabled.length || !cbOriginLV95) {
+        cbClearCustomShader();
         layers.forEach(l => {
           if (l.tileset) l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({ enabled: false });
         });
@@ -2026,8 +2072,31 @@
       }
       const insideBoxes  = enabled.filter(x => x.inside === true);
       const outsideBoxes = enabled.filter(x => x.inside === false);
-      const active  = insideBoxes.length ? insideBoxes : outsideBoxes;
-      const useUnion = insideBoxes.length > 0; // true=inside (union=clip exterior), false=outside
+
+      // Mixed mode: need CustomShader for per-fragment boolean evaluation.
+      if (insideBoxes.length > 0 && outsideBoxes.length > 0) {
+        cbClearCustomShader();
+        cbMixedShader = cbBuildMixedShader(insideBoxes, outsideBoxes);
+        // Disable tile-level clipping so the custom shader handles everything.
+        layers.forEach(l => {
+          if (!l.tileset) return;
+          l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({ enabled: false });
+          l.tileset.customShader = cbMixedShader;
+        });
+        // Update u_eyeToEnu each frame: camera-space → ENU via (ecefToEnu * invView).
+        cbPreRenderHandle = viewer.scene.preRender.addEventListener(() => {
+          if (!cbEnuMatrix || !cbMixedShader) return;
+          const ecefToEnu = Cesium.Matrix4.inverseTransformation(cbEnuMatrix, new Cesium.Matrix4());
+          const eyeToEnu  = Cesium.Matrix4.multiply(ecefToEnu, viewer.camera.inverseViewMatrix, new Cesium.Matrix4());
+          cbMixedShader.setUniform('u_eyeToEnu', eyeToEnu);
+        });
+        return;
+      }
+
+      // Pure inside-only or outside-only: use fast tile-level ClippingPlaneCollection.
+      cbClearCustomShader();
+      const active   = insideBoxes.length ? insideBoxes : outsideBoxes;
+      const useUnion = insideBoxes.length > 0;
       const allPlanes = active.flatMap(cb => cbBuildPlanes(cb));
       const { x: E0, y: N0, z: H0 } = cbOriginLV95;
       const planesMM = Cesium.Matrix4.fromTranslation(new Cesium.Cartesian3(E0, N0, H0));
