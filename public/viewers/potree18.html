@@ -201,6 +201,8 @@
 			resizePanoMeasureCanvas();
 			if (!measRafRunning) { measRafRunning = true; requestAnimationFrame(drawPanoMeasureCanvas); }
 			installPanoInterceptor();
+			// Hide tool-select buttons — Potree sidebar is the control interface now
+			document.querySelectorAll('#pano-measure-bar .pm-btn[data-tool], #pano-measure-bar .pm-sep').forEach(el => el.style.display = 'none');
 			// Gray out tools not available in panorama mode
 			document.querySelectorAll('#tools img.button-icon').forEach(img => {
 				const src = img.getAttribute('src') || '';
@@ -208,7 +210,6 @@
 					img.dataset.panoDisabled = '1';
 					img.style.opacity = '0.25';
 					img.style.pointerEvents = 'none';
-					img.parentElement.style.pointerEvents = 'none';
 				}
 			});
 		};
@@ -218,12 +219,12 @@
 			if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
 			document.getElementById('pano-overlay').classList.remove('open');
 			resetMeasTool();
+			document.querySelectorAll('#pano-measure-bar .pm-btn[data-tool], #pano-measure-bar .pm-sep').forEach(el => el.style.display = '');
 			// Restore grayed-out tools
 			document.querySelectorAll('#tools img.button-icon[data-pano-disabled]').forEach(img => {
 				delete img.dataset.panoDisabled;
 				img.style.opacity = '';
 				img.style.pointerEvents = '';
-				img.parentElement.style.pointerEvents = '';
 			});
 		};
 
@@ -314,6 +315,7 @@
 
 		// ── Panorama measurement tools ─────────────────────────────────────────
 		const MTC = {
+			point:      { hex: '#f0883e', label: 'Point' },
 			distance:   { hex: '#58a6ff', label: 'Distance' },
 			horizontal: { hex: '#3fb950', label: 'Horiz.' },
 			area:       { hex: '#a371f7', label: 'Area' },
@@ -347,11 +349,11 @@
 			if (!pts.length) return;
 			const m = new Potree.Measure();
 			m.name = `Pano ${tool}`;
-			m.showDistances = (tool !== 'area');
+			m.showDistances = (tool !== 'area' && tool !== 'point');
 			m.showArea = (tool === 'area');
 			m.closed = (tool === 'area');
 			m.showAngles = false;
-			m.showCoordinates = false;
+			m.showCoordinates = (tool === 'point');
 			for (const pt of pts) m.addMarker(mkVec3(pt.x, pt.y, pt.z));
 			viewer.scene.addMeasurement(m);
 			bridgedMeasures.push(m);
@@ -563,7 +565,8 @@
 				if (!img.classList?.contains('button-icon')) return;
 				const src = img.getAttribute('src') || '';
 				let tool = null;
-				if (/\/distance\.svg/.test(src)) tool = 'distance';
+				if (/\/point\.svg/.test(src)) tool = 'point';
+				else if (/\/distance\.svg/.test(src)) tool = 'distance';
 				else if (/\/height\.svg/.test(src)) tool = 'horizontal';
 				else if (/\/area\.svg/.test(src)) tool = 'area';
 				else if (/\/circle\.svg/.test(src)) tool = 'area';
@@ -591,6 +594,10 @@
 			bridgeToPotree18(tool, pts);
 		}
 
+		function doPoint() {
+			const pt = curMeasPts[0];
+			commitMeasurement('point', `${pt.x.toFixed(2)}, ${pt.y.toFixed(2)}, ${pt.z.toFixed(2)}`);
+		}
 		function doDistance() {
 			const [p1, p2] = curMeasPts;
 			commitMeasurement('distance', fmt(Math.sqrt((p2.x-p1.x)**2+(p2.y-p1.y)**2+(p2.z-p1.z)**2)));
@@ -667,7 +674,8 @@
 			if (!pt) return;
 			e.stopPropagation();
 			curMeasPts.push(pt);
-			if (activeMeasTool === 'distance' && curMeasPts.length === 2) doDistance();
+			if (activeMeasTool === 'point' && curMeasPts.length === 1) doPoint();
+			else if (activeMeasTool === 'distance' && curMeasPts.length === 2) doDistance();
 			else if (activeMeasTool === 'horizontal' && curMeasPts.length === 2) doHorizontal();
 		});
 

@@ -220,7 +220,7 @@
 
 	import {Potree} from "potree";
 	import {Vector3, Vector4, Matrix4, Points, Mesh, geometries} from "potree";
-	import {DistanceMeasure} from "../libs/potreenext/src/interaction/measure.js";
+	import {DistanceMeasure, PointMeasure} from "../libs/potreenext/src/interaction/measure.js";
 	import "range-select";
 
 	import {installToolbar} from "toolbar";
@@ -277,6 +277,8 @@
 		resizePanoMeasureCanvas();
 		if (!measRafRunning) { measRafRunning = true; requestAnimationFrame(drawPanoMeasureCanvas); }
 		installPanoInterceptor();
+		// Hide tool-select buttons — Potree sidebar is the control interface now
+		document.querySelectorAll('#pano-measure-bar .pm-btn[data-tool], #pano-measure-bar .pm-sep').forEach(el => el.style.display = 'none');
 	};
 
 	window.closePanoramaOverlay = function() {
@@ -284,6 +286,7 @@
 		if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
 		document.getElementById('pano-overlay').classList.remove('open');
 		resetMeasTool();
+		document.querySelectorAll('#pano-measure-bar .pm-btn[data-tool], #pano-measure-bar .pm-sep').forEach(el => el.style.display = '');
 	};
 
 	function panoCameraSVG(s) {
@@ -373,6 +376,7 @@
 
 	// ── Panorama measurement tools ─────────────────────────────────────────
 	const MTC = {
+		point:      { hex: '#f0883e', label: 'Point' },
 		distance:   { hex: '#58a6ff', label: 'Distance' },
 		horizontal: { hex: '#3fb950', label: 'Horiz.' },
 		area:       { hex: '#a371f7', label: 'Area' },
@@ -386,12 +390,15 @@
 
 	function bridgeToPotreeNext(tool, pts) {
 		if (!pts.length) return;
-		const m = new DistanceMeasure();
+		const m = tool === 'point' ? new PointMeasure() : new DistanceMeasure();
 		for (const pt of pts) m.addMarker(new Vector3(pt.x, pt.y, pt.z));
 		potree.measure.measures.push(m);
 		bridgedNextMeasures.push(m);
-		const btn = window.sidebar?.elSectionSelection?.querySelectorAll('.potree_sidebar_section_button')[2];
-		btn?.click();
+		// Open measurements tab only if not already showing (avoid toggling it closed)
+		if (!window.sidebar?.elSectionContent?.querySelector('#measurements_panel')) {
+			const btn = window.sidebar?.elSectionSelection?.querySelectorAll('.potree_sidebar_section_button')[2];
+			btn?.click();
+		}
 	}
 
 	function raycastPotreeNext(origin, dir) {
@@ -610,7 +617,7 @@
 		_panoInterceptor = (e) => {
 			const btn = e.target.closest('.potree_sidebar_button');
 			if (!btn) return;
-			const toolMap = { 'Distance': 'distance', 'Height': 'horizontal', 'Circle': 'area' };
+			const toolMap = { 'Point': 'point', 'Distance': 'distance', 'Height': 'horizontal', 'Circle': 'area' };
 			const tool = toolMap[btn.title];
 			if (!tool) return;
 			e.stopImmediatePropagation();
@@ -636,6 +643,10 @@
 		bridgeToPotreeNext(tool, pts);
 	}
 
+	function doPoint() {
+		const pt = curMeasPts[0];
+		commitMeasurement('point', `${pt.x.toFixed(2)}, ${pt.y.toFixed(2)}, ${pt.z.toFixed(2)}`);
+	}
 	function doDistance() {
 		const [p1, p2] = curMeasPts;
 		commitMeasurement('distance', fmt(Math.sqrt((p2.x-p1.x)**2+(p2.y-p1.y)**2+(p2.z-p1.z)**2)));
@@ -711,7 +722,8 @@
 		if (!pt) return;
 		e.stopPropagation();
 		curMeasPts.push(pt);
-		if (activeMeasTool === 'distance' && curMeasPts.length === 2) doDistance();
+		if (activeMeasTool === 'point' && curMeasPts.length === 1) doPoint();
+		else if (activeMeasTool === 'distance' && curMeasPts.length === 2) doDistance();
 		else if (activeMeasTool === 'horizontal' && curMeasPts.length === 2) doHorizontal();
 	});
 
