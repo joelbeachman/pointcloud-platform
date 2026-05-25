@@ -2374,16 +2374,35 @@
       if (!hfov || !isFinite(hfov) || hfov <= 0) return null;
       const canvas = document.getElementById('pano-canvas');
       if (!canvas.width || !canvas.height) return null;
-      let dYaw = yaw - panoViewer.getYaw();
-      while (dYaw >  180) dYaw -= 360;
-      while (dYaw < -180) dYaw += 360;
-      if (Math.abs(dYaw) > 87) return null;
-      const dPitch = pitch - panoViewer.getPitch();
-      const tanH2  = Math.tan(hfov * Math.PI / 360);
+
+      const toRad = Math.PI / 180;
+      const ptY = yaw   * toRad,  ptP = pitch          * toRad;
+      const cY  = panoViewer.getYaw()   * toRad;
+      const cP  = panoViewer.getPitch() * toRad;
+
+      // Point as unit vector in world frame (Y-up, Z = north when yaw=0)
+      const px = Math.cos(ptP) * Math.sin(ptY);
+      const py = Math.sin(ptP);
+      const pz = Math.cos(ptP) * Math.cos(ptY);
+
+      // Camera forward / right / up axes
+      const fx =  Math.cos(cP) * Math.sin(cY),  fy = Math.sin(cP),  fz = Math.cos(cP) * Math.cos(cY);
+      const rx =  Math.cos(cY),                  ry = 0,             rz = -Math.sin(cY);
+      const ux = -Math.sin(cP) * Math.sin(cY),   uy = Math.cos(cP), uz = -Math.sin(cP) * Math.cos(cY);
+
+      const dotFwd   = px*fx + py*fy + pz*fz;
+      const dotRight = px*rx + py*ry + pz*rz;
+      const dotUp    = px*ux + py*uy + pz*uz;
+
+      if (dotFwd <= 0) return null;   // behind camera
+
+      const tanH2 = Math.tan(hfov * toRad / 2);
       if (!tanH2 || !isFinite(tanH2)) return null;
+
       const cx = canvas.width / 2, cy = canvas.height / 2;
-      const x  = cx + Math.tan(dYaw   * Math.PI / 180) / tanH2 * cx;
-      const y  = cy - Math.tan(dPitch * Math.PI / 180) / tanH2 * cx;
+      const f  = cx / tanH2;
+      const x  = cx + f * dotRight / dotFwd;
+      const y  = cy - f * dotUp    / dotFwd;
       if (!isFinite(x) || !isFinite(y)) return null;
       return { x, y };
     }
