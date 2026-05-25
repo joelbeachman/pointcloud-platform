@@ -2408,13 +2408,18 @@
       return { x, y };
     }
 
-    // Project an array of ECEF points to canvas coords; returns [{x,y,i},...] (visible only)
+    // Project an array of ECEF points to canvas coords.
+    // Returns [{x,y,i,vis},...] — behind-camera (dotFwd≤0) entries are dropped;
+    // off-canvas but in-front entries are kept (vis=false) for polygon continuity.
     function projectEcefPts(ecefArr) {
+      const canvas = document.getElementById('pano-canvas');
       return ecefArr.map((ecef, i) => {
         const yw = ecefToPanoYawPitch(ecef);
         if (!yw) return null;
         const pos = yawPitchToPanoCanvas(yw.yaw, yw.pitch);
-        return (pos && isFinite(pos.x) && isFinite(pos.y)) ? { ...pos, i } : null;
+        if (!pos) return null; // behind camera
+        const vis = pos.x >= 0 && pos.x <= canvas.width && pos.y >= 0 && pos.y <= canvas.height;
+        return { x: pos.x, y: pos.y, i, vis };
       }).filter(Boolean);
     }
 
@@ -2446,24 +2451,29 @@
           const mhex = TC[m.tool]?.hex || '#fff';
           if (m.tool === 'area' && spts.length >= 3) {
             // Filled polygon: fill → outline → dots (bottom to top)
+            // Use all points (including off-canvas) for path — canvas clips the rendering.
+            // Only draw vertex dots for on-screen points.
             ctx.beginPath();
             ctx.moveTo(spts[0].x, spts[0].y);
             for (let j = 1; j < spts.length; j++) ctx.lineTo(spts[j].x, spts[j].y);
             ctx.closePath();
-            ctx.fillStyle = mhex + '33';   // ~20% opacity fill
+            ctx.fillStyle = mhex + '33';
             ctx.fill();
             ctx.strokeStyle = mhex; ctx.lineWidth = 1.8; ctx.stroke();
             for (const sp of spts) {
+              if (!sp.vis) continue;
               ctx.beginPath(); ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
               ctx.fillStyle = mhex; ctx.fill();
               ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
             }
           } else {
-            drawCircles(ctx, spts, mhex);
+            drawCircles(ctx, spts.filter(p => p.vis), mhex);
           }
-          // One number per measurement at centroid (above midpoint for lines, inside for area)
-          const mx = spts.reduce((s, p) => s + p.x, 0) / spts.length;
-          const my = spts.reduce((s, p) => s + p.y, 0) / spts.length;
+          // Centroid label — use only visible points so label stays on-screen
+          const vpts = spts.filter(p => p.vis);
+          const lpts = vpts.length ? vpts : spts;
+          const mx = lpts.reduce((s, p) => s + p.x, 0) / lpts.length;
+          const my = lpts.reduce((s, p) => s + p.y, 0) / lpts.length;
           const ny = m.tool === 'area' ? my : my - 18;
           ctx.font = 'bold 11px monospace';
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2484,16 +2494,17 @@
               ctx.moveTo(spts[0].x, spts[0].y);
               for (let j = 1; j < spts.length; j++) ctx.lineTo(spts[j].x, spts[j].y);
               ctx.closePath();
-              ctx.fillStyle = ahex + '22';   // lighter fill while in progress
+              ctx.fillStyle = ahex + '22';
               ctx.fill();
               ctx.strokeStyle = ahex; ctx.lineWidth = 1.8; ctx.stroke();
               for (const sp of spts) {
+                if (!sp.vis) continue;
                 ctx.beginPath(); ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
                 ctx.fillStyle = ahex; ctx.fill();
                 ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
               }
             } else {
-              drawCircles(ctx, spts, ahex);
+              drawCircles(ctx, spts.filter(p => p.vis), ahex);
             }
           }
         }
@@ -2708,10 +2719,24 @@
       const rect = div.getBoundingClientRect();
       const dx = e.clientX - (rect.left + rect.width  / 2);
       const dy = e.clientY - (rect.top  + rect.height / 2);
-      const tanH2 = Math.tan(panoViewer.getHfov() * Math.PI / 360);
-      const half  = rect.width / 2;
-      const yaw   = panoViewer.getYaw()   + Math.atan(dx * tanH2 / half) * 180 / Math.PI;
-      const pitch = panoViewer.getPitch() - Math.atan(dy * tanH2 / half) * 180 / Math.PI;
+
+      // Exact inverse of yawPitchToPanoCanvas: unproject canvas pixel → world direction → yaw/pitch
+      const toRad = Math.PI / 180;
+      const f   = (rect.width / 2) / Math.tan(panoViewer.getHfov() * toRad / 2);
+      const cY  = panoViewer.getYaw()   * toRad;
+      const cP  = panoViewer.getPitch() * toRad;
+      // Camera axes (same as in yawPitchToPanoCanvas)
+      const rx = Math.cos(cY),                    rz = -Math.sin(cY);
+      const ux = -Math.sin(cP)*Math.sin(cY), uy = Math.cos(cP), uz = -Math.sin(cP)*Math.cos(cY);
+      const fx = Math.cos(cP)*Math.sin(cY),  fy = Math.sin(cP), fz = Math.cos(cP)*Math.cos(cY);
+      // Camera-space ray: (dx/f) along right, (-dy/f) along up, 1 along forward
+      const dr = dx / f, du = -dy / f;
+      // World-space direction (unnormalized)
+      const wx = dr*rx + du*ux + fx;
+      const wy =         du*uy + fy;
+      const wz = dr*rz + du*uz + fz;
+      const yaw   = Math.atan2(wx, wz) * 180 / Math.PI;
+      const pitch = Math.atan2(wy, Math.sqrt(wx*wx + wz*wz)) * 180 / Math.PI;
 
       let ecef = panoRayPick(yaw, pitch);
       if (!Cesium.defined(ecef)) ecef = panoFloorPick(yaw, pitch);
