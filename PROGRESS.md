@@ -324,6 +324,18 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-25 — Panorama Area Fill
+
+### Completed
+- **Transparent polygon fill for area measurements** (`public/viewers/cesium.html`)
+  - Committed area polygons now render a `#a371f7` fill at ~20% opacity in the panorama canvas
+  - In-progress area previews (≥3 points) show the same fill at ~13% opacity to distinguish
+    from finished measurements while still clicking
+  - Fill is drawn first (bottom layer), outline and vertex dots drawn on top — correct z-order
+  - Non-area tools (distance, horizontal, vertical, coords) unchanged
+
+---
+
 ## Pending / Planned
 
 ### High priority
