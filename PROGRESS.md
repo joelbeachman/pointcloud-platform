@@ -415,6 +415,28 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-25 — Potree Viewers: Scan Markers + Clickable Panorama Overlay
+
+### Completed
+- **Potree 1.8 viewer** (`public/viewers/potree18.html`) — new file, replacing the deleted `potree.html`
+  - Loads Haus Eggiwil point cloud from `data/potree/haus-eggiwil/metadata.json`
+  - Fetches `data/panoramas/haus-eggiwil/metadata.json`; creates 185 orange debug spheres via
+    `Potree.Utils.debugSphere(viewer.scene.scene, {x,y,z}, 0.3, 0xf0883e)` at **full LV95 world coords**
+    (no bounding-box subtraction — `viewer.scene.scene` uses LV95 world space, matching the camera)
+  - Canvas click handler: projects each sphere via `THREE.Vector3.project(camera)` → NDC → screen px;
+    20 px pick radius; drag guard (>5 px movement discards click)
+  - Pannellum equirectangular overlay (same CSS/HTML/JS structure as Cesium viewer): scan label,
+    LV95 coordinate bar, prev/next scan navigation, close button
+- **Potree-Next viewer** (`public/viewers/potreenext.html`) — new file
+  - 185 `Mesh` spheres (`geometries.sphere`, `NormalMaterial`) placed at LV95 scan positions;
+    `PhongMaterial` avoided — its `render()` calls deprecated `renderer.getGpuBuffers()` which
+    throws unconditionally, killing the `requestAnimationFrame` loop (FPS drops to 0)
+  - Canvas click handler: builds `viewProj = cam.proj × cam.view`; projects each marker via
+    `new Vector4(x,y,z,1).applyMatrix4(viewProj)` → clip space → NDC → screen px; same 20 px threshold
+  - Same Pannellum panorama overlay as Potree 1.8
+
+---
+
 ## Pending / Planned
 
 ### High priority

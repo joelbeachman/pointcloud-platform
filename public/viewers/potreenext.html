@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Potree-Next — Haus Eggiwil</title>
+<link rel="stylesheet" href="/css/portal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+<script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+<style>
+	* { margin: 0; padding: 0; box-sizing: border-box; }
+	body { background: #111; overflow: hidden; }
+	header { position: relative; z-index: 100; }
+	canvas { image-rendering: pixelated; display: block; position: absolute; width: 100%; height: 100%; }
+	#msg_dbg {
+		position: absolute;
+		left: 10px;
+		bottom: 10px;
+		color: white;
+		font-size: 1em;
+		font-weight: bold;
+		font-family: "Consolas", monospace;
+		text-shadow: 0 0 4px black;
+		pointer-events: none;
+	}
+	#webgpu-error {
+		display: none;
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		color: #fff;
+		font-family: sans-serif;
+		font-size: 18px;
+		text-align: center;
+		background: rgba(180,0,0,0.8);
+		padding: 24px 32px;
+		border-radius: 8px;
+		max-width: 480px;
+		z-index: 1000;
+	}
+
+	#pano-overlay {
+		display: none; position: fixed; inset: 0; top: 56px;
+		flex-direction: column; background: #0d1117;
+		z-index: 200; border-top: 1px solid #30363d;
+	}
+	#pano-overlay.open { display: flex; }
+	#pano-overlay-bar {
+		display: flex; align-items: center; gap: 0.8rem;
+		padding: 0.4rem 0.8rem; background: #161b22;
+		border-bottom: 1px solid #30363d; flex-shrink: 0;
+		font-family: monospace; font-size: 0.8rem; color: #8b949e;
+	}
+	#pano-overlay-title { color: #f0883e; font-weight: 600; white-space: nowrap; }
+	#pano-overlay-coords { flex: 1; font-size: 0.72rem; }
+	#pano-close-btn {
+		background: none; border: 1px solid #30363d; color: #8b949e;
+		border-radius: 4px; padding: 0.15rem 0.5rem; cursor: pointer; font-size: 0.8rem;
+	}
+	#pano-close-btn:hover { background: #21262d; color: #e6edf3; border-color: #8b949e; }
+	#pano-inner { flex: 1; position: relative; overflow: hidden; }
+	#pano-div   { position: absolute; inset: 0; }
+	#pano-scan-nav {
+		position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+		display: flex; align-items: center; gap: 0.5rem; z-index: 10;
+		background: rgba(13,17,23,0.8); border: 1px solid #30363d;
+		border-radius: 6px; padding: 0.3rem 0.6rem;
+		font-family: monospace; font-size: 0.8rem; color: #8b949e;
+	}
+	#pano-scan-nav button {
+		background: none; border: 1px solid #30363d; color: #8b949e;
+		border-radius: 4px; padding: 0.1rem 0.4rem; cursor: pointer; font-size: 0.8rem;
+	}
+	#pano-scan-nav button:hover { background: #30363d; }
+	#pano-scan-nav button:disabled { opacity: 0.35; cursor: default; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="logo-icon">&#9729;</span>
+    <span class="logo-text">Point Cloud Platform</span>
+  </div>
+  <nav>
+    <a href="/">Datasets</a>
+    <a href="/viewers/cesium.html">Cesium</a>
+    <a href="/viewers/splat.html">Splat</a>
+    <a href="/viewers/potree18.html">Potree 1.8</a>
+    <a href="/viewers/potreenext.html" class="active">Potree-Next</a>
+    <a href="/viewers/compare.html">Compare</a>
+  </nav>
+</header>
+
+<div id="potree" style="width:100%;height:calc(100% - 56px);position:fixed;top:56px;">
+	<span style="position:relative">
+		<canvas id="canvas" width="800" height="600" style="width:100%;height:100%;"></canvas>
+	</span>
+</div>
+
+<pre id="msg_dbg"></pre>
+<div id="webgpu-error">
+	<strong>WebGPU not available</strong><br><br>
+	Potree-Next requires WebGPU. Please use Chrome 113+ or another WebGPU-capable browser.<br><br>
+	You can still use the <a href="/viewers/potree18.html" style="color:#ffd">Potree 1.8 viewer</a> (WebGL).
+</div>
+
+<!-- Panorama overlay -->
+<div id="pano-overlay">
+	<div id="pano-overlay-bar">
+		<span id="pano-overlay-title">Panorama</span>
+		<span id="pano-overlay-coords"></span>
+		<button id="pano-close-btn" onclick="closePanoramaOverlay()">&#x2715; Close</button>
+	</div>
+	<div id="pano-inner">
+		<div id="pano-div"></div>
+		<div id="pano-scan-nav">
+			<button id="pano-btn-prev">&#8592; Prev</button>
+			<span id="pano-scan-label">Scan 1 / 1</span>
+			<button id="pano-btn-next">Next &#8594;</button>
+		</div>
+	</div>
+</div>
+
+<script type="importmap">
+{
+	"imports": {
+		"potree":           "../libs/potreenext/src/Potree.js",
+		"lazperf":          "../libs/potreenext/libs/laz-perf/laz-perf.js",
+		"toolbar":          "../libs/potreenext/src/modules/toolbar/toolbar.js",
+		"sidebar":          "../libs/potreenext/src/modules/sidebar/sidebar.js",
+		"BinaryHeap":       "../libs/potreenext/libs/BinaryHeap/BinaryHeap.js",
+		"tween":            "../libs/potreenext/libs/tween/tween.esm.js",
+		"range-select":     "../libs/potreenext/libs/range-select/RangeSelect.js",
+		"json5":            "../libs/potreenext/libs/json5/json5.js",
+		"proj4":            "../libs/potreenext/libs/proj4js/proj4-src.js",
+		"radix-sort-esm":   "../libs/potreenext/libs/webgpu-radix-sort/dist/esm/radix-sort-esm.js"
+	}
+}
+</script>
+
+<script type="module">
+
+	// WebGPU availability check
+	if (!navigator.gpu) {
+		document.getElementById("webgpu-error").style.display = "block";
+		document.getElementById("viewer-label").textContent = "Potree-Next — WebGPU (unavailable)";
+		throw new Error("WebGPU not supported");
+	}
+
+	import {Potree} from "potree";
+	import {Vector3, Vector4, Matrix4, Points, Mesh, geometries} from "potree";
+	import "range-select";
+
+	import {installToolbar} from "toolbar";
+	import {installSidebar} from "sidebar";
+	import {PotreeLoader} from "potree";
+
+	let canvas = document.getElementById("canvas");
+	let elPotree = document.getElementById("potree");
+	let potree = await Potree.init(canvas);
+	let {scene, controls} = potree;
+
+	installToolbar(potree.renderer.canvas, potree);
+	installSidebar(elPotree, potree).then(sidebar => {
+		window.sidebar = sidebar;
+	});
+
+	window.Potree = Potree;
+	window.potree = potree;
+	window.Vector3 = Vector3;
+
+	Potree.settings.edlEnabled    = true;
+	Potree.settings.dilateEnabled = false;
+	Potree.settings.hqsEnabled    = true;
+	Potree.settings.pointBudget   = 4_000_000;
+	Potree.settings.attribute     = "rgb";
+	Potree.settings.pointSize     = 2;
+	Potree.settings.minNodeSize   = 200;
+
+	Potree.events.onFrameStart(() => {
+		let report = Potree.renderer.createResourceReport();
+		document.getElementById("msg_dbg").textContent = report;
+	});
+
+	// PotreeLoader reads metadata.json (same PotreeConverter 2.x format as Potree 1.8)
+	PotreeLoader.load("/data/potree/haus-eggiwil/metadata.json").then(pointcloud => {
+		scene.root.children.push(pointcloud);
+		pointcloud.name = "Haus Eggiwil";
+		controls.zoomTo(pointcloud);
+	});
+
+	// ── Panorama viewer ──────────────────────────────────────────────────────
+	let panoViewer = null;
+	let panos = [];
+	let panoIdx = 0;
+
+	window.openPanorama = function(scan) {
+		const idx = panos.findIndex(p => p.id === scan.id);
+		panoIdx = idx >= 0 ? idx : 0;
+		document.getElementById('pano-overlay').classList.add('open');
+		loadPanoScan(panoIdx);
+	};
+
+	window.closePanoramaOverlay = function() {
+		if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
+		document.getElementById('pano-overlay').classList.remove('open');
+	};
+
+	function loadPanoScan(idx) {
+		panoIdx = idx;
+		const p = panos[idx];
+		document.getElementById('pano-overlay-title').textContent = p.label || `Scan ${idx + 1}`;
+		document.getElementById('pano-overlay-coords').textContent =
+			`X: ${p.x.toFixed(2)}  Y: ${p.y.toFixed(2)}  Z: ${p.z.toFixed(2)}`;
+		document.getElementById('pano-scan-label').textContent = `Scan ${idx + 1} / ${panos.length}`;
+		document.getElementById('pano-btn-prev').disabled = (idx === 0);
+		document.getElementById('pano-btn-next').disabled = (idx === panos.length - 1);
+		if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
+		panoViewer = pannellum.viewer('pano-div', {
+			type: 'equirectangular', panorama: p.path,
+			autoLoad: true, autoRotate: 0, compass: true,
+			northOffset: p.northOffset || 0,
+			hfov: 100, minHfov: 30, maxHfov: 150,
+			showControls: true, showZoomCtrl: true, showFullscreenCtrl: true,
+		});
+	}
+
+	document.getElementById('pano-btn-prev').addEventListener('click', () => {
+		if (panoIdx > 0) loadPanoScan(panoIdx - 1);
+	});
+	document.getElementById('pano-btn-next').addEventListener('click', () => {
+		if (panoIdx < panos.length - 1) loadPanoScan(panoIdx + 1);
+	});
+
+	// ── Scan markers ─────────────────────────────────────────────────────────
+	const markerData = [];
+
+	fetch("/data/panoramas/haus-eggiwil/metadata.json")
+		.then(r => r.json())
+		.then(meta => {
+			panos = meta.panoramas;
+			for (const scan of panos) {
+				const marker = new Mesh(scan.id, geometries.sphere);
+				marker.position.set(scan.x, scan.y, scan.z);
+				marker.scale.set(0.3, 0.3, 0.3);
+				scene.root.children.push(marker);
+				markerData.push({marker, scan});
+			}
+		});
+
+	// Click detection: project each marker to screen, find closest to click
+	// (Same approach as Potree 1.8 — avoids GPU pick system complexity)
+	const renderCanvas = potree.renderer.canvas;
+	let mouseDownPos = null;
+	renderCanvas.addEventListener('mousedown', (e) => {
+		mouseDownPos = {x: e.clientX, y: e.clientY};
+	});
+	renderCanvas.addEventListener('click', (e) => {
+		if (document.getElementById('pano-overlay').classList.contains('open')) return;
+		if (mouseDownPos && (Math.abs(e.clientX - mouseDownPos.x) > 5 || Math.abs(e.clientY - mouseDownPos.y) > 5)) return;
+		if (markerData.length === 0) return;
+
+		const rect = renderCanvas.getBoundingClientRect();
+		const clickX = e.clientX - rect.left;
+		const clickY = e.clientY - rect.top;
+		const w = rect.width;
+		const h = rect.height;
+		const cam = potree.camera;
+		const viewProj = new Matrix4().multiplyMatrices(cam.proj, cam.view);
+
+		let closest = null;
+		let closestDist = 20;
+
+		for (const {marker, scan} of markerData) {
+			const p = marker.position;
+			const clip = new Vector4(p.x, p.y, p.z, 1.0).applyMatrix4(viewProj);
+			if (clip.w <= 0) continue;
+			const nx = clip.x / clip.w;
+			const ny = clip.y / clip.w;
+			const sx = (nx + 1) / 2 * w;
+			const sy = (1 - ny) / 2 * h;
+			const d = Math.hypot(sx - clickX, sy - clickY);
+			if (d < closestDist) { closest = scan; closestDist = d; }
+		}
+
+		if (closest) openPanorama(closest);
+	});
+
+</script>
+
+</body>
+</html>

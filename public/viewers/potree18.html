@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+	<title>Potree 1.8 — Haus Eggiwil</title>
+	<link rel="stylesheet" href="/css/portal.css">
+	<link rel="stylesheet" href="../libs/potree18/build/potree.css">
+	<link rel="stylesheet" href="../libs/potree18/jquery-ui/jquery-ui.min.css">
+	<link rel="stylesheet" href="../libs/potree18/openlayers3/ol.css">
+	<link rel="stylesheet" href="../libs/potree18/spectrum/spectrum.css">
+	<link rel="stylesheet" href="../libs/potree18/jstree/themes/mixed/style.css">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+	<script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+	<style>
+		body { margin: 0; overflow: hidden; background: #111; }
+		header { position: relative; z-index: 100; }
+
+		#pano-overlay {
+			display: none; position: fixed; inset: 0; top: 56px;
+			flex-direction: column; background: #0d1117;
+			z-index: 200; border-top: 1px solid #30363d;
+		}
+		#pano-overlay.open { display: flex; }
+		#pano-overlay-bar {
+			display: flex; align-items: center; gap: 0.8rem;
+			padding: 0.4rem 0.8rem; background: #161b22;
+			border-bottom: 1px solid #30363d; flex-shrink: 0;
+			font-family: monospace; font-size: 0.8rem; color: #8b949e;
+		}
+		#pano-overlay-title { color: #f0883e; font-weight: 600; white-space: nowrap; }
+		#pano-overlay-coords { flex: 1; font-size: 0.72rem; }
+		#pano-close-btn {
+			background: none; border: 1px solid #30363d; color: #8b949e;
+			border-radius: 4px; padding: 0.15rem 0.5rem; cursor: pointer; font-size: 0.8rem;
+		}
+		#pano-close-btn:hover { background: #21262d; color: #e6edf3; border-color: #8b949e; }
+		#pano-inner { flex: 1; position: relative; overflow: hidden; }
+		#pano-div   { position: absolute; inset: 0; }
+		#pano-scan-nav {
+			position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+			display: flex; align-items: center; gap: 0.5rem; z-index: 10;
+			background: rgba(13,17,23,0.8); border: 1px solid #30363d;
+			border-radius: 6px; padding: 0.3rem 0.6rem;
+			font-family: monospace; font-size: 0.8rem; color: #8b949e;
+		}
+		#pano-scan-nav button {
+			background: none; border: 1px solid #30363d; color: #8b949e;
+			border-radius: 4px; padding: 0.1rem 0.4rem; cursor: pointer; font-size: 0.8rem;
+		}
+		#pano-scan-nav button:hover { background: #30363d; }
+		#pano-scan-nav button:disabled { opacity: 0.35; cursor: default; }
+	</style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <span class="logo-icon">&#9729;</span>
+      <span class="logo-text">Point Cloud Platform</span>
+    </div>
+    <nav>
+      <a href="/">Datasets</a>
+      <a href="/viewers/cesium.html">Cesium</a>
+      <a href="/viewers/splat.html">Splat</a>
+      <a href="/viewers/potree18.html" class="active">Potree 1.8</a>
+      <a href="/viewers/potreenext.html">Potree-Next</a>
+      <a href="/viewers/compare.html">Compare</a>
+    </nav>
+  </header>
+
+	<div class="potree_container" style="position:absolute;width:100%;height:calc(100% - 56px);left:0;top:56px;">
+		<div id="potree_render_area" style="background-image:url('../libs/potree18/build/resources/images/background.jpg');"></div>
+		<div id="potree_sidebar_container"></div>
+	</div>
+
+	<!-- Panorama overlay -->
+	<div id="pano-overlay">
+		<div id="pano-overlay-bar">
+			<span id="pano-overlay-title">Panorama</span>
+			<span id="pano-overlay-coords"></span>
+			<button id="pano-close-btn" onclick="closePanoramaOverlay()">&#x2715; Close</button>
+		</div>
+		<div id="pano-inner">
+			<div id="pano-div"></div>
+			<div id="pano-scan-nav">
+				<button id="pano-btn-prev">&#8592; Prev</button>
+				<span id="pano-scan-label">Scan 1 / 1</span>
+				<button id="pano-btn-next">Next &#8594;</button>
+			</div>
+		</div>
+	</div>
+
+	<script src="../libs/potree18/jquery/jquery-3.1.1.min.js"></script>
+	<script src="../libs/potree18/spectrum/spectrum.js"></script>
+	<script src="../libs/potree18/jquery-ui/jquery-ui.min.js"></script>
+	<script src="../libs/potree18/other/BinaryHeap.js"></script>
+	<script src="../libs/potree18/tween/tween.min.js"></script>
+	<script src="../libs/potree18/d3/d3.js"></script>
+	<script src="../libs/potree18/proj4/proj4.js"></script>
+	<script src="../libs/potree18/openlayers3/ol.js"></script>
+	<script src="../libs/potree18/i18next/i18next.js"></script>
+	<script src="../libs/potree18/jstree/jstree.js"></script>
+	<script src="../libs/potree18/build/potree.js"></script>
+	<script src="../libs/potree18/plasio/js/laslaz.js"></script>
+
+	<script type="module">
+		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
+
+		viewer.setEDLEnabled(true);
+		viewer.setFOV(60);
+		viewer.setPointBudget(2_000_000);
+		viewer.loadSettingsFromURL();
+		viewer.setBackground("gradient");
+
+		viewer.loadGUI(() => {
+			viewer.setLanguage('en');
+			$("#menu_tools").next().show();
+			$("#menu_clipping").next().show();
+			viewer.toggleSidebar();
+		});
+
+		// ── Panorama viewer ──────────────────────────────────────────────────
+		let panoViewer = null;
+		let panos = [];
+		let panoIdx = 0;
+
+		window.openPanorama = function(scan) {
+			const idx = panos.findIndex(p => p.id === scan.id);
+			panoIdx = idx >= 0 ? idx : 0;
+			document.getElementById('pano-overlay').classList.add('open');
+			loadPanoScan(panoIdx);
+		};
+
+		window.closePanoramaOverlay = function() {
+			if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
+			document.getElementById('pano-overlay').classList.remove('open');
+		};
+
+		function loadPanoScan(idx) {
+			panoIdx = idx;
+			const p = panos[idx];
+			document.getElementById('pano-overlay-title').textContent = p.label || `Scan ${idx + 1}`;
+			document.getElementById('pano-overlay-coords').textContent =
+				`X: ${p.x.toFixed(2)}  Y: ${p.y.toFixed(2)}  Z: ${p.z.toFixed(2)}`;
+			document.getElementById('pano-scan-label').textContent = `Scan ${idx + 1} / ${panos.length}`;
+			document.getElementById('pano-btn-prev').disabled = (idx === 0);
+			document.getElementById('pano-btn-next').disabled = (idx === panos.length - 1);
+			if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
+			panoViewer = pannellum.viewer('pano-div', {
+				type: 'equirectangular', panorama: p.path,
+				autoLoad: true, autoRotate: 0, compass: true,
+				northOffset: p.northOffset || 0,
+				hfov: 100, minHfov: 30, maxHfov: 150,
+				showControls: true, showZoomCtrl: true, showFullscreenCtrl: true,
+			});
+		}
+
+		document.getElementById('pano-btn-prev').addEventListener('click', () => {
+			if (panoIdx > 0) loadPanoScan(panoIdx - 1);
+		});
+		document.getElementById('pano-btn-next').addEventListener('click', () => {
+			if (panoIdx < panos.length - 1) loadPanoScan(panoIdx + 1);
+		});
+
+		// ── Point cloud + scan markers ────────────────────────────────────────
+		Potree.loadPointCloud("/data/potree/haus-eggiwil/metadata.json", "Haus Eggiwil", e => {
+			const scene = viewer.scene;
+			const pointcloud = e.pointcloud;
+
+			pointcloud.material.size = 1;
+			pointcloud.material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
+			pointcloud.material.shape = Potree.PointShape.SQUARE;
+			pointcloud.material.activeAttributeName = "rgba";
+
+			scene.addPointCloud(pointcloud);
+			viewer.fitToScreen();
+
+			fetch("/data/panoramas/haus-eggiwil/metadata.json")
+				.then(r => r.json())
+				.then(meta => {
+					panos = meta.panoramas;
+					const threeScene = viewer.scene.scene;
+					const markerData = panos.map(scan => {
+						// viewer.scene.scene uses LV95 world coordinates — no offset subtraction needed
+						const marker = Potree.Utils.debugSphere(
+							threeScene,
+							{x: scan.x, y: scan.y, z: scan.z},
+							0.3, 0xf0883e
+						);
+						return {marker, scan};
+					});
+
+					// Click detection: project each sphere center to screen, find closest to click
+					const canvas = viewer.renderer.domElement;
+					let mouseDownPos = null;
+					canvas.addEventListener('mousedown', (e) => {
+						mouseDownPos = {x: e.clientX, y: e.clientY};
+					});
+					canvas.addEventListener('click', (e) => {
+						if (document.getElementById('pano-overlay').classList.contains('open')) return;
+						// Ignore clicks that were actually drags
+						if (mouseDownPos && (Math.abs(e.clientX - mouseDownPos.x) > 5 || Math.abs(e.clientY - mouseDownPos.y) > 5)) return;
+
+						const rect = canvas.getBoundingClientRect();
+						const clickX = e.clientX - rect.left;
+						const clickY = e.clientY - rect.top;
+						const camera = viewer.scene.getActiveCamera();
+						const w = rect.width;
+						const h = rect.height;
+
+						let closest = null;
+						let closestDist = 20; // pixel threshold
+
+						for (const {marker, scan} of markerData) {
+							const pos = marker.position.clone();
+							pos.project(camera);
+							if (pos.z > 1 || pos.z < -1) continue;
+							const sx = (pos.x + 1) / 2 * w;
+							const sy = (1 - pos.y) / 2 * h;
+							const d = Math.hypot(sx - clickX, sy - clickY);
+							if (d < closestDist) { closest = scan; closestDist = d; }
+						}
+
+						if (closest) openPanorama(closest);
+					});
+				});
+		});
+	</script>
+</body>
+</html>
