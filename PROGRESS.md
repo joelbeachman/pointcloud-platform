@@ -476,6 +476,37 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-25 — Potree Measurement Tool Fixes + Toolbar Integration
+
+### Completed
+- **Point measurement tool** (both viewers)
+  - Potree-Next: imports `PointMeasure`; single click commits immediately; bridged via `PointMeasure`
+    (not `DistanceMeasure`); `'Point'` added to sidebar interceptor toolMap
+  - Potree 1.8: `doPoint()` added; `bridgeToPotree18` sets `showCoordinates = true` for point;
+    `/point\.svg/` pattern added to button interceptor
+  - `MTC` color map extended with `point: { hex: '#f0883e' }` in both viewers
+- **Measurements tab toggling closed on commit** (Potree-Next)
+  - Root cause: `bridgeToPotreeNext` always called `btn.click()` on the section button, which
+    toggled the tab closed if it was already open
+  - Fix: check `sidebar.elSectionContent.querySelector('#measurements_panel')` before clicking —
+    only open if measurements panel is not already visible
+- **Panorama measure bar cleanup** (both viewers)
+  - Distance/Horiz./Area tool-select buttons hidden on panorama open (`display: none`)
+  - Potree sidebar/toolbar is now the sole tool-selection interface; Floor offset + Clear remain
+  - Buttons restored to visible on panorama close
+- **Potree 1.8 button interception not firing** (bug fix)
+  - Root cause: graying code set `img.parentElement.style.pointerEvents = 'none'` on `li#tools`,
+    which disabled pointer events for ALL children including the non-grayed buttons
+  - Fix: removed the parent pointer-events assignment; grayed buttons retain `pointer-events: none`
+    on the `img` itself, which is sufficient to block their click handlers
+- **Potree-Next toolbar buttons** (`#potree_toolbar`)
+  - A second set of measurement buttons (`input.potree_toolbar_button`) exists in the viewer toolbar
+    alongside the sidebar, with titles "Point Measure", "Distance Measure", "Circle Measure"
+  - Extended `installPanoInterceptor` to also match `.potree_toolbar_button` with the additional
+    title mappings; both sidebar and toolbar buttons now activate panorama tools when pano is open
+
+---
+
 ## Pending / Planned
 
 ### High priority
