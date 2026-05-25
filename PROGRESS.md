@@ -275,34 +275,38 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
-## 2026-05-24 — Clip Box UX Fixes + "None" Mode
+## 2026-05-24–25 — Clip Box UX Fixes + Mode/Wireframe Redesign
 
 ### Completed
 - **"Untoggle to activate" bug fixed** (`cbApplyEditor`)
-  - Root cause: `cbApplyEditor` only called `applyActiveClipBox()` when `cb.enabled` was already true.
-    New boxes start as `enabled: false`, so Apply had no effect on first use.
+  - Root cause: `cbApplyEditor` only called `applyActiveClipBox()` when `cb.enabled` was already
+    true. New boxes start `enabled: false`, so Apply had no effect on first use.
   - Fix: Apply always sets `cb.enabled = true` (disabling other boxes first), then always calls
-    `applyActiveClipBox()`. No need to toggle the checkbox before clicking Apply.
-- **Clip stops when wireframe hidden bug fixed** (`cbBuildWireframe`, `cbSetEnabled`)
-  - Root cause: `cbSetEnabled(id, true)` always called `cbBuildWireframe`, and the only way to
-    hide the wireframe was to call `cbSetEnabled(id, false)`, which also disabled clipping.
-    Wireframe visibility and clipping state were fully coupled.
-  - Fix: Added `showWireframe` flag to clip box objects (default `true`). `cbBuildWireframe` returns
-    early if `cb.showWireframe === false`. `cbSetEnabled` only builds wireframe when flag allows it.
-    `applyActiveClipBox` reads only `cb.enabled` — unaffected by wireframe flag.
-- **"None" mode button added** (clip active, wireframe hidden)
-  - Third button `&#x25A1; None` in the mode row alongside Inside/Outside.
-  - Clicking None sets `cb.showWireframe = false` and clears the wireframe immediately;
-    clipping planes stay active using the last Inside/Outside mode.
-  - Clicking Inside or Outside sets `cb.showWireframe = true` and rebuilds the wireframe.
-  - `cbOpenEditor` syncs all three buttons correctly when re-opening the editor panel.
+    `applyActiveClipBox()`.
+- **Clipping decoupled from wireframe visibility** (`showWireframe` flag)
+  - Added `cb.showWireframe` (default `true`) to each clip box object.
+  - `cbBuildWireframe` returns early when `showWireframe === false`; clipping planes are driven
+    solely by `cb.enabled` — wireframe state has no effect on clipping.
+- **Mode button redesign** (`cb.inside` is now `true | false | null`)
+  - **Inside** — `cb.inside = true`; clips outside the box, shows interior
+  - **Outside** — `cb.inside = false`; clips inside the box, shows exterior
+  - **None** — `cb.inside = null`; no clipping planes applied, wireframe still visible (box is a
+    visual reference only). `applyActiveClipBox` returns early when `inside === null`.
+- **"Show box" toggle** — independent button in editor panel; hides/shows wireframe without
+  touching clipping state. Works in all three modes.
+- **Two-way wireframe sync** between editor panel and clip box list
+  - List checkbox now controls `cb.showWireframe` (wireframe visibility), not `cb.enabled`.
+    Dot opacity still reflects `cb.enabled` (clipping active) as a separate indicator.
+  - New `cbToggleWireframe(id, show)` function drives both: sets the flag, builds/clears wireframe,
+    updates the editor "Show box" button if that box is open in the editor.
+  - "Show box" button calls `renderClipBoxList()` after toggling to keep the list checkbox in sync.
+- List mode badge updated: ▣ Inside, □ Outside, ○ None.
 
 ---
 
 ## Pending / Planned
 
 ### High priority
-- [ ] Clip box: continue testing — some behaviours not yet working perfectly (reported by user)
 - [ ] Verify panorama images are equirectangular — scanner perspective JPEGs may need conversion before Pannellum can display them correctly
 - [ ] Update `scripts/restore_eggiswil.py` to use quaternion-derived `northOffset` formula (currently stores `rotZ_deg` directly)
 - [ ] Restore documentation folder contents (thesis assets, compiled PDF, figures)
