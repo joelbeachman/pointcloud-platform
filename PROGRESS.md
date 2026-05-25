@@ -304,6 +304,26 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-25 — Clip Box Interactive Gizmo Handles
+
+### Completed
+- **7 drag handles per clip box** (`public/viewers/cesium.html`)
+  - Shown only when the editor panel is open; removed on close
+  - **6 face handles** (colored by axis: red=±East, green=±North, blue=±Up) placed at face centres
+    — drag moves that face along its axis only; opposite face stays fixed; minimum box size 0.5 m
+  - **1 gold centre handle** — drag translates the entire box freely in 3D
+  - Handles use `CallbackProperty` positions → follow the box live during drag without manual update
+- **Drag math**: screen-aligned plane through the handle at mousedown; `rayPlane` intersection on
+  every mousemove; ENU delta projected onto constraint axis for face handles; full ENU delta for centre
+- **Camera lock**: `screenSpaceCameraController` all axes disabled during drag, restored on mouseup
+- **Live feedback**: wireframe, clipping planes, and editor input fields all update every mousemove
+- **Hover UX**: cursor → `grab`; gold tooltip label shows handle purpose ("Resize +North", "Move box", etc.)
+  Cursor → `grabbing` during drag. Handle clicks are suppressed from measurement / panorama logic.
+- **`cbEnuMatrix` cache**: ENU→ECEF matrix computed once in `initClipOrigin()`, shared by new
+  `cbEnuToEcef` / `cbEcefToEnu` helpers — avoids recomputing per-frame for each handle
+
+---
+
 ## Pending / Planned
 
 ### High priority
