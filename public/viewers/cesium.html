@@ -2395,17 +2395,21 @@
       const dotRight = px*rx + py*ry + pz*rz;
       const dotUp    = px*ux + py*uy + pz*uz;
 
-      if (dotFwd <= 0) return null;   // behind camera
+      const behind = dotFwd <= 0;
+      // Clamp to small positive value so behind-camera points project far off-canvas
+      // (continuous with the in-front projection) rather than being dropped.
+      // Canvas path clipping then handles the edge naturally for polygon fills.
+      const safeDotFwd = behind ? 0.05 : dotFwd;
 
       const tanH2 = Math.tan(hfov * toRad / 2);
       if (!tanH2 || !isFinite(tanH2)) return null;
 
       const cx = canvas.width / 2, cy = canvas.height / 2;
       const f  = cx / tanH2;
-      const x  = cx + f * dotRight / dotFwd;
-      const y  = cy - f * dotUp    / dotFwd;
+      const x  = cx + f * dotRight / safeDotFwd;
+      const y  = cy - f * dotUp    / safeDotFwd;
       if (!isFinite(x) || !isFinite(y)) return null;
-      return { x, y };
+      return { x, y, behind };
     }
 
     // Project an array of ECEF points to canvas coords.
@@ -2417,8 +2421,8 @@
         const yw = ecefToPanoYawPitch(ecef);
         if (!yw) return null;
         const pos = yawPitchToPanoCanvas(yw.yaw, yw.pitch);
-        if (!pos) return null; // behind camera
-        const vis = pos.x >= 0 && pos.x <= canvas.width && pos.y >= 0 && pos.y <= canvas.height;
+        if (!pos) return null;
+        const vis = !pos.behind && pos.x >= 0 && pos.x <= canvas.width && pos.y >= 0 && pos.y <= canvas.height;
         return { x: pos.x, y: pos.y, i, vis };
       }).filter(Boolean);
     }
