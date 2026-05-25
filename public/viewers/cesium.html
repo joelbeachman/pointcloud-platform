@@ -139,6 +139,12 @@
     }
     #pano-tooltip b { color: #f0883e; display: block; margin-bottom: 0.1rem; }
     #pano-tooltip span { color: #8b949e; }
+    #cb-handle-tip {
+      display: none; position: fixed; z-index: 50;
+      background: rgba(13,17,23,0.93); border: 1px solid #e3b341;
+      border-radius: 5px; padding: 0.2rem 0.5rem;
+      pointer-events: none; font-size: 0.72rem; color: #e6edf3; white-space: nowrap;
+    }
 
     /* ── Add-Layer modal ── */
     #modal-bg {
@@ -410,6 +416,7 @@
     <b id="pano-tip-label"></b>
     <span>Click to open panorama</span>
   </div>
+  <div id="cb-handle-tip"></div>
 
   <!-- Add Layer modal -->
   <div id="modal-bg">
@@ -604,13 +611,16 @@
     let allPanoEnts   = [];   // flat list for hit-testing
 
     // ── Clip Box state ─────────────────────────────────────────────────────────
-    let clipBoxList  = [];   // [{id, name, enabled, inside, xmin,xmax,ymin,ymax,zmin,zmax}]
-    let cbEditId     = null; // id of box currently open in editor panel
-    let cbOriginEcef = null; // ECEF position (for wireframe placement)
-    let cbOriginLV95 = null; // LV95 absolute centroid (for clip plane distances)
-    let cbRadius     = 10;
-    let cbBoxEdges   = {};   // id → [Cesium entities] wireframe
-    let cbCount      = 0;
+    let clipBoxList      = [];   // [{id, name, enabled, inside, showWireframe, xmin..zmax}]
+    let cbEditId         = null; // id of box currently open in editor panel
+    let cbOriginEcef     = null; // ECEF origin (for wireframe + handle placement)
+    let cbOriginLV95     = null; // LV95 absolute centroid (for clip plane distances)
+    let cbEnuMatrix      = null; // cached ENU→ECEF matrix at cbOriginEcef
+    let cbRadius         = 10;
+    let cbBoxEdges       = {};   // id → [Cesium entities] wireframe
+    let cbHandleEntities = {};   // id → [Cesium entities] gizmo handles
+    let cbDragState      = null; // active drag: {boxId,key,axis,isCenter,dragPlane,initHitEnu,initCb}
+    let cbCount          = 0;
 
     // ── Measurement coordinate helpers (ENU local ↔ ECEF) ─────────────────────
     function getRefMatrix() {
@@ -1785,6 +1795,11 @@
 
     handler.setInputAction(ev => {
       if (gcpPickMode) { gcpHandlePick(ev.position); return; }
+      // Don't pass handle clicks to measurement / panorama logic
+      if (cbEditId) {
+        const p = viewer.scene.pick(ev.position);
+        if (p?.id?._cbHandle) return;
+      }
       if (!activeTool) {
         const picked = viewer.scene.pick(ev.position);
         if (Cesium.defined(picked?.id) && allPanoEnts.includes(picked.id)) {
@@ -1829,6 +1844,29 @@
     }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
 
     handler.setInputAction(ev => {
+      // ── Clip box gizmo: drag takes full priority ───────────────────────────
+      if (cbDragState) {
+        cbDoDrag(ev.endPosition);
+        viewer.scene.canvas.style.cursor = 'grabbing';
+        return;
+      }
+      // ── Clip box gizmo: handle hover (only when no measurement tool active) ─
+      if (cbEditId && !activeTool) {
+        const hp = viewer.scene.pick(ev.endPosition);
+        if (hp?.id?._cbHandle) {
+          viewer.scene.canvas.style.cursor = 'grab';
+          const rect = viewer.scene.canvas.getBoundingClientRect();
+          const tip = document.getElementById('cb-handle-tip');
+          tip.textContent = CB_HANDLE_LABELS[hp.id._cbHandle.key] || '';
+          tip.style.display = 'block';
+          tip.style.left = (rect.left + ev.endPosition.x + 14) + 'px';
+          tip.style.top  = (rect.top  + ev.endPosition.y - 10) + 'px';
+          document.getElementById('pano-tooltip').style.display = 'none';
+          return;
+        }
+        document.getElementById('cb-handle-tip').style.display = 'none';
+      }
+
       // Rubber-band while measuring
       if (activeTool && curPts.length > 0) {
         const pos = pickPositionFallback(ev.endPosition);
@@ -1859,6 +1897,19 @@
       }
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
+    handler.setInputAction(ev => {
+      if (!cbEditId) return;
+      const picked = viewer.scene.pick(ev.position);
+      if (picked?.id?._cbHandle) {
+        cbStartDrag(picked.id._cbHandle, ev.position);
+        viewer.scene.canvas.style.cursor = 'grabbing';
+      }
+    }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+
+    handler.setInputAction(() => {
+      if (cbDragState) cbEndDrag();
+    }, Cesium.ScreenSpaceEventType.LEFT_UP);
+
     // ── Clip Box functions ────────────────────────────────────────────────────
 
     function initClipOrigin() {
@@ -1870,7 +1921,8 @@
         ? Cesium.Cartesian3.clone(ts._lv95ClipOriginEcef)
         : ts.boundingSphere.center.clone();
       cbOriginLV95 = ts._lv95ClipOriginLV95 || null;
-      cbRadius = ts.boundingSphere.radius;
+      cbRadius     = ts.boundingSphere.radius;
+      cbEnuMatrix  = Cesium.Transforms.eastNorthUpToFixedFrame(cbOriginEcef);
     }
 
     // Build 6 ClippingPlane objects for a clip box defined as ±metres from the dataset centroid.
@@ -1991,6 +2043,156 @@
       Object.keys(cbBoxEdges).forEach(cbClearWireframe);
     }
 
+    // ── Clip Box gizmo helpers ────────────────────────────────────────────────
+
+    // ENU offset → ECEF  (uses cached cbEnuMatrix)
+    function cbEnuToEcef(ex, ey, ez) {
+      const m = cbEnuMatrix;
+      return new Cesium.Cartesian3(
+        m[0]*ex + m[4]*ey + m[8]*ez  + m[12],
+        m[1]*ex + m[5]*ey + m[9]*ez  + m[13],
+        m[2]*ex + m[6]*ey + m[10]*ez + m[14],
+      );
+    }
+
+    // ECEF → ENU offset  (cbEnuMatrix is orthonormal so inverse = transpose)
+    function cbEcefToEnu(ecef) {
+      const m = cbEnuMatrix;
+      const dx = ecef.x - m[12], dy = ecef.y - m[13], dz = ecef.z - m[14];
+      return new Cesium.Cartesian3(
+        dx*m[0] + dy*m[1] + dz*m[2],
+        dx*m[4] + dy*m[5] + dz*m[6],
+        dx*m[8] + dy*m[9] + dz*m[10],
+      );
+    }
+
+    // ECEF position of a handle given key ('x+','x-','y+','y-','z+','z-','center')
+    function cbHandleEcef(cb, key) {
+      const { xmin:x0, xmax:x1, ymin:y0, ymax:y1, zmin:z0, zmax:z1 } = cb;
+      const cx = (x0+x1)/2, cy = (y0+y1)/2, cz = (z0+z1)/2;
+      const P = {
+        'x+': [x1,cy,cz], 'x-': [x0,cy,cz],
+        'y+': [cx,y1,cz], 'y-': [cx,y0,cz],
+        'z+': [cx,cy,z1], 'z-': [cx,cy,z0],
+        'center': [cx,cy,cz],
+      };
+      return cbEnuToEcef(...P[key]);
+    }
+
+    const CB_GIZMO_COLORS = {
+      x: Cesium.Color.fromCssColorString('#f85149'),
+      y: Cesium.Color.fromCssColorString('#3fb950'),
+      z: Cesium.Color.fromCssColorString('#58a6ff'),
+      center: Cesium.Color.fromCssColorString('#e3b341'),
+    };
+    const CB_HANDLE_LABELS = {
+      'x+': 'Resize +East', 'x-': 'Resize −East',
+      'y+': 'Resize +North', 'y-': 'Resize −North',
+      'z+': 'Resize +Up',   'z-': 'Resize −Down',
+      'center': 'Move box',
+    };
+    const CB_HANDLE_DEFS = [
+      { key:'x+', axis:'x' }, { key:'x-', axis:'x' },
+      { key:'y+', axis:'y' }, { key:'y-', axis:'y' },
+      { key:'z+', axis:'z' }, { key:'z-', axis:'z' },
+      { key:'center', axis:null },
+    ];
+
+    function cbBuildHandles(id) {
+      cbClearHandles(id);
+      const cb = clipBoxList.find(x => x.id === id);
+      if (!cb || !cbEnuMatrix) return;
+      cbHandleEntities[id] = CB_HANDLE_DEFS.map(({ key, axis }) => {
+        const isCenter = key === 'center';
+        const color = isCenter ? CB_GIZMO_COLORS.center : CB_GIZMO_COLORS[axis];
+        const ent = viewer.entities.add({
+          position: new Cesium.CallbackProperty(() => {
+            const c = clipBoxList.find(x => x.id === id);
+            return (c && cbEnuMatrix) ? cbHandleEcef(c, key) : Cesium.Cartesian3.ZERO;
+          }, false),
+          point: {
+            pixelSize: isCenter ? 16 : 12,
+            color,
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: isCenter ? 2.5 : 1.5,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            heightReference: Cesium.HeightReference.NONE,
+          },
+        });
+        ent._cbHandle = { boxId: id, key, axis, isCenter };
+        return ent;
+      });
+    }
+
+    function cbClearHandles(id) {
+      (cbHandleEntities[id] || []).forEach(e => viewer.entities.remove(e));
+      delete cbHandleEntities[id];
+    }
+
+    function cbSyncEditorInputs(cb) {
+      if (!cbEditId || cbEditId !== cb.id) return;
+      document.getElementById('cb-xmin').value = cb.xmin.toFixed(2);
+      document.getElementById('cb-xmax').value = cb.xmax.toFixed(2);
+      document.getElementById('cb-ymin').value = cb.ymin.toFixed(2);
+      document.getElementById('cb-ymax').value = cb.ymax.toFixed(2);
+      document.getElementById('cb-zmin').value = cb.zmin.toFixed(2);
+      document.getElementById('cb-zmax').value = cb.zmax.toFixed(2);
+    }
+
+    function cbStartDrag(hInfo, screenPos) {
+      const cb = clipBoxList.find(x => x.id === hInfo.boxId);
+      if (!cb || !cbEnuMatrix) return;
+      const handleEcef  = cbHandleEcef(cb, hInfo.key);
+      const planeNormal = Cesium.Cartesian3.negate(viewer.camera.direction, new Cesium.Cartesian3());
+      const dragPlane   = Cesium.Plane.fromPointNormal(handleEcef, planeNormal);
+      const ray         = viewer.camera.getPickRay(screenPos);
+      const hitEcef     = Cesium.IntersectionTests.rayPlane(ray, dragPlane);
+      if (!hitEcef) return;
+      cbDragState = {
+        boxId: hInfo.boxId, key: hInfo.key, axis: hInfo.axis, isCenter: hInfo.isCenter,
+        dragPlane, initHitEnu: cbEcefToEnu(hitEcef), initCb: { ...cb },
+      };
+      const ctrl = viewer.scene.screenSpaceCameraController;
+      ctrl.enableRotate = ctrl.enableTranslate = ctrl.enableZoom = ctrl.enableTilt = ctrl.enableLook = false;
+    }
+
+    function cbDoDrag(screenPos) {
+      if (!cbDragState || !cbEnuMatrix) return;
+      const { boxId, key, axis, isCenter, dragPlane, initHitEnu, initCb } = cbDragState;
+      const cb = clipBoxList.find(x => x.id === boxId);
+      if (!cb) return;
+      const ray     = viewer.camera.getPickRay(screenPos);
+      const hitEcef = Cesium.IntersectionTests.rayPlane(ray, dragPlane);
+      if (!hitEcef) return;
+      const hit = cbEcefToEnu(hitEcef);
+      const dx = hit.x - initHitEnu.x, dy = hit.y - initHitEnu.y, dz = hit.z - initHitEnu.z;
+      if (isCenter) {
+        cb.xmin = initCb.xmin+dx; cb.xmax = initCb.xmax+dx;
+        cb.ymin = initCb.ymin+dy; cb.ymax = initCb.ymax+dy;
+        cb.zmin = initCb.zmin+dz; cb.zmax = initCb.zmax+dz;
+      } else {
+        const delta = axis === 'x' ? dx : axis === 'y' ? dy : dz;
+        const MIN_SIZE = 0.5;
+        if (key.endsWith('+')) {
+          cb[axis+'max'] = Math.max(initCb[axis+'min'] + MIN_SIZE, initCb[axis+'max'] + delta);
+        } else {
+          cb[axis+'min'] = Math.min(initCb[axis+'max'] - MIN_SIZE, initCb[axis+'min'] + delta);
+        }
+      }
+      cbSyncEditorInputs(cb);
+      if (cb.showWireframe !== false) cbBuildWireframe(boxId);
+      if (cb.enabled) applyActiveClipBox();
+    }
+
+    function cbEndDrag() {
+      if (!cbDragState) return;
+      cbDragState = null;
+      const ctrl = viewer.scene.screenSpaceCameraController;
+      ctrl.enableRotate = ctrl.enableTranslate = ctrl.enableZoom = ctrl.enableTilt = ctrl.enableLook = true;
+      viewer.scene.canvas.style.cursor = '';
+    }
+
+
     // Render the left-panel clip box list
     function renderClipBoxList() {
       const el = document.getElementById('clipbox-list');
@@ -2105,12 +2307,16 @@
       document.getElementById('cb-wf-btn').classList.toggle('active', cb.showWireframe !== false);
       document.getElementById('clipbox-panel').classList.add('open');
       cbBuildWireframe(id);
+      cbBuildHandles(id);
     }
 
     function cbCloseEditor() {
       const id = cbEditId;
       cbEditId = null;
+      cbEndDrag();
+      cbClearHandles(id);
       document.getElementById('clipbox-panel').classList.remove('open');
+      document.getElementById('cb-handle-tip').style.display = 'none';
       // Remove wireframe if box is not enabled
       if (id) {
         const cb = clipBoxList.find(x => x.id === id);
