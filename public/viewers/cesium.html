@@ -474,6 +474,17 @@
       <span class="cb-lbl">Max</span><input class="cb-inp" id="cb-zmax" type="number" step="0.5" value="5">
     </div>
     <hr class="cb-sep">
+    <div class="cb-row">
+      <span class="cb-axis">&#x27F3;</span>
+      <span class="cb-lbl" style="color:#f85149">X°</span><input class="cb-inp" id="cb-rotx" type="number" step="1" value="0">
+      <span class="cb-lbl" style="color:#3fb950">Y°</span><input class="cb-inp" id="cb-roty" type="number" step="1" value="0">
+    </div>
+    <div class="cb-row">
+      <span class="cb-axis"></span>
+      <span class="cb-lbl" style="color:#58a6ff">Z°</span><input class="cb-inp" id="cb-rotz" type="number" step="1" value="0">
+      <span></span><span></span>
+    </div>
+    <hr class="cb-sep">
     <div class="cb-mode">
       <button class="cb-mbtn active" id="cb-inside-btn">&#x25A3; Inside</button>
       <button class="cb-mbtn" id="cb-outside-btn">&#x25A2; Outside</button>
@@ -620,6 +631,7 @@
     let cbRadius         = 10;
     let cbBoxEdges       = {};   // id → [Cesium entities] wireframe
     let cbHandleEntities = {};   // id → [Cesium entities] gizmo handles
+    let cbRotRingEntities = {};  // id → [3 polyline entities] rotation rings
     let cbDragState      = null; // active drag: {boxId,key,axis,isCenter,dragPlane,initHitEnu,initCb}
     let cbCount          = 0;
 
@@ -1567,7 +1579,7 @@
 
         // Init clip origin from first layer; re-apply any active clip box
         if (!cbOriginEcef) initClipOrigin();
-        if (clipBoxList.some(x => x.enabled)) applyActiveClipBox();
+        if (clipBoxList.some(x => x.enabled)) applyClipBoxes();
       } catch (err) {
         console.error('Layer load error:', err);
         layer.error = err.message || 'Failed to load';
@@ -1774,6 +1786,14 @@
         if (cbEditId) cbBuildWireframe(cbEditId);
       });
     });
+    ['cb-rotx','cb-roty','cb-rotz'].forEach(eid => {
+      document.getElementById(eid).addEventListener('input', () => {
+        cbReadEditor();
+        if (cbEditId) cbBuildWireframe(cbEditId);
+        const cb = clipBoxList.find(x => x.id === cbEditId);
+        if (cb?.enabled) applyClipBoxes();
+      });
+    });
 
     // ── Keyboard shortcuts ─────────────────────────────────────────────────────
     document.addEventListener('keydown', e => {
@@ -1865,6 +1885,16 @@
           document.getElementById('pano-tooltip').style.display = 'none';
           return;
         }
+        if (hp?.id?._cbRotRing) {
+          viewer.scene.canvas.style.cursor = 'grab';
+          const rect = viewer.scene.canvas.getBoundingClientRect();
+          const tip = document.getElementById('cb-handle-tip');
+          tip.textContent = CB_ROT_LABELS[hp.id._cbRotRing.rotAxis] || '';
+          tip.style.display = 'block';
+          tip.style.left = (rect.left + ev.endPosition.x + 14) + 'px';
+          tip.style.top  = (rect.top  + ev.endPosition.y - 10) + 'px';
+          return;
+        }
         document.getElementById('cb-handle-tip').style.display = 'none';
       }
 
@@ -1903,6 +1933,9 @@
       const picked = viewer.scene.pick(ev.position);
       if (picked?.id?._cbHandle) {
         cbStartDrag(picked.id._cbHandle, ev.position);
+        viewer.scene.canvas.style.cursor = 'grabbing';
+      } else if (picked?.id?._cbRotRing) {
+        cbStartRotDrag(picked.id._cbRotRing, ev.position);
         viewer.scene.canvas.style.cursor = 'grabbing';
       }
     }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
@@ -1950,53 +1983,60 @@
     //   with intersection mode a point is only clipped when ALL planes clip it.
     function cbBuildPlanes(cb) {
       const { xmin, xmax, ymin, ymax, zmin, zmax, inside } = cb;
-      if (!cbOriginLV95) { console.error('[clipbox] cbOriginLV95 is null — dataset not LV95?'); return []; }
+      if (!cbOriginLV95) { console.error('[clipbox] cbOriginLV95 is null'); return []; }
+      const R  = cbRotMatrix(cb);
+      const bx = (xmin+xmax)/2, by = (ymin+ymax)/2, bz = (zmin+zmax)/2; // box center (ENU)
+      const hx = (xmax-xmin)/2, hy = (ymax-ymin)/2, hz = (zmax-zmin)/2; // half-extents
+      // Column k of R (k=0,1,2): R_col_k = (R[k], R[3+k], R[6+k])
+      // dot(R_col_k, C) where C = box center:
+      const dc0 = R[0]*bx + R[3]*by + R[6]*bz;
+      const dc1 = R[1]*bx + R[4]*by + R[7]*bz;
+      const dc2 = R[2]*bx + R[5]*by + R[8]*bz;
       if (inside) {
-        // Outward normals: each plane clips one exterior face.
-        // Clip east exterior:  −Erel + xmax < 0  →  Erel > xmax
-        // Clip west exterior:   Erel − xmin < 0  →  Erel < xmin  (xmin < 0)
+        // Outward normals (negate col), unionClippingRegions:true → clip exterior → show interior
         return [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1,  0,  0),  xmax),   // east exterior
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1,  0,  0), -xmin),   // west exterior
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, -1,  0),  ymax),   // north exterior
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  1,  0), -ymin),   // south exterior
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0, -1),  zmax),   // top exterior
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0,  1), -zmin),   // bottom exterior
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-R[0], -R[3], -R[6]),  dc0 + hx),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( R[0],  R[3],  R[6]),  hx - dc0),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-R[1], -R[4], -R[7]),  dc1 + hy),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( R[1],  R[4],  R[7]),  hy - dc1),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-R[2], -R[5], -R[8]),  dc2 + hz),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( R[2],  R[5],  R[8]),  hz - dc2),
         ];
       } else {
-        // Inward normals: each plane clips one interior half-space.
-        // Clip interior east:   Erel − xmax < 0  →  Erel < xmax
-        // Clip interior west:  −Erel + xmin < 0  →  Erel > xmin  (xmin < 0)
+        // Inward normals, unionClippingRegions:false → clip only interior
         return [
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 1,  0,  0), -xmax),   // interior east
-          new Cesium.ClippingPlane(new Cesium.Cartesian3(-1,  0,  0),  xmin),   // interior west
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  1,  0), -ymax),   // interior north
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0, -1,  0),  ymin),   // interior south
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0,  1), -zmax),   // interior top
-          new Cesium.ClippingPlane(new Cesium.Cartesian3( 0,  0, -1),  zmin),   // interior bottom
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( R[0],  R[3],  R[6]), -dc0 - hx),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-R[0], -R[3], -R[6]),  dc0 - hx),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( R[1],  R[4],  R[7]), -dc1 - hy),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-R[1], -R[4], -R[7]),  dc1 - hy),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3( R[2],  R[5],  R[8]), -dc2 - hz),
+          new Cesium.ClippingPlane(new Cesium.Cartesian3(-R[2], -R[5], -R[8]),  dc2 - hz),
         ];
       }
     }
 
-    // Apply the first enabled clip box to all tilesets (one collection per tileset).
-    function applyActiveClipBox() {
-      const active = clipBoxList.find(x => x.enabled);
-      if (!active || !cbOriginLV95 || active.inside === null) {
+    // Apply all enabled clip boxes to all tilesets (combined into one collection per tileset).
+    function applyClipBoxes() {
+      const enabled = clipBoxList.filter(x => x.enabled && x.inside !== null);
+      if (!enabled.length || !cbOriginLV95) {
         layers.forEach(l => {
           if (l.tileset) l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({ enabled: false });
         });
         return;
       }
-      // planes.modelMatrix = translation to LV95 centroid so that plane distances are
-      // expressed in metres relative to the centroid (ENU-relative space).
+      const insideBoxes  = enabled.filter(x => x.inside === true);
+      const outsideBoxes = enabled.filter(x => x.inside === false);
+      const active  = insideBoxes.length ? insideBoxes : outsideBoxes;
+      const useUnion = insideBoxes.length > 0; // true=inside (union=clip exterior), false=outside
+      const allPlanes = active.flatMap(cb => cbBuildPlanes(cb));
       const { x: E0, y: N0, z: H0 } = cbOriginLV95;
       const planesMM = Cesium.Matrix4.fromTranslation(new Cesium.Cartesian3(E0, N0, H0));
       layers.forEach(l => {
         if (!l.tileset) return;
         l.tileset.clippingPlanes = new Cesium.ClippingPlaneCollection({
-          planes: cbBuildPlanes(active),
+          planes: allPlanes,
           modelMatrix: planesMM,
-          unionClippingRegions: active.inside,
+          unionClippingRegions: useUnion,
           enabled: true,
         });
       });
@@ -2009,12 +2049,13 @@
       const cb = clipBoxList.find(x => x.id === id);
       if (!cb) return;
       if (cb.showWireframe === false) return;
-      const enuMat = Cesium.Transforms.eastNorthUpToFixedFrame(cbOriginEcef);
-      const toEcef = (x,y,z) => {
-        const r = Cesium.Matrix4.multiplyByPoint(enuMat, new Cesium.Cartesian3(x,y,z), new Cesium.Cartesian3());
-        return r;
-      };
+      const R  = cbRotMatrix(cb);
       const { xmin:x0, xmax:x1, ymin:y0, ymax:y1, zmin:z0, zmax:z1 } = cb;
+      const bcx = (x0+x1)/2, bcy = (y0+y1)/2, bcz = (z0+z1)/2;
+      const toEcef = (lx, ly, lz) => {
+        const r = cbRotLocal(R, lx-bcx, ly-bcy, lz-bcz);
+        return cbEnuToEcef(bcx + r.x, bcy + r.y, bcz + r.z);
+      };
       const co = [
         toEcef(x0,y0,z0), toEcef(x1,y0,z0), toEcef(x1,y1,z0), toEcef(x0,y1,z0),
         toEcef(x0,y0,z1), toEcef(x1,y0,z1), toEcef(x1,y1,z1), toEcef(x0,y1,z1),
@@ -2067,17 +2108,44 @@
       );
     }
 
+    // Build 3×3 row-major rotation matrix R = Rz·Ry·Rx from box angles (degrees)
+    function cbRotMatrix(cb) {
+      const rx = (cb.rotX || 0) * Math.PI / 180;
+      const ry = (cb.rotY || 0) * Math.PI / 180;
+      const rz = (cb.rotZ || 0) * Math.PI / 180;
+      const cx = Math.cos(rx), sx = Math.sin(rx);
+      const cy = Math.cos(ry), sy = Math.sin(ry);
+      const cz = Math.cos(rz), sz = Math.sin(rz);
+      // row-major: R[i*3+j] = element at row i, column j
+      return [
+        cy*cz,              sx*sy*cz - cx*sz,  cx*sy*cz + sx*sz,
+        cy*sz,              sx*sy*sz + cx*cz,  cx*sy*sz - sx*cz,
+        -sy,                sx*cy,             cx*cy,
+      ];
+    }
+    // Rotate local offset by R (row-major 3×3), returning {x,y,z} in ENU
+    function cbRotLocal(R, ox, oy, oz) {
+      return {
+        x: R[0]*ox + R[1]*oy + R[2]*oz,
+        y: R[3]*ox + R[4]*oy + R[5]*oz,
+        z: R[6]*ox + R[7]*oy + R[8]*oz,
+      };
+    }
+
     // ECEF position of a handle given key ('x+','x-','y+','y-','z+','z-','center')
     function cbHandleEcef(cb, key) {
       const { xmin:x0, xmax:x1, ymin:y0, ymax:y1, zmin:z0, zmax:z1 } = cb;
-      const cx = (x0+x1)/2, cy = (y0+y1)/2, cz = (z0+z1)/2;
+      const bcx=(x0+x1)/2, bcy=(y0+y1)/2, bcz=(z0+z1)/2;
       const P = {
-        'x+': [x1,cy,cz], 'x-': [x0,cy,cz],
-        'y+': [cx,y1,cz], 'y-': [cx,y0,cz],
-        'z+': [cx,cy,z1], 'z-': [cx,cy,z0],
-        'center': [cx,cy,cz],
+        'x+': [x1,bcy,bcz], 'x-': [x0,bcy,bcz],
+        'y+': [bcx,y1,bcz], 'y-': [bcx,y0,bcz],
+        'z+': [bcx,bcy,z1], 'z-': [bcx,bcy,z0],
+        'center': [bcx,bcy,bcz],
       };
-      return cbEnuToEcef(...P[key]);
+      const [lx,ly,lz] = P[key];
+      const R = cbRotMatrix(cb);
+      const r = cbRotLocal(R, lx-bcx, ly-bcy, lz-bcz);
+      return cbEnuToEcef(bcx+r.x, bcy+r.y, bcz+r.z);
     }
 
     const CB_GIZMO_COLORS = {
@@ -2091,6 +2159,12 @@
       'y+': 'Resize +North', 'y-': 'Resize −North',
       'z+': 'Resize +Up',   'z-': 'Resize −Down',
       'center': 'Move box',
+    };
+    const CB_ROT_LABELS = { x: 'Rotate X (East)', y: 'Rotate Y (North)', z: 'Rotate Z (Up)' };
+    const CB_ROT_COLORS = {
+      x: Cesium.Color.fromCssColorString('#f85149').withAlpha(0.8),
+      y: Cesium.Color.fromCssColorString('#3fb950').withAlpha(0.8),
+      z: Cesium.Color.fromCssColorString('#58a6ff').withAlpha(0.8),
     };
     const CB_HANDLE_DEFS = [
       { key:'x+', axis:'x' }, { key:'x-', axis:'x' },
@@ -2123,11 +2197,58 @@
         ent._cbHandle = { boxId: id, key, axis, isCenter };
         return ent;
       });
+      cbBuildRotRings(id);
     }
 
     function cbClearHandles(id) {
       (cbHandleEntities[id] || []).forEach(e => viewer.entities.remove(e));
       delete cbHandleEntities[id];
+      cbClearRotRings(id);
+    }
+
+    function cbBuildRotRings(id) {
+      cbClearRotRings(id);
+      const cb = clipBoxList.find(x => x.id === id);
+      if (!cb || !cbEnuMatrix) return;
+      const N = 40; // polygon segments
+      cbRotRingEntities[id] = ['x','y','z'].map(axis => {
+        const ent = viewer.entities.add({
+          polyline: {
+            positions: new Cesium.CallbackProperty(() => {
+              const c = clipBoxList.find(x => x.id === id);
+              if (!c || !cbEnuMatrix) return [];
+              const bcx=(c.xmin+c.xmax)/2, bcy=(c.ymin+c.ymax)/2, bcz=(c.zmin+c.zmax)/2;
+              const hx=(c.xmax-c.xmin)/2, hy=(c.ymax-c.ymin)/2, hz=(c.zmax-c.zmin)/2;
+              const r = axis==='x' ? Math.max(0.5, Math.sqrt(hy*hy+hz*hz)*1.35)
+                      : axis==='y' ? Math.max(0.5, Math.sqrt(hx*hx+hz*hz)*1.35)
+                      :               Math.max(0.5, Math.sqrt(hx*hx+hy*hy)*1.35);
+              const R = cbRotMatrix(c);
+              const pts = [];
+              for (let i = 0; i <= N; i++) {
+                const t = (2*Math.PI*i)/N;
+                let lx,ly,lz;
+                if      (axis==='x') { lx=0;          ly=r*Math.cos(t); lz=r*Math.sin(t); }
+                else if (axis==='y') { lx=r*Math.cos(t); ly=0;          lz=r*Math.sin(t); }
+                else                 { lx=r*Math.cos(t); ly=r*Math.sin(t); lz=0;          }
+                const ro = cbRotLocal(R, lx, ly, lz);
+                pts.push(cbEnuToEcef(bcx+ro.x, bcy+ro.y, bcz+ro.z));
+              }
+              return pts;
+            }, false),
+            width: 3,
+            material: new Cesium.ColorMaterialProperty(CB_ROT_COLORS[axis]),
+            depthFailMaterial: new Cesium.ColorMaterialProperty(CB_ROT_COLORS[axis].withAlpha(0.3)),
+            clampToGround: false,
+          }
+        });
+        ent._cbRotRing = { boxId: id, rotAxis: axis };
+        return ent;
+      });
+    }
+
+    function cbClearRotRings(id) {
+      (cbRotRingEntities[id] || []).forEach(e => viewer.entities.remove(e));
+      delete cbRotRingEntities[id];
     }
 
     function cbSyncEditorInputs(cb) {
@@ -2138,6 +2259,11 @@
       document.getElementById('cb-ymax').value = cb.ymax.toFixed(2);
       document.getElementById('cb-zmin').value = cb.zmin.toFixed(2);
       document.getElementById('cb-zmax').value = cb.zmax.toFixed(2);
+      if (document.getElementById('cb-rotx')) {
+        document.getElementById('cb-rotx').value = (cb.rotX||0).toFixed(1);
+        document.getElementById('cb-roty').value = (cb.rotY||0).toFixed(1);
+        document.getElementById('cb-rotz').value = (cb.rotZ||0).toFixed(1);
+      }
     }
 
     function cbStartDrag(hInfo, screenPos) {
@@ -2158,7 +2284,9 @@
     }
 
     function cbDoDrag(screenPos) {
-      if (!cbDragState || !cbEnuMatrix) return;
+      if (!cbDragState) return;
+      if (cbDragState.type === 'rotate') { cbDoRotDrag(screenPos); return; }
+      if (!cbEnuMatrix) return;
       const { boxId, key, axis, isCenter, dragPlane, initHitEnu, initCb } = cbDragState;
       const cb = clipBoxList.find(x => x.id === boxId);
       if (!cb) return;
@@ -2182,7 +2310,37 @@
       }
       cbSyncEditorInputs(cb);
       if (cb.showWireframe !== false) cbBuildWireframe(boxId);
-      if (cb.enabled) applyActiveClipBox();
+      if (cb.enabled) applyClipBoxes();
+    }
+
+    function cbStartRotDrag(rInfo, screenPos) {
+      const cb = clipBoxList.find(x => x.id === rInfo.boxId);
+      if (!cb || !cbEnuMatrix) return;
+      const bcx=(cb.xmin+cb.xmax)/2, bcy=(cb.ymin+cb.ymax)/2, bcz=(cb.zmin+cb.zmax)/2;
+      const sc = viewer.scene.cartesianToCanvasCoordinates(cbEnuToEcef(bcx,bcy,bcz), new Cesium.Cartesian2());
+      if (!sc) return;
+      cbDragState = {
+        type: 'rotate', boxId: rInfo.boxId, rotAxis: rInfo.rotAxis,
+        screenCenter: { x: sc.x, y: sc.y },
+        initAngle: Math.atan2(screenPos.y - sc.y, screenPos.x - sc.x),
+        initRotX: cb.rotX||0, initRotY: cb.rotY||0, initRotZ: cb.rotZ||0,
+      };
+      const ctrl = viewer.scene.screenSpaceCameraController;
+      ctrl.enableRotate = ctrl.enableTranslate = ctrl.enableZoom = ctrl.enableTilt = ctrl.enableLook = false;
+    }
+
+    function cbDoRotDrag(screenPos) {
+      const { boxId, rotAxis, screenCenter, initAngle, initRotX, initRotY, initRotZ } = cbDragState;
+      const cb = clipBoxList.find(x => x.id === boxId);
+      if (!cb) return;
+      const cur = Math.atan2(screenPos.y - screenCenter.y, screenPos.x - screenCenter.x);
+      const delta = (cur - initAngle) * 180 / Math.PI;
+      if (rotAxis==='x') cb.rotX = initRotX + delta;
+      else if (rotAxis==='y') cb.rotY = initRotY + delta;
+      else cb.rotZ = initRotZ + delta;
+      cbSyncEditorInputs(cb);
+      if (cb.showWireframe !== false) cbBuildWireframe(boxId);
+      if (cb.enabled) applyClipBoxes();
     }
 
     function cbEndDrag() {
@@ -2205,7 +2363,9 @@
         <div class="layer-item">
           <input type="checkbox" class="layer-vis" ${cb.showWireframe !== false ? 'checked' : ''}
             data-cbid="${cb.id}" style="--lc:#e3b341" title="Show wireframe">
-          <div class="layer-dot" style="background:#e3b341;opacity:${cb.enabled?1:0.4}"></div>
+          <button class="layer-dot cb-enabled-toggle"
+            style="background:#e3b341;opacity:${cb.enabled?1:0.35};border:none;cursor:pointer;border-radius:50%;width:10px;height:10px;padding:0;margin:0 2px"
+            data-cbid="${cb.id}" title="Toggle active clipping"></button>
           <span class="layer-name">${cb.name}
             <span style="color:#484f58;font-size:0.68rem">${cb.inside === null ? '○' : cb.inside ? '▣' : '□'}</span>
           </span>
@@ -2215,6 +2375,13 @@
       `).join('');
       el.querySelectorAll('.layer-vis').forEach(ck =>
         ck.addEventListener('change', () => cbToggleWireframe(ck.dataset.cbid, ck.checked))
+      );
+      el.querySelectorAll('.cb-enabled-toggle').forEach(btn =>
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.cbid;
+          const cb = clipBoxList.find(x => x.id === id);
+          if (cb) cbSetEnabled(id, !cb.enabled);
+        })
       );
       el.querySelectorAll('.layer-fly').forEach(btn =>
         btn.addEventListener('click', () => cbOpenEditor(btn.dataset.cbid))
@@ -2236,10 +2403,6 @@
     }
 
     function cbSetEnabled(id, enabled) {
-      // Only one box active at a time
-      clipBoxList.forEach(x => {
-        if (x.id !== id && enabled) { x.enabled = false; cbClearWireframe(x.id); }
-      });
       const cb = clipBoxList.find(x => x.id === id);
       if (!cb) return;
       cb.enabled = enabled;
@@ -2249,15 +2412,17 @@
         // Keep wireframe if currently being edited
         if (cbEditId !== id) cbClearWireframe(id);
       }
-      applyActiveClipBox();
+      applyClipBoxes();
       renderClipBoxList();
     }
 
     function cbDelete(id) {
       cbClearWireframe(id);
+      cbClearHandles(id);
+      cbClearRotRings(id);
       clipBoxList = clipBoxList.filter(x => x.id !== id);
       if (cbEditId === id) cbCloseEditor();
-      applyActiveClipBox();
+      applyClipBoxes();
       renderClipBoxList();
     }
 
@@ -2274,6 +2439,7 @@
         xmin: -r, xmax: r,
         ymin: -r, ymax: r,
         zmin: -r, zmax: r,
+        rotX: 0, rotY: 0, rotZ: 0,
       };
       clipBoxList.push(cb);
       renderClipBoxList();
@@ -2290,6 +2456,9 @@
       cb.ymax = parseFloat(document.getElementById('cb-ymax').value) || 0;
       cb.zmin = parseFloat(document.getElementById('cb-zmin').value) || 0;
       cb.zmax = parseFloat(document.getElementById('cb-zmax').value) || 0;
+      cb.rotX = parseFloat(document.getElementById('cb-rotx').value) || 0;
+      cb.rotY = parseFloat(document.getElementById('cb-roty').value) || 0;
+      cb.rotZ = parseFloat(document.getElementById('cb-rotz').value) || 0;
     }
 
     function cbOpenEditor(id) {
@@ -2303,6 +2472,9 @@
       document.getElementById('cb-ymax').value = cb.ymax.toFixed(1);
       document.getElementById('cb-zmin').value = cb.zmin.toFixed(1);
       document.getElementById('cb-zmax').value = cb.zmax.toFixed(1);
+      document.getElementById('cb-rotx').value = (cb.rotX||0).toFixed(1);
+      document.getElementById('cb-roty').value = (cb.rotY||0).toFixed(1);
+      document.getElementById('cb-rotz').value = (cb.rotZ||0).toFixed(1);
       const mode = cb.inside === null ? 'none' : cb.inside ? 'inside' : 'outside';
       cbSetModeBtn(mode);
       document.getElementById('cb-wf-btn').classList.toggle('active', cb.showWireframe !== false);
@@ -2347,11 +2519,9 @@
       cbReadEditor();
       const cb = clipBoxList.find(x => x.id === cbEditId);
       if (!cb) return;
-      // Disable all other boxes so this one becomes the active one
-      clipBoxList.forEach(x => { if (x.id !== cb.id) { x.enabled = false; cbClearWireframe(x.id); } });
       cb.enabled = true;
       cbBuildWireframe(cbEditId);
-      applyActiveClipBox();
+      applyClipBoxes();
       renderClipBoxList();
     }
 
