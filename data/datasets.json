@@ -90,5 +90,24 @@
       {"id": "scan_001", "label": "Scan Position 2", "path": "/data/panoramas/demo-site/scan_001.jpg", "x": 3.0, "y": 1.5, "z": 1.5, "northOffset": 0}
     ],
     "createdAt": "2026-04-07T00:00:00.000Z"
+  },
+  {
+    "id": "gruppe6-splat",
+    "name": "Gruppe 6 (Gaussian Splat)",
+    "type": "cesium-splat",
+    "source": "photogrammetry",
+    "path": "/data/cesium/gruppe6-splat/tileset.json",
+    "description": "Gaussian splat reconstruction — 3D Tiles with KHR_gaussian_splatting.",
+    "createdAt": "2026-05-27T00:00:00.000Z"
+  },
+  {
+    "id": "gruppe6-pointcloud",
+    "name": "Gruppe 6 (Point Cloud)",
+    "type": "cesium",
+    "source": "photogrammetry",
+    "path": "/data/cesium/gruppe6-minimal/tileset.json",
+    "description": "Point cloud of Gruppe 6 scene in LV95 (EPSG:2056).",
+    "crs": "EPSG:2056",
+    "createdAt": "2026-05-27T00:00:00.000Z"
   }
 ]

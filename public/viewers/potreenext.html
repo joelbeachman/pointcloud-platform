@@ -221,6 +221,7 @@
 	import {Potree} from "potree";
 	import {Vector3, Vector4, Matrix4, Points, Mesh, geometries} from "potree";
 	import {DistanceMeasure, PointMeasure} from "../libs/potreenext/src/interaction/measure.js";
+	import {GaussianSplats, GSLoader} from "potree";
 	import "range-select";
 
 	import {installToolbar} from "toolbar";
@@ -263,6 +264,17 @@
 		pointcloud.name = "Haus Eggiwil";
 		controls.zoomTo(pointcloud);
 	});
+
+	// Optional Gaussian splat: ?splat=<url> loads a 3DGS PLY file alongside the point cloud
+	{
+		const splatUrl = new URLSearchParams(location.search).get('splat');
+		if (splatUrl) {
+			GSLoader.load(splatUrl).then(splats => {
+				scene.root.children.push(splats);
+				splats.name = splatUrl.split('/').pop();
+			}).catch(e => console.error('[splat] failed to load:', splatUrl, e));
+		}
+	}
 
 	// ── Panorama viewer ──────────────────────────────────────────────────────
 	let panoViewer = null;
