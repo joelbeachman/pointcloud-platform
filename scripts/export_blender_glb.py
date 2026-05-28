@@ -131,15 +131,29 @@ def export_glb(filepath, objects):
         except TypeError:
             bpy.ops.export_scene.gltf(**kwargs)
     else:
-        # Full export: embed textures as JPEG (quality 85) for a good size/quality balance.
-        try:
-            bpy.ops.export_scene.gltf(**kwargs, export_materials='EXPORT',
-                                       export_image_format='JPEG', export_jpeg_quality=85)
-        except TypeError:
+        # Full export with textures.  Try progressively simpler calls so that
+        # unknown/renamed parameters in newer Blender versions don't break the export.
+        exported = False
+        for attempt_kwargs in [
+            # 1. JPEG at quality 85 — best size/quality (Blender ≤ 4.x param name)
+            dict(export_materials='EXPORT', export_image_format='JPEG', export_jpeg_quality=85),
+            # 2. Without quality setting (param may not exist in Blender 5.x)
+            dict(export_materials='EXPORT', export_image_format='JPEG'),
+            # 3. Without image format override — let Blender choose (PNG default)
+            dict(export_materials='EXPORT'),
+            # 4. Last resort: colours only (no textures)
+            dict(export_materials='PLACEHOLDER'),
+        ]:
             try:
-                bpy.ops.export_scene.gltf(**kwargs, export_materials='EXPORT')
-            except TypeError:
-                bpy.ops.export_scene.gltf(**kwargs)
+                bpy.ops.export_scene.gltf(**kwargs, **attempt_kwargs)
+                exported = True
+                used = list(attempt_kwargs.keys())
+                print(f'  [export] succeeded with {used}')
+                break
+            except (TypeError, RuntimeError) as e:
+                print(f'  [export] attempt {attempt_kwargs} failed: {e!r}, trying next...')
+        if not exported:
+            bpy.ops.export_scene.gltf(**kwargs)  # bare fallback
 
     return os.path.exists(filepath)
 
