@@ -507,6 +507,47 @@ Three bugs found by reading the Cesium 1.140 source directly:
 
 ---
 
+## 2026-05-28 — Blender Model Integration Pipeline (Gesamtmodell)
+
+### Completed
+- **Full scene audit** (`data/blender/scene_audit.json`) — 4 collections, 22.8M total vertices:
+  - `Häuser` (716K verts): all building meshes, sub-collections `Mit_Nummer` / `Ohne_Nummer`, local bbox [64–1547, 29–640, 2–145] m
+  - `Terrain` (921K verts): DTM terrain tiles (DTM3–DTM21), vegetation (L/M/S_Tree_Buche/Fichte/Tanne), ground surfaces — sub-collections `Abschnitte / Wege / Bodentypen`, `Wald`
+  - `Terrain_Substitute` (10.2M verts): `PG_Dronenflug`, `swisstopo_V0.1`, `dtm_swissalti_2` — high-res reference meshes, excluded from web tiles
+  - `Misc` (10.9M verts): imported point clouds (`- Cloud` suffix) — already in platform as separate datasets, excluded
+- **Installed server-side tools**: `pyproj 3.7.2`, `gltfpack 0.20`
+- **`scripts/export_blender_glb.py`** — Blender Python script (run headless or in Scripting tab):
+  - Recursively traverses sub-collections of `Häuser`; each **leaf collection** → one GLB (preserves building hierarchy)
+  - Exports `Terrain` collection as a single combined `terrain.glb`
+  - Computes per-building bbox + vertex count; writes `data/blender/export/manifest.json`
+- **`scripts/generate_3dtiles.py`** — server-side pipeline (no Blender required):
+  - Reads `manifest.json`; for each building GLB runs `gltfpack` at 3 LOD levels: LOD0 (full), LOD1 (−70%), LOD2 (−95%)
+  - Computes correct LV95→ECEF transform via `pyproj` at origin (E=2648466.518, N=1177343.008, H=570.290)
+  - glTF Y-up axis convention respected: column mapping East→X, Up→Y, −North→Z
+  - Generates `data/cesium/gesamtmodell/tileset.json` with REPLACE refinement LOD hierarchy per building
+  - Auto-registers `gesamtmodell` dataset in `data/datasets.json`
+
+### How to run
+1. On a machine with Blender (3.x or 4.x):
+   ```
+   blender --background data/blender/Gesamtsmodell_V3.blend \
+           --python scripts/export_blender_glb.py
+   ```
+2. Copy `data/blender/export/` to the server
+3. On the server:
+   ```
+   python3 scripts/generate_3dtiles.py
+   ```
+4. Load `gesamtmodell` dataset in the Cesium viewer
+
+### Pending
+- [ ] Run the Blender export script on the machine with the .blend file open
+- [ ] Verify tileset placement in Cesium (ECEF transform should land in Eggiwil, Switzerland)
+- [ ] Tune `geometricError` values per building based on actual building sizes from manifest
+- [ ] Decide whether to include `swisstopo_V0.1` terrain mesh with aggressive decimation
+
+---
+
 ## Pending / Planned
 
 ### High priority

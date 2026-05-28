@@ -29,9 +29,9 @@
         "id": "scan_000",
         "label": "Scan Position 1",
         "path": "/data/laserscans/test bauing_E57_Non-Gridded/HQ Panorama Images/1.jpeg",
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0,
+        "x": 0,
+        "y": 0,
+        "z": 0,
         "northOffset": 0
       }
     ],
@@ -58,9 +58,9 @@
         "id": "scan_000",
         "label": "Scan Position 1",
         "path": "/data/laserscans/test bauing_E57_Non-Gridded/HQ Panorama Images/1.jpeg",
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0,
+        "x": 0,
+        "y": 0,
+        "z": 0,
         "northOffset": 0
       }
     ],
@@ -86,8 +86,24 @@
     "path": "/data/panoramas/demo-site/metadata.json",
     "description": "Synthetic demo panoramas with 2 linked scan positions.",
     "panoramas": [
-      {"id": "scan_000", "label": "Scan Position 1", "path": "/data/panoramas/demo-site/scan_000.jpg", "x": 0.0, "y": 0.0, "z": 1.5, "northOffset": 0},
-      {"id": "scan_001", "label": "Scan Position 2", "path": "/data/panoramas/demo-site/scan_001.jpg", "x": 3.0, "y": 1.5, "z": 1.5, "northOffset": 0}
+      {
+        "id": "scan_000",
+        "label": "Scan Position 1",
+        "path": "/data/panoramas/demo-site/scan_000.jpg",
+        "x": 0,
+        "y": 0,
+        "z": 1.5,
+        "northOffset": 0
+      },
+      {
+        "id": "scan_001",
+        "label": "Scan Position 2",
+        "path": "/data/panoramas/demo-site/scan_001.jpg",
+        "x": 3,
+        "y": 1.5,
+        "z": 1.5,
+        "northOffset": 0
+      }
     ],
     "createdAt": "2026-04-07T00:00:00.000Z"
   },
@@ -98,7 +114,55 @@
     "source": "photogrammetry",
     "path": "/data/cesium/gruppe6-splat/tileset.json",
     "description": "Gaussian splat reconstruction — 3D Tiles with KHR_gaussian_splatting.",
-    "createdAt": "2026-05-27T00:00:00.000Z"
+    "createdAt": "2026-05-27T00:00:00.000Z",
+    "modelMatrix": [
+      -0.21636301383891987,
+      0.9737621364047838,
+      -0.07052905746520703,
+      0,
+      -0.6468944190408843,
+      -0.19709192332434533,
+      -0.7366697933090968,
+      0,
+      -0.7312418593436075,
+      -0.11376324302999419,
+      0.6725646940473481,
+      0,
+      4335080.49048385,
+      615958.1779797343,
+      4623153.088431157,
+      1
+    ],
+    "helmertLV95": {
+      "R": [
+        [
+          0.9945160331546619,
+          -0.1041276514004699,
+          -0.009761762757723356
+        ],
+        [
+          0.007918372663871834,
+          -0.01810190261293451,
+          0.9998047911948357
+        ],
+        [
+          -0.10428403124482626,
+          -0.9943991921434844,
+          -0.017178110830764707
+        ]
+      ],
+      "s": 1,
+      "t": [
+        2649532.016964879,
+        1177642.7428657128,
+        677.2782799357083
+      ],
+      "center": [
+        2649552.7562625,
+        1177611.6739,
+        681.0479278565
+      ]
+    }
   },
   {
     "id": "gruppe6-pointcloud",
