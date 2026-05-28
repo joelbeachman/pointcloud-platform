@@ -22,9 +22,14 @@ import sys
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__ if '__file__' in dir() else sys.argv[0]))
 OUTPUT_DIR  = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'data', 'blender', 'export'))
 
-EXPORT_COLLECTIONS = ['Häuser']   # per-building GLBs from these
-TERRAIN_COLLECTIONS = ['Terrain']  # combined terrain GLB from these (skip Terrain_Substitute)
-SKIP_COLLECTIONS = ['Terrain_Substitute', 'Misc']  # too heavy / point clouds
+EXPORT_COLLECTIONS  = ['Häuser']   # per-building GLBs from these
+TERRAIN_COLLECTIONS = ['Terrain']  # combined terrain GLB from these
+SKIP_COLLECTIONS    = ['Terrain_Substitute', 'Misc']  # too heavy / point clouds
+
+# Set to True when running on a machine with limited RAM (≤ 8 GB).
+# Purges all packed textures before export so materials will have no textures.
+# Set to False (default) on a workstation with ample RAM to export full textures.
+LOW_MEMORY_MODE = False
 
 os.makedirs(os.path.join(OUTPUT_DIR, 'buildings'), exist_ok=True)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -35,14 +40,15 @@ try:
 except Exception:
     pass  # already enabled or unavailable
 
-# ── Free all image/texture data before exporting ─────────────────────────────
-# The .blend file may contain large packed textures (100s of MB) that are not
-# needed for spatial/measurement use. Removing them frees critical RAM.
-print('[setup] Purging image data to free RAM...')
-for img in list(bpy.data.images):
-    bpy.data.images.remove(img, do_unlink=True)
-bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=True)
-print(f'[setup] Images purged. Proceeding to export.')
+if LOW_MEMORY_MODE:
+    # Purge all packed images to free RAM. Textures will not appear in exported GLBs.
+    print('[setup] LOW_MEMORY_MODE: purging image data...')
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img, do_unlink=True)
+    bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=True)
+    print('[setup] Images purged. Proceeding to export without textures.')
+else:
+    print('[setup] Full-memory mode: textures will be embedded in exported GLBs.')
 
 from mathutils import Vector
 
@@ -118,12 +124,22 @@ def export_glb(filepath, objects):
         export_format='GLB',
         export_apply=False,
     )
-    # 'PLACEHOLDER' keeps material names/colors but drops all texture images.
-    # This avoids re-loading textures we already purged and keeps GLB files small.
-    try:
-        bpy.ops.export_scene.gltf(**kwargs, export_materials='PLACEHOLDER')
-    except TypeError:
-        bpy.ops.export_scene.gltf(**kwargs)
+    if LOW_MEMORY_MODE:
+        # No textures available (purged at startup) — export colours only.
+        try:
+            bpy.ops.export_scene.gltf(**kwargs, export_materials='PLACEHOLDER')
+        except TypeError:
+            bpy.ops.export_scene.gltf(**kwargs)
+    else:
+        # Full export: embed textures as JPEG (quality 85) for a good size/quality balance.
+        try:
+            bpy.ops.export_scene.gltf(**kwargs, export_materials='EXPORT',
+                                       export_image_format='JPEG', export_jpeg_quality=85)
+        except TypeError:
+            try:
+                bpy.ops.export_scene.gltf(**kwargs, export_materials='EXPORT')
+            except TypeError:
+                bpy.ops.export_scene.gltf(**kwargs)
 
     return os.path.exists(filepath)
 

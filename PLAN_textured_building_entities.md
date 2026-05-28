@@ -38,31 +38,28 @@ grouping — without rewriting the core viewer architecture.
 2. Uses `export_materials='PLACEHOLDER'` (colours only, no textures)
 
 ### Memory budget
-- Container RAM: 7.7 GB
-- .blend load: ~4.9 GB (packed textures included)
-- Remaining headroom: ~2.8 GB — sufficient IF textures are downscaled first
+
+**Run on a machine with ample RAM (16 GB+) — no memory workarounds needed.**
+
+On the server (7.7 GB container) we had to purge all textures to fit within budget.
+On a capable workstation the .blend loads fully, all textures stay resident, and we
+can export at full resolution without any downscaling or purging.
 
 ### Changes to `scripts/export_blender_glb.py`
 
-**A. Replace image purge with image downscale**
+**A. Remove the image purge block entirely**
 
+Delete (or comment out) the section that currently reads:
 ```python
-MAX_TEX_SIZE = 1024  # px on longest edge — reduces 4K textures from 67 MB to 4 MB each
-
-print('[setup] Downscaling images to max %d px...' % MAX_TEX_SIZE)
-for img in bpy.data.images:
-    if img.size[0] == 0 or img.size[1] == 0:
-        continue
-    w, h = img.size
-    if max(w, h) > MAX_TEX_SIZE:
-        scale = MAX_TEX_SIZE / max(w, h)
-        img.scale(int(w * scale), int(h * scale))
-print('[setup] Downscaling done.')
+print('[setup] Purging image data to free RAM...')
+for img in list(bpy.data.images):
+    bpy.data.images.remove(img, do_unlink=True)
+bpy.ops.outliner.orphans_purge(...)
 ```
 
-Do NOT call `bpy.data.images.remove()` — images are needed for texture export.
+All packed images stay in memory so the exporter can embed them.
 
-**B. Change export call**
+**B. Change export call to full texture export**
 
 ```python
 # was: export_materials='PLACEHOLDER'
@@ -73,18 +70,23 @@ except TypeError:
     bpy.ops.export_scene.gltf(**kwargs)
 ```
 
-- `export_image_format='JPEG'` + quality 85 keeps textures small in the GLB.
-- `export_jpeg_quality` may not exist in all Blender versions — wrap in try/except.
+- `export_image_format='JPEG'` + quality 85 gives good quality at reasonable file sizes.
+- If you want lossless (larger files), use `export_image_format='PNG'` instead.
+- `export_jpeg_quality` may not exist in older Blender versions — the try/except handles that.
+- The glTF exporter automatically includes only textures referenced by the exported
+  objects' materials, so each building GLB contains only its own textures.
 
-**C. Per-export orphan purge stays** (already in place, frees mesh data between exports)
+**C. Per-export orphan purge stays** (already in place — frees mesh data, not images)
 
 ### Expected output sizes
-- Per-building GLB with 1024-px JPEG textures: ~1–20 MB each (vs. ~0.5–5 MB currently)
-- Total `data/blender/export/buildings/`: estimate 200–500 MB (from 120 MB currently)
+- Per-building GLB with full-res JPEG textures: ~2–50 MB each
+- Total `data/blender/export/buildings/`: estimate 500 MB – 2 GB depending on texture density
+- After gltfpack LOD generation + KTX2 compression: roughly 30–50% of source size
 
 ### Test run recommendation
-Before full export: test on a single building that has textures (e.g. `1._Bauphase`)
-by temporarily adding early-exit logic after the first successful export.
+Before the full run, test on one texture-heavy building (e.g. `1._Bauphase`) by
+adding an early exit after the first successful export, and verify the GLB contains
+embedded textures (check file size > ~5 MB and open in a glTF viewer).
 
 ---
 
