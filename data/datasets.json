@@ -14,7 +14,7 @@
     "type": "pointcloud",
     "source": "lidar",
     "path": "/data/pointclouds/sample-las/autzen.laz",
-    "description": "Classic open LiDAR dataset — Autzen Stadium, Eugene OR.",
+    "description": "Classic open LiDAR dataset \u2014 Autzen Stadium, Eugene OR.",
     "createdAt": "2026-04-07T00:00:00.000Z"
   },
   {
@@ -23,7 +23,7 @@
     "type": "cesium",
     "source": "lidar",
     "path": "/data/cesium/test-bauing/tileset.json",
-    "description": "E57 laser scan converted to 3D Tiles — 3.4M points with RGB.",
+    "description": "E57 laser scan converted to 3D Tiles \u2014 3.4M points with RGB.",
     "panoramas": [
       {
         "id": "scan_000",
@@ -43,7 +43,7 @@
     "type": "cesium",
     "source": "photogrammetry",
     "path": "/data/cesium/TilesetWithDiscreteLOD/tileset.json",
-    "description": "CesiumGS sample 3D Tiles dataset — Stanford Dragon with discrete LOD.",
+    "description": "CesiumGS sample 3D Tiles dataset \u2014 Stanford Dragon with discrete LOD.",
     "createdAt": "2026-04-07T00:00:00.000Z"
   },
   {
@@ -52,7 +52,7 @@
     "type": "e57",
     "source": "lidar",
     "path": "/data/pointclouds/test-bauing/points.xyz",
-    "description": "E57 laser scan — 3.4M points (subsampled), 1 scan position with HQ panorama.",
+    "description": "E57 laser scan \u2014 3.4M points (subsampled), 1 scan position with HQ panorama.",
     "panoramas": [
       {
         "id": "scan_000",
@@ -72,7 +72,7 @@
     "type": "cesium",
     "source": "lidar",
     "path": "/data/cesium/haus-eggiwil/tileset.json",
-    "description": "TLS scan of Haus Eggiwil — 5,023,669 points in LV95 (EPSG:2056). 185 linked panorama positions.",
+    "description": "TLS scan of Haus Eggiwil \u2014 5,023,669 points in LV95 (EPSG:2056). 185 linked panorama positions.",
     "panoramasPath": "/data/panoramas/haus-eggiwil/metadata.json",
     "crs": "EPSG:2056",
     "pointCount": 5023669,
@@ -113,7 +113,7 @@
     "type": "cesium-splat",
     "source": "photogrammetry",
     "path": "/data/cesium/gruppe6-splat/tileset.json",
-    "description": "Gaussian splat reconstruction — 3D Tiles with KHR_gaussian_splatting.",
+    "description": "Gaussian splat reconstruction \u2014 3D Tiles with KHR_gaussian_splatting.",
     "createdAt": "2026-05-27T00:00:00.000Z",
     "modelMatrix": [
       -0.21636301383891987,
@@ -173,5 +173,15 @@
     "description": "Point cloud of Gruppe 6 scene in LV95 (EPSG:2056).",
     "crs": "EPSG:2056",
     "createdAt": "2026-05-27T00:00:00.000Z"
+  },
+  {
+    "id": "gesamtmodell",
+    "name": "Gesamtmodell Eggiwil (3D Tiles)",
+    "type": "cesium",
+    "source": "model",
+    "path": "/data/cesium/gesamtmodell/tileset.json",
+    "description": "Gesamtmodell Eggiwil \u2014 BIM/CAD model with per-building structure in LV95 (EPSG:2056).",
+    "crs": "EPSG:2056",
+    "createdAt": "2026-05-28T09:20:57.838804Z"
   }
 ]

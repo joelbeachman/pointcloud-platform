@@ -35,6 +35,15 @@ try:
 except Exception:
     pass  # already enabled or unavailable
 
+# ── Free all image/texture data before exporting ─────────────────────────────
+# The .blend file may contain large packed textures (100s of MB) that are not
+# needed for spatial/measurement use. Removing them frees critical RAM.
+print('[setup] Purging image data to free RAM...')
+for img in list(bpy.data.images):
+    bpy.data.images.remove(img, do_unlink=True)
+bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=True)
+print(f'[setup] Images purged. Proceeding to export.')
+
 from mathutils import Vector
 
 
@@ -93,16 +102,20 @@ def export_glb(filepath, objects):
         return False
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
-    # Common kwargs for all Blender versions
+    # Common kwargs for all Blender versions.
+    # export_apply=False: skip modifier evaluation (avoids OOM from Boolean modifiers).
+    # The base mesh geometry is exported as-is; Boolean cuts are a visual detail
+    # not needed for spatial/measurement use in the platform.
     kwargs = dict(
         filepath=filepath,
         use_selection=True,
         export_format='GLB',
-        export_apply=True,
+        export_apply=False,
     )
-    # Version-specific: Blender 3.x uses 'EXPORT', 4.x uses 'PLACEHOLDER'/'NONE'
+    # 'PLACEHOLDER' keeps material names/colors but drops all texture images.
+    # This avoids re-loading textures we already purged and keeps GLB files small.
     try:
-        bpy.ops.export_scene.gltf(**kwargs, export_materials='EXPORT')
+        bpy.ops.export_scene.gltf(**kwargs, export_materials='PLACEHOLDER')
     except TypeError:
         bpy.ops.export_scene.gltf(**kwargs)
 
@@ -165,6 +178,8 @@ def export_collection_recursive(col, manifest_buildings, rel_path_prefix='buildi
 
         print(f'  → exporting "{col.name}"  ({vcount:,} verts, size={size:.1f}m)')
         success = export_glb(glb_abs, objects)
+        # Free orphaned data blocks between exports to reclaim memory
+        bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=True)
         if success:
             manifest_buildings.append({
                 'name':       col.name,

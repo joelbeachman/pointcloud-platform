@@ -540,11 +540,17 @@ Three bugs found by reading the Cesium 1.140 source directly:
    ```
 4. Load `gesamtmodell` dataset in the Cesium viewer
 
+### Executed on server (2026-05-28)
+- Blender 4.0.2 installed from apt (arm64, headless)
+- OOM on first attempt: 4.9GB .blend file + export_apply modifier evaluation exceeded 7.7GB RAM
+- Fix: purge all packed images from Blender memory before export; use export_apply=False (skips Boolean modifier evaluation) and export_materials='PLACEHOLDER' (material colours only, no textures)
+- Result: 132 buildings exported, terrain.glb (142MB → 60MB after gltfpack −95% decimation), tileset.json generated
+- ECEF origin: (4,335,334, 614,916, 4,622,840) — correct for Eggiwil, Switzerland
+
 ### Pending
-- [ ] Run the Blender export script on the machine with the .blend file open
-- [ ] Verify tileset placement in Cesium (ECEF transform should land in Eggiwil, Switzerland)
-- [ ] Tune `geometricError` values per building based on actual building sizes from manifest
-- [ ] Decide whether to include `swisstopo_V0.1` terrain mesh with aggressive decimation
+- [ ] Verify tileset placement in Cesium viewer (ECEF transform should land in Eggiwil)
+- [ ] Tune `geometricError` per building based on actual sizes (currently size × 0/1/5)
+- [ ] Add full textures by re-exporting `1._Bauphase` (detailed farmhouse) and `V2` (109K verts) with higher fidelity
 
 ---
 
