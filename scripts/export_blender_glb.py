@@ -82,11 +82,17 @@ def deselect_all():
 
 
 def select_objects(objects):
-    """Select a list of objects; set the first as active."""
+    """Select a list of objects; set the first as active.
+    Skips objects with zero scale (they're hidden in Blender but export as
+    singular matrices which crash CesiumJS when inverting the model matrix).
+    """
     deselect_all()
     active = None
     for obj in objects:
         if obj.type in ('MESH', 'EMPTY', 'CURVE', 'SURFACE'):
+            s = obj.scale
+            if s.x == 0 or s.y == 0 or s.z == 0:
+                continue  # skip zero-scale (hidden) objects
             obj.select_set(True)
             if active is None:
                 active = obj
