@@ -27,7 +27,18 @@ OUTPUT_DIR    = 'data/cesium/gesamtmodell'
 DATASETS_JSON = 'data/datasets.json'
 
 # LV95 (EPSG:2056) origin in Blender local space = [0, 0, 0]
-LV95_ORIGIN = (2648466.518, 1177343.008, 570.290)  # (E, N, H)
+LV95_ORIGIN = (2648466.518, 1177343.008, 570.290)  # (E, N, H_orthometric)
+
+# Geoid undulation at this location (EGM2008 / Swiss LHN95→ellipsoidal correction).
+# Switzerland: N ≈ 47–48 m.  Ellipsoidal H = orthometric H + N.
+# pyproj only has the Swiss geoid grid if proj-data-ch is installed, so we apply
+# the correction manually here.  Tune if the model still appears too high/low.
+GEOID_UNDULATION = 47.5  # metres (LHN95 → WGS84 ellipsoid)
+
+# Documented yaw of the Blender model relative to geographic North.
+# A negative value means the model's +X axis is rotated clockwise from East
+# when viewed from above.  Applied as a local Z (Up-axis) rotation.
+MODEL_YAW_DEG = 2.2   # empirically calibrated; positive = CCW from East when viewed from above
 
 # gltfpack simplification ratios per LOD level
 # LOD0 = full quality, LOD1 = 30%, LOD2 = 5%
@@ -45,30 +56,33 @@ DATASET_NAME = 'Gesamtmodell Eggiwil (3D Tiles)'
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def compute_transform(lv95_E, lv95_N, lv95_H):
+def compute_transform(lv95_E, lv95_N, lv95_H,
+                      geoid_undulation=0.0, yaw_deg=0.0):
     """
-    Compute the 4×4 column-major transform matrix (glTF Y-up local → ECEF).
+    Compute the 4×4 column-major transform matrix (local → ECEF).
 
-    Blender exports Z-up scenes as glTF Y-up:
-      glTF X  = Blender X = LV95 East offset
-      glTF Y  = Blender Z = LV95 Height offset
-      glTF Z  = -Blender Y = -(LV95 North offset)
+    CesiumJS internally applies a Y-up→Z-up correction (+90° around X) to all
+    glTF content before applying the tile transform.  After that correction the
+    tile's local frame is simply East-North-Up (Z-up), so this matrix is the
+    standard eastNorthUpToFixedFrame, optionally pre-multiplied by a yaw
+    rotation around the Up axis.
 
-    The matrix columns are:
-      col 0 → East unit vector in ECEF     (glTF X axis)
-      col 1 → Up unit vector in ECEF       (glTF Y axis)
-      col 2 → -North unit vector in ECEF   (glTF Z axis = -North)
-      col 3 → ECEF origin translation
+    geoid_undulation: metres to add to lv95_H to convert LHN95 orthometric
+                      height to WGS84 ellipsoidal height (≈ 47.5 m for CH).
+    yaw_deg:          clockwise rotation of the model around Up, in degrees.
+                      Positive = model's +X has rotated clockwise from East.
     """
     from pyproj import Transformer
 
-    # LV95 → WGS84 geographic (for ENU frame computation)
-    t_geo = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
-    lon_deg, lat_deg, _ = t_geo.transform(lv95_E, lv95_N, lv95_H)
+    ellipsoidal_H = lv95_H + geoid_undulation
 
-    # LV95 → ECEF (translation)
+    # LV95 → WGS84 geographic (for ENU frame unit vectors)
+    t_geo = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
+    lon_deg, lat_deg, _ = t_geo.transform(lv95_E, lv95_N, ellipsoidal_H)
+
+    # LV95 → ECEF (translation) using corrected ellipsoidal height
     t_ecef = Transformer.from_crs("EPSG:2056", "EPSG:4978", always_xy=True)
-    ox, oy, oz = t_ecef.transform(lv95_E, lv95_N, lv95_H)
+    ox, oy, oz = t_ecef.transform(lv95_E, lv95_N, ellipsoidal_H)
 
     lat = math.radians(lat_deg)
     lon = math.radians(lon_deg)
@@ -84,12 +98,39 @@ def compute_transform(lv95_E, lv95_N, lv95_H):
               math.cos(lat) * math.sin(lon),
               math.sin(lat))
 
-    # Column-major 4×4 (CesiumJS convention: column vectors)
+    # eastNorthUpToFixedFrame base matrix
+    # col 0 → East, col 1 → North, col 2 → Up, col 3 → translation
+    m = [
+        east[0],  east[1],  east[2],  0.0,
+        north[0], north[1], north[2], 0.0,
+        up[0],    up[1],    up[2],    0.0,
+        ox,       oy,       oz,       1.0,
+    ]
+
+    if yaw_deg == 0.0:
+        return m
+
+    # Pre-multiply by Rz(yaw) in local ENU space:
+    #   new_col0 = cos(yaw)*m_col0 + sin(yaw)*m_col1
+    #   new_col1 = -sin(yaw)*m_col0 + cos(yaw)*m_col1
+    #   new_col2, new_col3 unchanged
+    # Column-major: col i occupies indices [i*4 .. i*4+3].
+    θ  = math.radians(yaw_deg)
+    c, s = math.cos(θ), math.sin(θ)
+
+    def col(i):
+        b = i * 4
+        return [m[b], m[b+1], m[b+2], m[b+3]]
+
+    c0, c1 = col(0), col(1)
+    new_c0 = [ c*c0[r] + s*c1[r] for r in range(4)]
+    new_c1 = [-s*c0[r] + c*c1[r] for r in range(4)]
+
     return [
-        east[0],   east[1],   east[2],   0.0,   # col 0: glTF +X → East
-        up[0],     up[1],     up[2],     0.0,   # col 1: glTF +Y → Up
-        -north[0], -north[1], -north[2], 0.0,   # col 2: glTF +Z → -North
-        ox,        oy,        oz,        1.0,   # col 3: translation
+        new_c0[0], new_c0[1], new_c0[2], new_c0[3],
+        new_c1[0], new_c1[1], new_c1[2], new_c1[3],
+        m[8],  m[9],  m[10], m[11],
+        m[12], m[13], m[14], m[15],
     ]
 
 
@@ -179,8 +220,11 @@ def generate(manifest_path, output_dir, lv95_origin):
 
     # ── compute root transform ──────────────────────────────────────────────
     print('Computing LV95 → ECEF transform...')
-    root_transform = compute_transform(*lv95_origin)
+    root_transform = compute_transform(*lv95_origin,
+                                       geoid_undulation=GEOID_UNDULATION,
+                                       yaw_deg=MODEL_YAW_DEG)
     print(f'  ECEF origin: ({root_transform[12]:.0f}, {root_transform[13]:.0f}, {root_transform[14]:.0f})')
+    print(f'  geoid correction: +{GEOID_UNDULATION} m  |  yaw: {MODEL_YAW_DEG}°')
 
     # ── process buildings ───────────────────────────────────────────────────
     building_tiles = []

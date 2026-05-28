@@ -723,7 +723,21 @@
     function getRefMatrix() {
       const ts = layers[0]?.tileset;
       if (!ts) return Cesium.Transforms.eastNorthUpToFixedFrame(Cesium.Cartesian3.fromDegrees(0, 0, 0));
-      return ts.modelMatrix || Cesium.Matrix4.IDENTITY;
+
+      // If the tileset was explicitly positioned (Helmert, ds.modelMatrix, or
+      // the small-model ENU fallback), use that matrix directly.
+      const mm = ts.modelMatrix;
+      if (!Cesium.Matrix4.equals(mm, Cesium.Matrix4.IDENTITY)) return mm;
+
+      // modelMatrix is identity → tileset is positioned by its own tileset.json
+      // root transform (e.g. gesamtmodell).  The bounding sphere centre is already
+      // in ECEF, so build an ENU frame there.  This gives true geographic Up as the
+      // vertical axis for horizontal/vertical/area measurements.
+      const center = ts.boundingSphere?.center;
+      if (center && Cesium.Cartesian3.magnitude(center) > 1e5) {
+        return Cesium.Transforms.eastNorthUpToFixedFrame(center);
+      }
+      return Cesium.Matrix4.IDENTITY;
     }
     function ecefToLocal(p) {
       const inv = Cesium.Matrix4.inverse(getRefMatrix(), new Cesium.Matrix4());

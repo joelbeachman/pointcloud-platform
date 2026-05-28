@@ -545,10 +545,32 @@ Three bugs found by reading the Cesium 1.140 source directly:
 - OOM on first attempt: 4.9GB .blend file + export_apply modifier evaluation exceeded 7.7GB RAM
 - Fix: purge all packed images from Blender memory before export; use export_apply=False (skips Boolean modifier evaluation) and export_materials='PLACEHOLDER' (material colours only, no textures)
 - Result: 132 buildings exported, terrain.glb (142MB → 60MB after gltfpack −95% decimation), tileset.json generated
-- ECEF origin: (4,335,334, 614,916, 4,622,840) — correct for Eggiwil, Switzerland
+- Post-processed all 397 GLBs to remove zero-scale nodes (hidden Blender objects exported as singular matrices, crashing CesiumJS matrix inversion)
+- Terrain GLB had no materials after gltfpack stripped them; injected a `doubleSided: true` default material so terrain is visible from above
+
+### Geo-registration calibration (2026-05-28)
+The tileset root transform in `data/cesium/gesamtmodell/tileset.json` was iteratively calibrated
+against visible reference features. Final values baked into `scripts/generate_3dtiles.py`:
+
+| Parameter | Value | Reason |
+|---|---|---|
+| LV95 origin | E=2648466.518, N=1177343.008 | Blender scene origin in LV95 |
+| Orthometric height | H=570.290 m | Blender Z=0 plane in LHN95 |
+| Geoid undulation | +47.5 m | LHN95 → WGS84 ellipsoidal height (Switzerland) |
+| Height fine-tune | +1.5 m | Empirical vertical alignment |
+| Effective ellipsoidal H | 619.29 m | H + geoid + fine-tune |
+| Yaw | +2.2° | CCW rotation of model around local Up (empirically calibrated) |
+| ECEF origin | (4,335,367, 614,920, 4,622,876) | After all corrections |
+
+**Key lessons:**
+- `compute_transform` must use `eastNorthUpToFixedFrame` column order (East/North/Up), **not** Y-up column order (East/Up/−North). CesiumJS applies an internal Y-up→Z-up correction to glTF content *before* applying the tile transform, so the transform maps from a Z-up ENU frame.
+- pyproj EPSG:2056 (2D) treats the passed Z as ellipsoidal height — Swiss geoid grid (CHGeo2004hn) is not installed, so the `~47.5 m` LHN95→WGS84 correction is applied manually.
+
+**Measurement fix:**
+- `getRefMatrix()` in `cesium.html` previously returned `ts.modelMatrix` (IDENTITY for gesamtmodell, since it is positioned by its own `tileset.json` transform). Measurements were therefore in raw ECEF space.
+- Fixed: when `modelMatrix === IDENTITY`, build `eastNorthUpToFixedFrame(boundingSphere.center)` as the measurement frame → horizontal = geographic horizontal, vertical = LV95 Up.
 
 ### Pending
-- [ ] Verify tileset placement in Cesium viewer (ECEF transform should land in Eggiwil)
 - [ ] Tune `geometricError` per building based on actual sizes (currently size × 0/1/5)
 - [ ] Add full textures by re-exporting `1._Bauphase` (detailed farmhouse) and `V2` (109K verts) with higher fidelity
 
