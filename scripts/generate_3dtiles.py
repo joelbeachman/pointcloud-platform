@@ -143,12 +143,19 @@ def run_gltfpack(src_glb, dst_glb, simplify_ratio=None):
     cmd = ['gltfpack', '-i', src_glb, '-o', dst_glb, '-kn', '-tc']  # -kn keeps names, -tc = KTX2
     if simplify_ratio is not None:
         cmd += ['-si', str(simplify_ratio)]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        print('  [gltfpack] not found — copying source GLB as-is (install gltfpack for LOD simplification)')
+        return False
     if result.returncode != 0:
         print(f'  [gltfpack error] {result.stderr.strip()}')
         # Retry without -tc in case basisu encoding fails for this file
         cmd_notc = [x for x in cmd if x != '-tc']
-        result = subprocess.run(cmd_notc, capture_output=True, text=True)
+        try:
+            result = subprocess.run(cmd_notc, capture_output=True, text=True)
+        except FileNotFoundError:
+            return False
         if result.returncode != 0:
             print(f'  [gltfpack error no-tc] {result.stderr.strip()}')
             return False
