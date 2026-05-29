@@ -20,6 +20,7 @@ import math
 import os
 import subprocess
 import sys
+from collections import defaultdict
 
 # ── config ────────────────────────────────────────────────────────────────────
 MANIFEST_PATH = 'data/blender/export/manifest.json'
@@ -235,12 +236,15 @@ def generate(manifest_path, output_dir, lv95_origin):
     print(f'  geoid correction: +{GEOID_UNDULATION} m  height offset: +{HEIGHT_OFFSET} m  yaw: {MODEL_YAW_DEG}°')
 
     # ── process buildings ───────────────────────────────────────────────────
-    building_tiles = []
+    # group_tiles: parent_name (None = standalone) → list of (tile, bldg)
+    group_tiles  = defaultdict(list)
+    import shutil
 
     for bldg in buildings:
         name     = bldg['name']
         src_glb  = os.path.join(export_base, bldg['file'])
         size     = bldg.get('size', 20.0)
+        parent   = bldg.get('parent')  # None for standalone buildings
 
         if not os.path.exists(src_glb):
             print(f'  [skip] GLB not found: {src_glb}')
@@ -256,8 +260,6 @@ def generate(manifest_path, output_dir, lv95_origin):
 
             ok = run_gltfpack(src_glb, dst_glb_abs, simplify_ratio=ratio)
             if not ok:
-                # Fallback: copy the source file
-                import shutil
                 shutil.copy(src_glb, dst_glb_abs)
 
             lod_idx = [l[0] for l in LODS].index(lod_suffix)
@@ -265,8 +267,8 @@ def generate(manifest_path, output_dir, lv95_origin):
             lod_entries.append((dst_glb_name, ge))
 
         tile = make_building_tile(bldg, lod_entries)
-        building_tiles.append(tile)
-        print(f'  ✓ {name} ({size:.0f}m, {bldg.get("vertex_count", 0):,} verts)')
+        group_tiles[parent].append((tile, bldg))
+        print(f'  ✓ {name}  (parent={parent!r}, {size:.0f}m, {bldg.get("vertex_count", 0):,} verts)')
 
     # ── process terrain ─────────────────────────────────────────────────────
     terrain_tile = None
@@ -291,8 +293,25 @@ def generate(manifest_path, output_dir, lv95_origin):
             }
             print(f'  ✓ terrain ({dst_terrain_name})')
 
-    # ── assemble root boundingVolume ─────────────────────────────────────────
-    # Union of all buildings + terrain bboxes
+    # ── helper: build a sub-tileset root node from a list of (tile, bldg) ────
+    def make_group_root(tile_bldg_list, fallback_bmin, fallback_bmax, root_size):
+        if not tile_bldg_list:
+            return None
+        gb_mins = [b['bbox_min'] for _, b in tile_bldg_list if b.get('bbox_min')]
+        gb_maxs = [b['bbox_max'] for _, b in tile_bldg_list if b.get('bbox_max')]
+        if gb_mins:
+            gb_min = [min(x[i] for x in gb_mins) for i in range(3)]
+            gb_max = [max(x[i] for x in gb_maxs) for i in range(3)]
+        else:
+            gb_min, gb_max = fallback_bmin, fallback_bmax
+        return {
+            'boundingVolume': {'box': box_bounding_volume(gb_min, gb_max)},
+            'geometricError': root_size * 10,
+            'refine': 'ADD',
+            'children': [t for t, _ in tile_bldg_list],
+        }
+
+    # ── compute global bbox (all buildings + terrain) ────────────────────────
     all_bmin = [b['bbox_min'] for b in buildings if b.get('bbox_min')]
     all_bmax = [b['bbox_max'] for b in buildings if b.get('bbox_max')]
     if terrain and terrain.get('bbox_min'):
@@ -305,94 +324,113 @@ def generate(manifest_path, output_dir, lv95_origin):
     else:
         root_bmin = [0, 0, 0]
         root_bmax = [1600, 700, 150]
-
     root_size = max(root_bmax[i] - root_bmin[i] for i in range(3))
 
-    # ── assemble buildings sub-tileset ───────────────────────────────────────
-    buildings_root = None
-    if building_tiles:
-        # Compute union bbox for buildings
-        b_bmin = [b['bbox_min'] for b in buildings if b.get('bbox_min')]
-        b_bmax = [b['bbox_max'] for b in buildings if b.get('bbox_max')]
-        if b_bmin:
-            bb_min = [min(b[i] for b in b_bmin) for i in range(3)]
-            bb_max = [max(b[i] for b in b_bmax) for i in range(3)]
-        else:
-            bb_min, bb_max = root_bmin, root_bmax
+    # ── helper: write one tileset.json ───────────────────────────────────────
+    def write_tileset(filename, buildings_node, terrain_node, label):
+        root_children = []
+        if terrain_node:
+            root_children.append(terrain_node)
+        if buildings_node:
+            root_children.append(buildings_node)
 
-        buildings_root = {
-            'boundingVolume': {'box': box_bounding_volume(bb_min, bb_max)},
+        ts = {
+            'asset': {
+                'version': '1.0',
+                'extras': {
+                    'generatedBy': 'generate_3dtiles.py',
+                    'lv95Origin': list(lv95_origin),
+                    'crs': 'EPSG:2056',
+                    'label': label,
+                }
+            },
             'geometricError': root_size * 10,
-            'refine': 'ADD',
-            'children': building_tiles,
-        }
-
-    # ── root tile ────────────────────────────────────────────────────────────
-    root_children = []
-    if terrain_tile:
-        root_children.append(terrain_tile)
-    if buildings_root:
-        root_children.append(buildings_root)
-
-    tileset = {
-        'asset': {
-            'version': '1.0',
-            'extras': {
-                'generatedBy': 'generate_3dtiles.py',
-                'lv95Origin': list(lv95_origin),
-                'crs': 'EPSG:2056',
+            'root': {
+                'transform': root_transform,
+                'boundingVolume': {'box': box_bounding_volume(root_bmin, root_bmax)},
+                'geometricError': root_size * 5,
+                'refine': 'ADD',
+                'children': root_children,
             }
-        },
-        'geometricError': root_size * 10,
-        'root': {
-            'transform': root_transform,
-            'boundingVolume': {'box': box_bounding_volume(root_bmin, root_bmax)},
-            'geometricError': root_size * 5,
-            'refine': 'ADD',
-            'children': root_children,
         }
-    }
+        path = os.path.join(output_dir, filename)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(ts, f, indent=2)
+        return path
 
-    # ── write tileset.json ────────────────────────────────────────────────────
-    tileset_path = os.path.join(output_dir, 'tileset.json')
-    with open(tileset_path, 'w', encoding='utf-8') as f:
-        json.dump(tileset, f, indent=2)
+    # ── main tileset: standalone buildings (parent=None) + terrain ───────────
+    standalone = group_tiles.pop(None, [])
+    standalone_root = make_group_root(standalone, root_bmin, root_bmax, root_size)
+    main_path = write_tileset('tileset.json', standalone_root, terrain_tile, 'Gesamtmodell Eggiwil')
+    print(f'\nWrote {main_path}  ({len(standalone)} standalone buildings, terrain={terrain_tile is not None})')
 
-    print(f'\nWrote {tileset_path}')
-    print(f'  {len(building_tiles)} building tiles')
-    print(f'  terrain: {"yes" if terrain_tile else "no"}')
+    # ── per-group tilesets: one file per parent collection ───────────────────
+    group_paths = []  # [(parent_name, tileset_path), ...]
+    for parent_name, tile_bldg_list in sorted(group_tiles.items()):
+        safe_parent = parent_name.replace('/', '_').replace(' ', '_').replace('\\', '_')
+        filename    = f'tileset_{safe_parent}.json'
+        group_root  = make_group_root(tile_bldg_list, root_bmin, root_bmax, root_size)
+        path        = write_tileset(filename, group_root, None, parent_name)
+        group_paths.append((parent_name, path))
+        print(f'Wrote {path}  ({len(tile_bldg_list)} phases of "{parent_name}")')
 
-    return tileset_path
+    return main_path, group_paths
 
 
-def register_dataset(tileset_path, datasets_path):
-    """Add or update the gesamtmodell entry in datasets.json."""
+def _to_web_path(fs_path):
+    """Convert a local filesystem path to a web-root-relative path."""
+    p = fs_path.replace('\\', '/')
+    idx = p.find('/data/cesium')
+    if idx >= 0:
+        return p[idx:]
+    return '/' + p.lstrip('/')
+
+
+def register_datasets(main_path, group_paths, datasets_path):
+    """
+    Add/update gesamtmodell entries in datasets.json.
+    Creates one entry for the main tileset and one per Bauphase group.
+    """
+    import datetime
     with open(datasets_path, encoding='utf-8') as f:
         datasets = json.load(f)
 
-    # Remove existing entry if present
-    datasets = [d for d in datasets if d.get('id') != DATASET_ID]
+    # Remove all existing gesamtmodell entries (main + any previous groups)
+    datasets = [d for d in datasets if not d.get('id', '').startswith(DATASET_ID)]
 
-    # Normalize path for the datasets.json (relative to public root)
-    web_path = '/' + tileset_path.replace('\\', '/').lstrip('/')
-    if 'data/cesium' in web_path:
-        web_path = web_path[web_path.index('/data/cesium'):]
+    now = datetime.datetime.utcnow().isoformat() + 'Z'
 
+    # Main tileset (standalone buildings + terrain)
     datasets.append({
         'id':          DATASET_ID,
         'name':        DATASET_NAME,
         'type':        'cesium',
         'source':      'model',
-        'path':        web_path,
-        'description': 'Gesamtmodell Eggiwil — BIM/CAD model with per-building structure in LV95 (EPSG:2056).',
+        'path':        _to_web_path(main_path),
+        'description': 'Gesamtmodell Eggiwil — all standalone buildings and terrain.',
         'crs':         'EPSG:2056',
-        'createdAt':   __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+        'createdAt':   now,
     })
+
+    # One entry per Bauphase group
+    for parent_name, ts_path in group_paths:
+        safe = parent_name.replace('/', '_').replace(' ', '_').replace('\\', '_')
+        datasets.append({
+            'id':          f'{DATASET_ID}_{safe}',
+            'name':        f'Gesamtmodell — {parent_name}',
+            'type':        'cesium',
+            'source':      'model',
+            'path':        _to_web_path(ts_path),
+            'description': f'Bauphasen of {parent_name} (Gesamtmodell Eggiwil).',
+            'crs':         'EPSG:2056',
+            'createdAt':   now,
+        })
+        print(f'  Registered "{DATASET_ID}_{safe}" → {ts_path}')
 
     with open(datasets_path, 'w', encoding='utf-8') as f:
         json.dump(datasets, f, indent=2)
 
-    print(f'Registered dataset "{DATASET_ID}" in {datasets_path}')
+    print(f'Registered {1 + len(group_paths)} dataset(s) in {datasets_path}')
 
 
 # ── entry point ───────────────────────────────────────────────────────────────
@@ -402,6 +440,6 @@ if __name__ == '__main__':
         print('Run export_blender_glb.py in Blender first to generate it.')
         sys.exit(1)
 
-    tileset_path = generate(MANIFEST_PATH, OUTPUT_DIR, LV95_ORIGIN)
-    register_dataset(tileset_path, DATASETS_JSON)
-    print('\nDone. Load the dataset in cesium.html to verify placement.')
+    main_path, group_paths = generate(MANIFEST_PATH, OUTPUT_DIR, LV95_ORIGIN)
+    register_datasets(main_path, group_paths, DATASETS_JSON)
+    print('\nDone. Load the datasets in cesium.html to verify placement.')

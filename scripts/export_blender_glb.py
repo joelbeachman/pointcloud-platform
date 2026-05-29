@@ -193,10 +193,12 @@ def is_leaf_collection(col):
     return len(col.children) == 0
 
 
-def export_collection_recursive(col, manifest_buildings, rel_path_prefix='buildings'):
+def export_collection_recursive(col, manifest_buildings, rel_path_prefix='buildings', parent_name=None):
     """
     Recursively export leaf collections as individual GLBs.
     Leaf = a collection with no child collections.
+    parent_name: immediate parent collection name (used to group Bauphase variants
+                 of the same building into separate tilesets in generate_3dtiles.py).
     """
     if is_leaf_collection(col):
         # Export this collection as one GLB
@@ -229,7 +231,7 @@ def export_collection_recursive(col, manifest_buildings, rel_path_prefix='buildi
         size     = max(bbox_max[i] - bbox_min[i] for i in range(3))
         vcount   = sum(vertex_count(o) for o in mesh_objs)
 
-        print(f'  → exporting "{col.name}"  ({vcount:,} verts, size={size:.1f}m)')
+        print(f'  → exporting "{col.name}"  (parent={parent_name!r}, {vcount:,} verts, size={size:.1f}m)')
         success = export_glb(glb_abs, objects)
         # Free orphaned data blocks between exports to reclaim memory
         bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=False, do_recursive=True)
@@ -237,6 +239,7 @@ def export_collection_recursive(col, manifest_buildings, rel_path_prefix='buildi
             manifest_buildings.append({
                 'name':       col.name,
                 'collection': col.name,
+                'parent':     parent_name,   # None for standalone buildings
                 'file':       glb_rel,
                 'bbox_min':   bbox_min,
                 'bbox_max':   bbox_max,
@@ -247,10 +250,11 @@ def export_collection_recursive(col, manifest_buildings, rel_path_prefix='buildi
         else:
             print(f'  [ERROR] export failed for {col.name}')
     else:
-        # Recurse into child collections
+        # Recurse into child collections; this collection becomes the parent for its children
         print(f'  [{col.name}] → {len(col.children)} sub-collections')
         for child in col.children:
-            export_collection_recursive(child, manifest_buildings, rel_path_prefix)
+            export_collection_recursive(child, manifest_buildings, rel_path_prefix,
+                                        parent_name=col.name)
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -269,9 +273,9 @@ for col_name in EXPORT_COLLECTIONS:
     print(f'\n[{col_name}]  sub-collections: {[c.name for c in col.children]}')
     if col.children:
         for child in col.children:
-            export_collection_recursive(child, manifest['buildings'])
+            export_collection_recursive(child, manifest['buildings'], parent_name=None)
     else:
-        export_collection_recursive(col, manifest['buildings'])
+        export_collection_recursive(col, manifest['buildings'], parent_name=None)
 
 # 2. Export terrain (all Terrain objects as one combined GLB)
 print('\n=== Exporting terrain ===')
