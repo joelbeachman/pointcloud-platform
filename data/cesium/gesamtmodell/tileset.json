@@ -110,7 +110,7 @@
                 13.121734619140625
               ]
             },
-            "geometricError": 131.22,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/111_lod2.glb"
@@ -133,7 +133,7 @@
                     13.121734619140625
                   ]
                 },
-                "geometricError": 26.24,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/111_lod1.glb"
@@ -183,7 +183,7 @@
                 14.042190551757812
               ]
             },
-            "geometricError": 140.42,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/131_lod2.glb"
@@ -206,7 +206,7 @@
                     14.042190551757812
                   ]
                 },
-                "geometricError": 28.08,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/131_lod1.glb"
@@ -256,7 +256,7 @@
                 11.093215942382812
               ]
             },
-            "geometricError": 110.93,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Haus_141_vorne_lod2.glb"
@@ -279,7 +279,7 @@
                     11.093215942382812
                   ]
                 },
-                "geometricError": 22.19,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Haus_141_vorne_lod1.glb"
@@ -329,7 +329,7 @@
                 9.060943603515625
               ]
             },
-            "geometricError": 100.45,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Haus_141_hinten_lod2.glb"
@@ -352,7 +352,7 @@
                     9.060943603515625
                   ]
                 },
-                "geometricError": 20.09,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Haus_141_hinten_lod1.glb"
@@ -402,7 +402,7 @@
                 7.0157318115234375
               ]
             },
-            "geometricError": 77.28,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/211_lod2.glb"
@@ -425,7 +425,7 @@
                     7.0157318115234375
                   ]
                 },
-                "geometricError": 15.46,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/211_lod1.glb"
@@ -475,7 +475,7 @@
                 9.161483764648438
               ]
             },
-            "geometricError": 124.21,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2022_Legacy_221_lod2.glb"
@@ -498,7 +498,7 @@
                     9.161483764648438
                   ]
                 },
-                "geometricError": 24.84,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2022_Legacy_221_lod1.glb"
@@ -548,7 +548,7 @@
                 9.80084228515625
               ]
             },
-            "geometricError": 128.96,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/V1_lod2.glb"
@@ -571,7 +571,7 @@
                     9.80084228515625
                   ]
                 },
-                "geometricError": 25.79,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/V1_lod1.glb"
@@ -621,7 +621,7 @@
                 9.76104736328125
               ]
             },
-            "geometricError": 128.43,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/V2_lod2.glb"
@@ -644,7 +644,7 @@
                     9.76104736328125
                   ]
                 },
-                "geometricError": 25.69,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/V2_lod1.glb"
@@ -694,7 +694,7 @@
                 2.2749786376953125
               ]
             },
-            "geometricError": 42.69,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/222_lod2.glb"
@@ -717,7 +717,7 @@
                     2.2749786376953125
                   ]
                 },
-                "geometricError": 8.54,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/222_lod1.glb"
@@ -767,7 +767,7 @@
                 8.231033325195312
               ]
             },
-            "geometricError": 86.28,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/231_lod2.glb"
@@ -790,7 +790,7 @@
                     8.231033325195312
                   ]
                 },
-                "geometricError": 17.26,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/231_lod1.glb"
@@ -840,7 +840,7 @@
                 14.191116333007812
               ]
             },
-            "geometricError": 141.91,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/311_lod2.glb"
@@ -863,7 +863,7 @@
                     14.191116333007812
                   ]
                 },
-                "geometricError": 28.38,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/311_lod1.glb"
@@ -913,7 +913,7 @@
                 5.603607177734375
               ]
             },
-            "geometricError": 58.16,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/312_lod2.glb"
@@ -936,7 +936,7 @@
                     5.603607177734375
                   ]
                 },
-                "geometricError": 11.63,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/312_lod1.glb"
@@ -986,7 +986,7 @@
                 12.581069946289062
               ]
             },
-            "geometricError": 125.81,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/321_lod2.glb"
@@ -1009,7 +1009,7 @@
                     12.581069946289062
                   ]
                 },
-                "geometricError": 25.16,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/321_lod1.glb"
@@ -1059,7 +1059,7 @@
                 4.3807373046875
               ]
             },
-            "geometricError": 48.99,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/322_lod2.glb"
@@ -1082,7 +1082,7 @@
                     4.3807373046875
                   ]
                 },
-                "geometricError": 9.8,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/322_lod1.glb"
@@ -1132,7 +1132,7 @@
                 2.53045654296875
               ]
             },
-            "geometricError": 25.3,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/323_lod2.glb"
@@ -1155,7 +1155,7 @@
                     2.53045654296875
                   ]
                 },
-                "geometricError": 5.06,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/323_lod1.glb"
@@ -1205,7 +1205,7 @@
                 1.952880859375
               ]
             },
-            "geometricError": 20.46,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/323b_lod2.glb"
@@ -1228,7 +1228,7 @@
                     1.952880859375
                   ]
                 },
-                "geometricError": 4.09,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/323b_lod1.glb"
@@ -1278,7 +1278,7 @@
                 18.969650268554688
               ]
             },
-            "geometricError": 189.69,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/331_lod2.glb"
@@ -1301,7 +1301,7 @@
                     18.969650268554688
                   ]
                 },
-                "geometricError": 37.94,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/331_lod1.glb"
@@ -1351,7 +1351,7 @@
                 6.730613708496094
               ]
             },
-            "geometricError": 67.31,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/332_lod2.glb"
@@ -1374,7 +1374,7 @@
                     6.730613708496094
                   ]
                 },
-                "geometricError": 13.46,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/332_lod1.glb"
@@ -1424,7 +1424,7 @@
                 7.050445556640625
               ]
             },
-            "geometricError": 70.51,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/333_lod2.glb"
@@ -1447,7 +1447,7 @@
                     7.050445556640625
                   ]
                 },
-                "geometricError": 14.1,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/333_lod1.glb"
@@ -1497,7 +1497,7 @@
                 3.8451690673828125
               ]
             },
-            "geometricError": 38.45,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/334_lod2.glb"
@@ -1520,7 +1520,7 @@
                     3.8451690673828125
                   ]
                 },
-                "geometricError": 7.69,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/334_lod1.glb"
@@ -1570,7 +1570,7 @@
                 7.8633270263671875
               ]
             },
-            "geometricError": 78.64,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/341_lod2.glb"
@@ -1593,7 +1593,7 @@
                     7.8633270263671875
                   ]
                 },
-                "geometricError": 15.73,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/341_lod1.glb"
@@ -1643,7 +1643,7 @@
                 12.954185485839844
               ]
             },
-            "geometricError": 129.54,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2025_351_lod2.glb"
@@ -1666,7 +1666,7 @@
                     12.954185485839844
                   ]
                 },
-                "geometricError": 25.91,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2025_351_lod1.glb"
@@ -1716,7 +1716,7 @@
                 12.298324584960938
               ]
             },
-            "geometricError": 127.0,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2022_351_lod2.glb"
@@ -1739,7 +1739,7 @@
                     12.298324584960938
                   ]
                 },
-                "geometricError": 25.4,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2022_351_lod1.glb"
@@ -1789,7 +1789,7 @@
                 5.74676513671875
               ]
             },
-            "geometricError": 57.47,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/352_lod2.glb"
@@ -1812,7 +1812,7 @@
                     5.74676513671875
                   ]
                 },
-                "geometricError": 11.49,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/352_lod1.glb"
@@ -1862,7 +1862,7 @@
                 12.172317504882812
               ]
             },
-            "geometricError": 121.72,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/361_lod2.glb"
@@ -1885,7 +1885,7 @@
                     12.172317504882812
                   ]
                 },
-                "geometricError": 24.34,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/361_lod1.glb"
@@ -1935,7 +1935,7 @@
                 10.365097045898438
               ]
             },
-            "geometricError": 103.65,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/362_lod2.glb"
@@ -1958,7 +1958,7 @@
                     10.365097045898438
                   ]
                 },
-                "geometricError": 20.73,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/362_lod1.glb"
@@ -2008,7 +2008,7 @@
                 9.214271545410156
               ]
             },
-            "geometricError": 92.14,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/371_lod2.glb"
@@ -2031,7 +2031,7 @@
                     9.214271545410156
                   ]
                 },
-                "geometricError": 18.43,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/371_lod1.glb"
@@ -2081,7 +2081,7 @@
                 6.2620849609375
               ]
             },
-            "geometricError": 105.91,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/381_lod2.glb"
@@ -2104,7 +2104,7 @@
                     6.2620849609375
                   ]
                 },
-                "geometricError": 21.18,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/381_lod1.glb"
@@ -2154,7 +2154,7 @@
                 4.8540496826171875
               ]
             },
-            "geometricError": 48.54,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/382_lod2.glb"
@@ -2177,7 +2177,7 @@
                     4.8540496826171875
                   ]
                 },
-                "geometricError": 9.71,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/382_lod1.glb"
@@ -2227,7 +2227,7 @@
                 2.465972900390625
               ]
             },
-            "geometricError": 24.66,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/383_lod2.glb"
@@ -2250,7 +2250,7 @@
                     2.465972900390625
                   ]
                 },
-                "geometricError": 4.93,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/383_lod1.glb"
@@ -2300,7 +2300,7 @@
                 4.6314697265625
               ]
             },
-            "geometricError": 76.67,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/491_lod2.glb"
@@ -2323,7 +2323,7 @@
                     4.6314697265625
                   ]
                 },
-                "geometricError": 15.33,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/491_lod1.glb"
@@ -2373,7 +2373,7 @@
                 2.8589019775390625
               ]
             },
-            "geometricError": 37.41,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/493_lod2.glb"
@@ -2396,7 +2396,7 @@
                     2.8589019775390625
                   ]
                 },
-                "geometricError": 7.48,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/493_lod1.glb"
@@ -2446,7 +2446,7 @@
                 3.10699462890625
               ]
             },
-            "geometricError": 31.07,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/494_lod2.glb"
@@ -2469,7 +2469,7 @@
                     3.10699462890625
                   ]
                 },
-                "geometricError": 6.21,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/494_lod1.glb"
@@ -2519,7 +2519,7 @@
                 10.99749755859375
               ]
             },
-            "geometricError": 109.98,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/511_lod2.glb"
@@ -2542,7 +2542,7 @@
                     10.99749755859375
                   ]
                 },
-                "geometricError": 22.0,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/511_lod1.glb"
@@ -2592,7 +2592,7 @@
                 4.201416015625
               ]
             },
-            "geometricError": 42.02,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/512_lod2.glb"
@@ -2615,7 +2615,7 @@
                     4.201416015625
                   ]
                 },
-                "geometricError": 8.4,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/512_lod1.glb"
@@ -2665,7 +2665,7 @@
                 5.5899200439453125
               ]
             },
-            "geometricError": 58.4,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/513_lod2.glb"
@@ -2688,7 +2688,7 @@
                     5.5899200439453125
                   ]
                 },
-                "geometricError": 11.68,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/513_lod1.glb"
@@ -2738,7 +2738,7 @@
                 1.8357925415039062
               ]
             },
-            "geometricError": 22.38,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/514_lod2.glb"
@@ -2761,7 +2761,7 @@
                     1.8357925415039062
                   ]
                 },
-                "geometricError": 4.47,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/514_lod1.glb"
@@ -2811,7 +2811,7 @@
                 2.6316909790039062
               ]
             },
-            "geometricError": 32.32,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/\u00dcbergang_lod2.glb"
@@ -2834,7 +2834,7 @@
                     2.6316909790039062
                   ]
                 },
-                "geometricError": 6.46,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/\u00dcbergang_lod1.glb"
@@ -2884,7 +2884,7 @@
                 8.932167053222656
               ]
             },
-            "geometricError": 101.33,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Reihe_00_lod2.glb"
@@ -2907,7 +2907,7 @@
                     8.932167053222656
                   ]
                 },
-                "geometricError": 20.27,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Reihe_00_lod1.glb"
@@ -2957,7 +2957,7 @@
                 8.091865539550781
               ]
             },
-            "geometricError": 80.92,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Reihe_01_lod2.glb"
@@ -2980,7 +2980,7 @@
                     8.091865539550781
                   ]
                 },
-                "geometricError": 16.18,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Reihe_01_lod1.glb"
@@ -3030,7 +3030,7 @@
                 8.339889526367188
               ]
             },
-            "geometricError": 83.4,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Reihe_02_lod2.glb"
@@ -3053,7 +3053,7 @@
                     8.339889526367188
                   ]
                 },
-                "geometricError": 16.68,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Reihe_02_lod1.glb"
@@ -3103,7 +3103,7 @@
                 8.402938842773438
               ]
             },
-            "geometricError": 84.03,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Reihe_03_lod2.glb"
@@ -3126,7 +3126,7 @@
                     8.402938842773438
                   ]
                 },
-                "geometricError": 16.81,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Reihe_03_lod1.glb"
@@ -3176,7 +3176,7 @@
                 8.367759704589844
               ]
             },
-            "geometricError": 83.68,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Reihe_04_lod2.glb"
@@ -3199,7 +3199,7 @@
                     8.367759704589844
                   ]
                 },
-                "geometricError": 16.74,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Reihe_04_lod1.glb"
@@ -3249,7 +3249,7 @@
                 8.370574951171875
               ]
             },
-            "geometricError": 83.7,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Reihe_05_lod2.glb"
@@ -3272,7 +3272,7 @@
                     8.370574951171875
                   ]
                 },
-                "geometricError": 16.74,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Reihe_05_lod1.glb"
@@ -3322,7 +3322,7 @@
                 6.6337127685546875
               ]
             },
-            "geometricError": 100.53,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Kehlb\u00e4lken_lod2.glb"
@@ -3345,7 +3345,7 @@
                     6.6337127685546875
                   ]
                 },
-                "geometricError": 20.11,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Kehlb\u00e4lken_lod1.glb"
@@ -3395,7 +3395,7 @@
                 0.5740127563476562
               ]
             },
-            "geometricError": 9.04,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Treppengel\u00e4nder_lod2.glb"
@@ -3418,7 +3418,7 @@
                     0.5740127563476562
                   ]
                 },
-                "geometricError": 1.81,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Treppengel\u00e4nder_lod1.glb"
@@ -3468,7 +3468,7 @@
                 7.68707275390625
               ]
             },
-            "geometricError": 76.87,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/OG_Wohnbereich_lod2.glb"
@@ -3491,7 +3491,7 @@
                     7.68707275390625
                   ]
                 },
-                "geometricError": 15.37,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/OG_Wohnbereich_lod1.glb"
@@ -3541,7 +3541,7 @@
                 7.583526611328125
               ]
             },
-            "geometricError": 75.83,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Heuboden_lod2.glb"
@@ -3564,7 +3564,7 @@
                     7.583526611328125
                   ]
                 },
-                "geometricError": 15.17,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Heuboden_lod1.glb"
@@ -3614,7 +3614,7 @@
                 12.143135070800781
               ]
             },
-            "geometricError": 150.72,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2022_531+534_lod2.glb"
@@ -3637,7 +3637,7 @@
                     12.143135070800781
                   ]
                 },
-                "geometricError": 30.14,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2022_531+534_lod1.glb"
@@ -3687,7 +3687,7 @@
                 3.1339874267578125
               ]
             },
-            "geometricError": 48.37,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/532_lod2.glb"
@@ -3710,7 +3710,7 @@
                     3.1339874267578125
                   ]
                 },
-                "geometricError": 9.67,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/532_lod1.glb"
@@ -3760,7 +3760,7 @@
                 5.363922119140625
               ]
             },
-            "geometricError": 56.09,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/533_lod2.glb"
@@ -3783,7 +3783,7 @@
                     5.363922119140625
                   ]
                 },
-                "geometricError": 11.22,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/533_lod1.glb"
@@ -3833,7 +3833,7 @@
                 18.460739135742188
               ]
             },
-            "geometricError": 192.62,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/551_lod2.glb"
@@ -3856,7 +3856,7 @@
                     18.460739135742188
                   ]
                 },
-                "geometricError": 38.52,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/551_lod1.glb"
@@ -3906,7 +3906,7 @@
                 7.1657562255859375
               ]
             },
-            "geometricError": 72.78,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/611_lod2.glb"
@@ -3929,7 +3929,7 @@
                     7.1657562255859375
                   ]
                 },
-                "geometricError": 14.56,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/611_lod1.glb"
@@ -3979,7 +3979,7 @@
                 3.6180419921875
               ]
             },
-            "geometricError": 43.97,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/612_lod2.glb"
@@ -4002,7 +4002,7 @@
                     3.6180419921875
                   ]
                 },
-                "geometricError": 8.79,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/612_lod1.glb"
@@ -4052,7 +4052,7 @@
                 2.8348236083984375
               ]
             },
-            "geometricError": 28.35,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/613_lod2.glb"
@@ -4075,7 +4075,7 @@
                     2.8348236083984375
                   ]
                 },
-                "geometricError": 5.67,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/613_lod1.glb"
@@ -4125,7 +4125,7 @@
                 3.2099761962890625
               ]
             },
-            "geometricError": 32.1,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/614_lod2.glb"
@@ -4148,7 +4148,7 @@
                     3.2099761962890625
                   ]
                 },
-                "geometricError": 6.42,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/614_lod1.glb"
@@ -4198,7 +4198,7 @@
                 6.74676513671875
               ]
             },
-            "geometricError": 112.16,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/621_lod2.glb"
@@ -4221,7 +4221,7 @@
                     6.74676513671875
                   ]
                 },
-                "geometricError": 22.43,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/621_lod1.glb"
@@ -4271,7 +4271,7 @@
                 2.94921875
               ]
             },
-            "geometricError": 49.5,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/622_lod2.glb"
@@ -4294,7 +4294,7 @@
                     2.94921875
                   ]
                 },
-                "geometricError": 9.9,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/622_lod1.glb"
@@ -4344,7 +4344,7 @@
                 9.123062133789062
               ]
             },
-            "geometricError": 120.25,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/641_lod2.glb"
@@ -4367,7 +4367,7 @@
                     9.123062133789062
                   ]
                 },
-                "geometricError": 24.05,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/641_lod1.glb"
@@ -4417,7 +4417,7 @@
                 7.782318115234375
               ]
             },
-            "geometricError": 97.0,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/642_lod2.glb"
@@ -4440,7 +4440,7 @@
                     7.782318115234375
                   ]
                 },
-                "geometricError": 19.4,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/642_lod1.glb"
@@ -4490,7 +4490,7 @@
                 5.0091705322265625
               ]
             },
-            "geometricError": 50.09,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/643_lod2.glb"
@@ -4513,7 +4513,7 @@
                     5.0091705322265625
                   ]
                 },
-                "geometricError": 10.02,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/643_lod1.glb"
@@ -4563,7 +4563,7 @@
                 6.3173828125
               ]
             },
-            "geometricError": 96.78,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/691_lod2.glb"
@@ -4586,7 +4586,7 @@
                     6.3173828125
                   ]
                 },
-                "geometricError": 19.36,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/691_lod1.glb"
@@ -4636,7 +4636,7 @@
                 4.7791290283203125
               ]
             },
-            "geometricError": 57.17,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/692_lod2.glb"
@@ -4659,7 +4659,7 @@
                     4.7791290283203125
                   ]
                 },
-                "geometricError": 11.43,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/692_lod1.glb"
@@ -4709,7 +4709,7 @@
                 5.888153076171875
               ]
             },
-            "geometricError": 75.56,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/693_lod2.glb"
@@ -4732,7 +4732,7 @@
                     5.888153076171875
                   ]
                 },
-                "geometricError": 15.11,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/693_lod1.glb"
@@ -4782,7 +4782,7 @@
                 4.4715576171875
               ]
             },
-            "geometricError": 44.71,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/694_lod2.glb"
@@ -4805,7 +4805,7 @@
                     4.4715576171875
                   ]
                 },
-                "geometricError": 8.94,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/694_lod1.glb"
@@ -4855,7 +4855,7 @@
                 12.81231689453125
               ]
             },
-            "geometricError": 128.12,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/695_lod2.glb"
@@ -4878,7 +4878,7 @@
                     12.81231689453125
                   ]
                 },
-                "geometricError": 25.62,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/695_lod1.glb"
@@ -4928,7 +4928,7 @@
                 8.144134521484375
               ]
             },
-            "geometricError": 81.44,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/711_lod2.glb"
@@ -4951,7 +4951,7 @@
                     8.144134521484375
                   ]
                 },
-                "geometricError": 16.29,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/711_lod1.glb"
@@ -5001,7 +5001,7 @@
                 10.27581787109375
               ]
             },
-            "geometricError": 102.76,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/712_lod2.glb"
@@ -5024,7 +5024,7 @@
                     10.27581787109375
                   ]
                 },
-                "geometricError": 20.55,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/712_lod1.glb"
@@ -5074,7 +5074,7 @@
                 3.2707061767578125
               ]
             },
-            "geometricError": 32.7,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/713_lod2.glb"
@@ -5097,7 +5097,7 @@
                     3.2707061767578125
                   ]
                 },
-                "geometricError": 6.54,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/713_lod1.glb"
@@ -5147,7 +5147,7 @@
                 7.9221343994140625
               ]
             },
-            "geometricError": 79.83,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/721_lod2.glb"
@@ -5170,7 +5170,7 @@
                     7.9221343994140625
                   ]
                 },
-                "geometricError": 15.97,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/721_lod1.glb"
@@ -5220,7 +5220,7 @@
                 3.6251983642578125
               ]
             },
-            "geometricError": 37.11,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/723_lod2.glb"
@@ -5243,7 +5243,7 @@
                     3.6251983642578125
                   ]
                 },
-                "geometricError": 7.42,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/723_lod1.glb"
@@ -5293,7 +5293,7 @@
                 10.220611572265625
               ]
             },
-            "geometricError": 102.2,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/731_lod2.glb"
@@ -5316,7 +5316,7 @@
                     10.220611572265625
                   ]
                 },
-                "geometricError": 20.44,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/731_lod1.glb"
@@ -5366,7 +5366,7 @@
                 8.429489135742188
               ]
             },
-            "geometricError": 92.55,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/741_lod2.glb"
@@ -5389,7 +5389,7 @@
                     8.429489135742188
                   ]
                 },
-                "geometricError": 18.51,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/741_lod1.glb"
@@ -5439,7 +5439,7 @@
                 29.934707641601562
               ]
             },
-            "geometricError": 299.35,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2025_751_lod2.glb"
@@ -5462,7 +5462,7 @@
                     29.934707641601562
                   ]
                 },
-                "geometricError": 59.87,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2025_751_lod1.glb"
@@ -5512,7 +5512,7 @@
                 6.0541534423828125
               ]
             },
-            "geometricError": 76.94,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2022_751_lod2.glb"
@@ -5535,7 +5535,7 @@
                     6.0541534423828125
                   ]
                 },
-                "geometricError": 15.39,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2022_751_lod1.glb"
@@ -5585,7 +5585,7 @@
                 6.001495361328125
               ]
             },
-            "geometricError": 86.34,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/test_lod2.glb"
@@ -5608,7 +5608,7 @@
                     6.001495361328125
                   ]
                 },
-                "geometricError": 17.27,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/test_lod1.glb"
@@ -5658,7 +5658,7 @@
                 7.3292694091796875
               ]
             },
-            "geometricError": 104.38,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/new_lod2.glb"
@@ -5681,7 +5681,7 @@
                     7.3292694091796875
                   ]
                 },
-                "geometricError": 20.88,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/new_lod1.glb"
@@ -5731,7 +5731,7 @@
                 7.285675048828125
               ]
             },
-            "geometricError": 80.36,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1._Bauphase_lod2.glb"
@@ -5754,7 +5754,7 @@
                     7.285675048828125
                   ]
                 },
-                "geometricError": 16.07,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1._Bauphase_lod1.glb"
@@ -5804,7 +5804,7 @@
                 7.3564453125
               ]
             },
-            "geometricError": 104.75,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2022_752_lod2.glb"
@@ -5827,7 +5827,7 @@
                     7.3564453125
                   ]
                 },
-                "geometricError": 20.95,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2022_752_lod1.glb"
@@ -5877,7 +5877,7 @@
                 6.829193115234375
               ]
             },
-            "geometricError": 80.51,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/761_lod2.glb"
@@ -5900,7 +5900,7 @@
                     6.829193115234375
                   ]
                 },
-                "geometricError": 16.1,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/761_lod1.glb"
@@ -5950,7 +5950,7 @@
                 5.106693267822266
               ]
             },
-            "geometricError": 51.06,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/811_lod2.glb"
@@ -5973,7 +5973,7 @@
                     5.106693267822266
                   ]
                 },
-                "geometricError": 10.21,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/811_lod1.glb"
@@ -6023,7 +6023,7 @@
                 6.71990966796875
               ]
             },
-            "geometricError": 67.2,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/812_lod2.glb"
@@ -6046,7 +6046,7 @@
                     6.71990966796875
                   ]
                 },
-                "geometricError": 13.44,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/812_lod1.glb"
@@ -6096,7 +6096,7 @@
                 6.667327880859375
               ]
             },
-            "geometricError": 68.06,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2022_821_lod2.glb"
@@ -6119,7 +6119,7 @@
                     6.667327880859375
                   ]
                 },
-                "geometricError": 13.61,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2022_821_lod1.glb"
@@ -6169,7 +6169,7 @@
                 4.683032989501953
               ]
             },
-            "geometricError": 49.01,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2025_821_lod2.glb"
@@ -6192,7 +6192,7 @@
                     4.683032989501953
                   ]
                 },
-                "geometricError": 9.8,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2025_821_lod1.glb"
@@ -6242,7 +6242,7 @@
                 4.397468566894531
               ]
             },
-            "geometricError": 94.06,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/832_lod2.glb"
@@ -6265,7 +6265,7 @@
                     4.397468566894531
                   ]
                 },
-                "geometricError": 18.81,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/832_lod1.glb"
@@ -6315,7 +6315,7 @@
                 8.091239929199219
               ]
             },
-            "geometricError": 95.76,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/841_lod2.glb"
@@ -6338,7 +6338,7 @@
                     8.091239929199219
                   ]
                 },
-                "geometricError": 19.15,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/841_lod1.glb"
@@ -6388,7 +6388,7 @@
                 23.60680389404297
               ]
             },
-            "geometricError": 270.74,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2022_851_lod2.glb"
@@ -6411,7 +6411,7 @@
                     23.60680389404297
                   ]
                 },
-                "geometricError": 54.15,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2022_851_lod1.glb"
@@ -6461,7 +6461,7 @@
                 5.6809539794921875
               ]
             },
-            "geometricError": 62.37,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1._Bauphase_851_lod2.glb"
@@ -6484,7 +6484,7 @@
                     5.6809539794921875
                   ]
                 },
-                "geometricError": 12.47,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1._Bauphase_851_lod1.glb"
@@ -6534,7 +6534,7 @@
                 11.189189910888672
               ]
             },
-            "geometricError": 131.09,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/2._Bauphase_851_lod2.glb"
@@ -6557,7 +6557,7 @@
                     11.189189910888672
                   ]
                 },
-                "geometricError": 26.22,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/2._Bauphase_851_lod1.glb"
@@ -6607,7 +6607,7 @@
                 16.073009490966797
               ]
             },
-            "geometricError": 185.44,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/3._Bauphase_851_lod2.glb"
@@ -6630,7 +6630,7 @@
                     16.073009490966797
                   ]
                 },
-                "geometricError": 37.09,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/3._Bauphase_851_lod1.glb"
@@ -6680,7 +6680,7 @@
                 6.790111541748047
               ]
             },
-            "geometricError": 72.79,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/4._Bauphase_851_lod2.glb"
@@ -6703,7 +6703,7 @@
                     6.790111541748047
                   ]
                 },
-                "geometricError": 14.56,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/4._Bauphase_851_lod1.glb"
@@ -6753,7 +6753,7 @@
                 8.443466186523438
               ]
             },
-            "geometricError": 104.68,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/5._Bauphase_851_lod2.glb"
@@ -6776,7 +6776,7 @@
                     8.443466186523438
                   ]
                 },
-                "geometricError": 20.94,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/5._Bauphase_851_lod1.glb"
@@ -6826,7 +6826,7 @@
                 10.308975219726562
               ]
             },
-            "geometricError": 150.28,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/6._Bauphase_851_lod2.glb"
@@ -6849,7 +6849,7 @@
                     10.308975219726562
                   ]
                 },
-                "geometricError": 30.05,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/6._Bauphase_851_lod1.glb"
@@ -6899,7 +6899,7 @@
                 13.824363708496094
               ]
             },
-            "geometricError": 188.46,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/7._Bauphase_851_lod2.glb"
@@ -6922,7 +6922,7 @@
                     13.824363708496094
                   ]
                 },
-                "geometricError": 37.69,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/7._Bauphase_851_lod1.glb"
@@ -6972,7 +6972,7 @@
                 4.3206329345703125
               ]
             },
-            "geometricError": 45.72,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/852_lod2.glb"
@@ -6995,7 +6995,7 @@
                     4.3206329345703125
                   ]
                 },
-                "geometricError": 9.14,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/852_lod1.glb"
@@ -7045,7 +7045,7 @@
                 2.9577102661132812
               ]
             },
-            "geometricError": 60.49,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/892_lod2.glb"
@@ -7068,7 +7068,7 @@
                     2.9577102661132812
                   ]
                 },
-                "geometricError": 12.1,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/892_lod1.glb"
@@ -7118,7 +7118,7 @@
                 14.7745361328125
               ]
             },
-            "geometricError": 147.84,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/911_lod2.glb"
@@ -7141,7 +7141,7 @@
                     14.7745361328125
                   ]
                 },
-                "geometricError": 29.57,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/911_lod1.glb"
@@ -7191,7 +7191,7 @@
                 3.0152130126953125
               ]
             },
-            "geometricError": 30.22,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/912_lod2.glb"
@@ -7214,7 +7214,7 @@
                     3.0152130126953125
                   ]
                 },
-                "geometricError": 6.04,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/912_lod1.glb"
@@ -7264,7 +7264,7 @@
                 7.882843017578125
               ]
             },
-            "geometricError": 99.63,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/931_lod2.glb"
@@ -7287,7 +7287,7 @@
                     7.882843017578125
                   ]
                 },
-                "geometricError": 19.93,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/931_lod1.glb"
@@ -7337,7 +7337,7 @@
                 10.37322998046875
               ]
             },
-            "geometricError": 103.73,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1011_lod2.glb"
@@ -7360,7 +7360,7 @@
                     10.37322998046875
                   ]
                 },
-                "geometricError": 20.75,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1011_lod1.glb"
@@ -7410,7 +7410,7 @@
                 4.1808624267578125
               ]
             },
-            "geometricError": 41.81,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1012_lod2.glb"
@@ -7433,7 +7433,7 @@
                     4.1808624267578125
                   ]
                 },
-                "geometricError": 8.36,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1012_lod1.glb"
@@ -7483,7 +7483,7 @@
                 2.0720062255859375
               ]
             },
-            "geometricError": 20.72,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1013_lod2.glb"
@@ -7506,7 +7506,7 @@
                     2.0720062255859375
                   ]
                 },
-                "geometricError": 4.14,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1013_lod1.glb"
@@ -7556,7 +7556,7 @@
                 9.671440124511719
               ]
             },
-            "geometricError": 103.32,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1021_lod2.glb"
@@ -7579,7 +7579,7 @@
                     9.671440124511719
                   ]
                 },
-                "geometricError": 20.66,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1021_lod1.glb"
@@ -7629,7 +7629,7 @@
                 4.5656890869140625
               ]
             },
-            "geometricError": 46.05,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1022_lod2.glb"
@@ -7652,7 +7652,7 @@
                     4.5656890869140625
                   ]
                 },
-                "geometricError": 9.21,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1022_lod1.glb"
@@ -7702,7 +7702,7 @@
                 4.689300537109375
               ]
             },
-            "geometricError": 50.16,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1024_lod2.glb"
@@ -7725,7 +7725,7 @@
                     4.689300537109375
                   ]
                 },
-                "geometricError": 10.03,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1024_lod1.glb"
@@ -7775,7 +7775,7 @@
                 15.098220825195312
               ]
             },
-            "geometricError": 226.37,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1061_lod2.glb"
@@ -7798,7 +7798,7 @@
                     15.098220825195312
                   ]
                 },
-                "geometricError": 45.27,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1061_lod1.glb"
@@ -7848,7 +7848,7 @@
                 9.176338195800781
               ]
             },
-            "geometricError": 100.87,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1052_lod2.glb"
@@ -7871,7 +7871,7 @@
                     9.176338195800781
                   ]
                 },
-                "geometricError": 20.17,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1052_lod1.glb"
@@ -7921,7 +7921,7 @@
                 9.359046936035156
               ]
             },
-            "geometricError": 93.59,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1051_lod2.glb"
@@ -7944,7 +7944,7 @@
                     9.359046936035156
                   ]
                 },
-                "geometricError": 18.72,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1051_lod1.glb"
@@ -7994,7 +7994,7 @@
                 2.5433807373046875
               ]
             },
-            "geometricError": 25.43,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1032_lod2.glb"
@@ -8017,7 +8017,7 @@
                     2.5433807373046875
                   ]
                 },
-                "geometricError": 5.09,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1032_lod1.glb"
@@ -8067,7 +8067,7 @@
                 8.689346313476562
               ]
             },
-            "geometricError": 86.9,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1031_lod2.glb"
@@ -8090,7 +8090,7 @@
                     8.689346313476562
                   ]
                 },
-                "geometricError": 17.38,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1031_lod1.glb"
@@ -8140,7 +8140,7 @@
                 4.2967681884765625
               ]
             },
-            "geometricError": 45.61,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1212_lod2.glb"
@@ -8163,7 +8163,7 @@
                     4.2967681884765625
                   ]
                 },
-                "geometricError": 9.12,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1212_lod1.glb"
@@ -8213,7 +8213,7 @@
                 9.300827026367188
               ]
             },
-            "geometricError": 93.07,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1311_lod2.glb"
@@ -8236,7 +8236,7 @@
                     9.300827026367188
                   ]
                 },
-                "geometricError": 18.61,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1311_lod1.glb"
@@ -8286,7 +8286,7 @@
                 13.763717651367188
               ]
             },
-            "geometricError": 137.63,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1312_lod2.glb"
@@ -8309,7 +8309,7 @@
                     13.763717651367188
                   ]
                 },
-                "geometricError": 27.53,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1312_lod1.glb"
@@ -8359,7 +8359,7 @@
                 4.93353271484375
               ]
             },
-            "geometricError": 49.34,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1313_lod2.glb"
@@ -8382,7 +8382,7 @@
                     4.93353271484375
                   ]
                 },
-                "geometricError": 9.87,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1313_lod1.glb"
@@ -8432,7 +8432,7 @@
                 3.73193359375
               ]
             },
-            "geometricError": 38.62,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1314_lod2.glb"
@@ -8455,7 +8455,7 @@
                     3.73193359375
                   ]
                 },
-                "geometricError": 7.72,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1314_lod1.glb"
@@ -8505,7 +8505,7 @@
                 3.78131103515625
               ]
             },
-            "geometricError": 40.12,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1341_lod2.glb"
@@ -8528,7 +8528,7 @@
                     3.78131103515625
                   ]
                 },
-                "geometricError": 8.02,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1341_lod1.glb"
@@ -8578,7 +8578,7 @@
                 7.8184051513671875
               ]
             },
-            "geometricError": 80.66,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1361_lod2.glb"
@@ -8601,7 +8601,7 @@
                     7.8184051513671875
                   ]
                 },
-                "geometricError": 16.13,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1361_lod1.glb"
@@ -8651,7 +8651,7 @@
                 3.2000274658203125
               ]
             },
-            "geometricError": 38.34,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1362_lod2.glb"
@@ -8674,7 +8674,7 @@
                     3.2000274658203125
                   ]
                 },
-                "geometricError": 7.67,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1362_lod1.glb"
@@ -8724,7 +8724,7 @@
                 3.970550537109375
               ]
             },
-            "geometricError": 39.7,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1351_lod2.glb"
@@ -8747,7 +8747,7 @@
                     3.970550537109375
                   ]
                 },
-                "geometricError": 7.94,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1351_lod1.glb"
@@ -8797,7 +8797,7 @@
                 3.7647705078125
               ]
             },
-            "geometricError": 37.67,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1363_lod2.glb"
@@ -8820,7 +8820,7 @@
                     3.7647705078125
                   ]
                 },
-                "geometricError": 7.53,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1363_lod1.glb"
@@ -8870,7 +8870,7 @@
                 4.701629638671875
               ]
             },
-            "geometricError": 47.02,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/1371_lod2.glb"
@@ -8893,7 +8893,7 @@
                     4.701629638671875
                   ]
                 },
-                "geometricError": 9.4,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/1371_lod1.glb"
@@ -8943,7 +8943,7 @@
                 10.59979248046875
               ]
             },
-            "geometricError": 106.0,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Ueberdachung_lod2.glb"
@@ -8966,7 +8966,7 @@
                     10.59979248046875
                   ]
                 },
-                "geometricError": 21.2,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Ueberdachung_lod1.glb"
@@ -9016,7 +9016,7 @@
                 5.837860107421875
               ]
             },
-            "geometricError": 59.28,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/141_Ost_Nebenhaus_lod2.glb"
@@ -9039,7 +9039,7 @@
                     5.837860107421875
                   ]
                 },
-                "geometricError": 11.86,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/141_Ost_Nebenhaus_lod1.glb"
@@ -9089,7 +9089,7 @@
                 12.487655639648438
               ]
             },
-            "geometricError": 124.88,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/141_West_Nebenhaus_lod2.glb"
@@ -9112,7 +9112,7 @@
                     12.487655639648438
                   ]
                 },
-                "geometricError": 24.98,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/141_West_Nebenhaus_lod1.glb"
@@ -9162,7 +9162,7 @@
                 7.5730438232421875
               ]
             },
-            "geometricError": 96.17,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/311_West_Nebenhaus_lod2.glb"
@@ -9185,7 +9185,7 @@
                     7.5730438232421875
                   ]
                 },
-                "geometricError": 19.23,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/311_West_Nebenhaus_lod1.glb"
@@ -9235,7 +9235,7 @@
                 6.8158111572265625
               ]
             },
-            "geometricError": 68.94,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/312_Nord_West_Feldhaus_lod2.glb"
@@ -9258,7 +9258,7 @@
                     6.8158111572265625
                   ]
                 },
-                "geometricError": 13.79,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/312_Nord_West_Feldhaus_lod1.glb"
@@ -9308,7 +9308,7 @@
                 4.4491729736328125
               ]
             },
-            "geometricError": 47.56,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/331_Nord_Spielplatz_lod2.glb"
@@ -9331,7 +9331,7 @@
                     4.4491729736328125
                   ]
                 },
-                "geometricError": 9.51,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/331_Nord_Spielplatz_lod1.glb"
@@ -9381,7 +9381,7 @@
                 7.492645263671875
               ]
             },
-            "geometricError": 74.92,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/491_West_lod2.glb"
@@ -9404,7 +9404,7 @@
                     7.492645263671875
                   ]
                 },
-                "geometricError": 14.98,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/491_West_lod1.glb"
@@ -9454,7 +9454,7 @@
                 4.6457977294921875
               ]
             },
-            "geometricError": 69.21,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/491_Nord_Haupt_lod2.glb"
@@ -9477,7 +9477,7 @@
                     4.6457977294921875
                   ]
                 },
-                "geometricError": 13.84,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/491_Nord_Haupt_lod1.glb"
@@ -9527,7 +9527,7 @@
                 8.6126708984375
               ]
             },
-            "geometricError": 112.07,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/493_Ost_Holzlager_lod2.glb"
@@ -9550,7 +9550,7 @@
                     8.6126708984375
                   ]
                 },
-                "geometricError": 22.41,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/493_Ost_Holzlager_lod1.glb"
@@ -9600,7 +9600,7 @@
                 5.935676574707031
               ]
             },
-            "geometricError": 59.36,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/832_Ost_Weghaus_lod2.glb"
@@ -9623,7 +9623,7 @@
                     5.935676574707031
                   ]
                 },
-                "geometricError": 11.87,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/832_Ost_Weghaus_lod1.glb"
@@ -9673,7 +9673,7 @@
                 12.695439338684082
               ]
             },
-            "geometricError": 126.95,
+            "geometricError": 5.0,
             "refine": "REPLACE",
             "content": {
               "uri": "buildings/Ausserhalb_S\u00fcd_Bauernhof_lod2.glb"
@@ -9696,7 +9696,7 @@
                     12.695439338684082
                   ]
                 },
-                "geometricError": 25.39,
+                "geometricError": 1.0,
                 "refine": "REPLACE",
                 "content": {
                   "uri": "buildings/Ausserhalb_S\u00fcd_Bauernhof_lod1.glb"

@@ -1624,7 +1624,11 @@
 
       try {
         const url = ds.path.startsWith('http') ? ds.path : location.origin + ds.path;
-        const ts  = await Cesium.Cesium3DTileset.fromUrl(url);
+        const ts  = await Cesium.Cesium3DTileset.fromUrl(url, {
+          // Raise tile cache to 4 GB — textured building tiles can be 80+ MB each
+          cacheBytes: 4 * 1024 * 1024 * 1024,
+          maximumCacheOverflowBytes: 1 * 1024 * 1024 * 1024,
+        });
         viewer.scene.primitives.add(ts);
 
         // Capture LV95 centroid from raw bounding sphere before any modelMatrix is set.

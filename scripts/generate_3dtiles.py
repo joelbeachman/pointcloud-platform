@@ -47,8 +47,12 @@ LODS = [
     ('lod2', 0.05),
 ]
 
-# geometricError multipliers (bbox_size * factor)
-LOD_GE_FACTORS = [0, 1.0, 5.0]  # LOD0 never coarser than LOD1, LOD2 shown far away
+# Absolute geometricError values (metres) per LOD level.
+# CesiumJS shows a tile (instead of refining to children) when
+#   geometricError * screenHeight / (2 * tan(halfFOV) * distance) <= maxSSE (default 16)
+# → tile shown at distance >= geometricError * ~58 m  (1080p, 60°FOV)
+# LOD0=0 → always shown when reached; LOD1=1 → shown ≥58 m; LOD2=5 → shown ≥290 m
+LOD_GE_ABSOLUTE = [0.0, 1.0, 5.0]  # indexed same as LODS: lod0, lod1, lod2
 
 DATASET_ID   = 'gesamtmodell'
 DATASET_NAME = 'Gesamtmodell Eggiwil (3D Tiles)'
@@ -257,7 +261,7 @@ def generate(manifest_path, output_dir, lv95_origin):
                 shutil.copy(src_glb, dst_glb_abs)
 
             lod_idx = [l[0] for l in LODS].index(lod_suffix)
-            ge      = size * LOD_GE_FACTORS[lod_idx]
+            ge      = LOD_GE_ABSOLUTE[lod_idx]
             lod_entries.append((dst_glb_name, ge))
 
         tile = make_building_tile(bldg, lod_entries)
