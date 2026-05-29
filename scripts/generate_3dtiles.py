@@ -34,10 +34,9 @@ LV95_ORIGIN = (2648466.518, 1177343.008, 570.290)  # (E, N, H_orthometric)
 # pyproj only has the Swiss geoid grid if proj-data-ch is installed, so we apply
 # the correction manually here.  Tune if the model still appears too high/low.
 GEOID_UNDULATION = 47.5  # metres (LHN95 → WGS84 ellipsoid)
+HEIGHT_OFFSET    = 1.5   # metres fine-tune vertical placement (empirically calibrated)
 
 # Documented yaw of the Blender model relative to geographic North.
-# A negative value means the model's +X axis is rotated clockwise from East
-# when viewed from above.  Applied as a local Z (Up-axis) rotation.
 MODEL_YAW_DEG = 2.2   # empirically calibrated; positive = CCW from East when viewed from above
 
 # gltfpack simplification ratios per LOD level
@@ -136,13 +135,18 @@ def compute_transform(lv95_E, lv95_N, lv95_H,
 
 def run_gltfpack(src_glb, dst_glb, simplify_ratio=None):
     """Run gltfpack to optimize/simplify a GLB. Returns True on success."""
-    cmd = ['gltfpack', '-i', src_glb, '-o', dst_glb, '-kn']  # -kn keeps node names
+    cmd = ['gltfpack', '-i', src_glb, '-o', dst_glb, '-kn', '-tc']  # -kn keeps names, -tc = KTX2
     if simplify_ratio is not None:
         cmd += ['-si', str(simplify_ratio)]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f'  [gltfpack error] {result.stderr.strip()}')
-        return False
+        # Retry without -tc in case basisu encoding fails for this file
+        cmd_notc = [x for x in cmd if x != '-tc']
+        result = subprocess.run(cmd_notc, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f'  [gltfpack error no-tc] {result.stderr.strip()}')
+            return False
     return True
 
 
@@ -221,10 +225,10 @@ def generate(manifest_path, output_dir, lv95_origin):
     # ── compute root transform ──────────────────────────────────────────────
     print('Computing LV95 → ECEF transform...')
     root_transform = compute_transform(*lv95_origin,
-                                       geoid_undulation=GEOID_UNDULATION,
+                                       geoid_undulation=GEOID_UNDULATION + HEIGHT_OFFSET,
                                        yaw_deg=MODEL_YAW_DEG)
     print(f'  ECEF origin: ({root_transform[12]:.0f}, {root_transform[13]:.0f}, {root_transform[14]:.0f})')
-    print(f'  geoid correction: +{GEOID_UNDULATION} m  |  yaw: {MODEL_YAW_DEG}°')
+    print(f'  geoid correction: +{GEOID_UNDULATION} m  height offset: +{HEIGHT_OFFSET} m  yaw: {MODEL_YAW_DEG}°')
 
     # ── process buildings ───────────────────────────────────────────────────
     building_tiles = []
