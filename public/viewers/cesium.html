@@ -155,19 +155,24 @@
     #modal-bg.open { display: flex; }
     #modal-box {
       background: #161b22; border: 1px solid #30363d; border-radius: 10px;
-      padding: 1.2rem; width: 340px; max-height: 65vh;
+      padding: 1.2rem; width: 380px; max-height: 72vh;
       display: flex; flex-direction: column; gap: 0.8rem;
     }
     #modal-box h4 { margin: 0; font-size: 0.95rem; color: #e6edf3; }
     #modal-list { overflow-y: auto; flex: 1; }
+    .mds-group-hdr {
+      font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.07em;
+      color: #8b949e; padding: 0.55rem 0.4rem 0.2rem;
+      border-bottom: 1px solid #21262d; margin-bottom: 2px;
+    }
     .mds-item {
       display: flex; align-items: center; gap: 0.6rem;
-      padding: 0.48rem 0.6rem; border-radius: 6px; cursor: pointer;
+      padding: 0.4rem 0.6rem 0.4rem 1rem; border-radius: 6px; cursor: pointer;
       border: 1px solid transparent; margin-bottom: 2px;
     }
     .mds-item:hover:not(.loaded) { background: #21262d; border-color: #30363d; }
     .mds-item.loaded { opacity: 0.38; cursor: default; }
-    .mds-name { font-size: 0.85rem; color: #e6edf3; flex: 1; }
+    .mds-name { font-size: 0.83rem; color: #e6edf3; flex: 1; }
     .mds-badge {
       font-size: 0.68rem; color: #8b949e;
       background: #21262d; border-radius: 3px; padding: 1px 5px;
@@ -178,6 +183,19 @@
       font-size: 0.83rem; align-self: flex-end;
     }
     #modal-close:hover { color: #e6edf3; border-color: #8b949e; }
+
+    /* ── Tragwerk load-distribution legend ── */
+    #tragwerk-legend {
+      display: none; position: absolute; bottom: 110px; left: 230px;
+      background: #0d1117cc; border: 1px solid #30363d; border-radius: 8px;
+      padding: 0.7rem 0.9rem; z-index: 30; font-size: 0.75rem; color: #e6edf3;
+      min-width: 160px;
+    }
+    #tragwerk-legend h5 { margin: 0 0 0.5rem; font-size: 0.72rem; color: #8b949e;
+                          text-transform: uppercase; letter-spacing: 0.06em; }
+    .tl-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 3px; }
+    .tl-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+    .tl-label { font-size: 0.75rem; }
 
     /* Toolbar add button */
     #add-layer-btn {
@@ -475,6 +493,18 @@
     <span>Click to open panorama</span>
   </div>
   <div id="cb-handle-tip"></div>
+
+  <!-- Tragwerk load-distribution legend (shown when a Tragwerk layer is active) -->
+  <div id="tragwerk-legend">
+    <h5>Lastverteilung (mock)</h5>
+    <div class="tl-row"><div class="tl-swatch" style="background:#e74c3c"></div><span class="tl-label">Reihe 00 — hoch</span></div>
+    <div class="tl-row"><div class="tl-swatch" style="background:#e67e22"></div><span class="tl-label">Reihe 01</span></div>
+    <div class="tl-row"><div class="tl-swatch" style="background:#f1c40f"></div><span class="tl-label">Reihe 02</span></div>
+    <div class="tl-row"><div class="tl-swatch" style="background:#2ecc71"></div><span class="tl-label">Reihe 03</span></div>
+    <div class="tl-row"><div class="tl-swatch" style="background:#1abc9c"></div><span class="tl-label">Reihe 04</span></div>
+    <div class="tl-row"><div class="tl-swatch" style="background:#3498db"></div><span class="tl-label">Reihe 05 — niedrig</span></div>
+    <div class="tl-row"><div class="tl-swatch" style="background:#9b59b6"></div><span class="tl-label">Kehlbälken — Zug</span></div>
+  </div>
 
   <!-- Add Layer modal -->
   <div id="modal-bg">
@@ -1680,14 +1710,39 @@
 
         layer.tileset = ts;
 
+        // Apply Tragwerk load-distribution colors based on tile URI
+        if (ds.group === 'Tragwerk') {
+          const TRAGWERK_COLORS = {
+            'Reihe_00': Cesium.Color.fromCssColorString('#e74c3c'),
+            'Reihe_01': Cesium.Color.fromCssColorString('#e67e22'),
+            'Reihe_02': Cesium.Color.fromCssColorString('#f1c40f'),
+            'Reihe_03': Cesium.Color.fromCssColorString('#2ecc71'),
+            'Reihe_04': Cesium.Color.fromCssColorString('#1abc9c'),
+            'Reihe_05': Cesium.Color.fromCssColorString('#3498db'),
+            'Kehlbälken': Cesium.Color.fromCssColorString('#9b59b6'),
+          };
+          const matchKey = (uri) => {
+            for (const key of Object.keys(TRAGWERK_COLORS)) {
+              if (uri && uri.includes(key)) return key;
+            }
+            return null;
+          };
+          ts.style = new Cesium.Cesium3DTileStyle();
+          ts.tileLoad.addEventListener((tile) => {
+            const uri = tile.content?.url ?? tile.contentUrl ?? '';
+            const key = matchKey(uri);
+            if (key) {
+              const c = TRAGWERK_COLORS[key];
+              try { tile.content.model.color = c; } catch(e) {}
+            }
+          });
+          updateTragwerkLegend();
+        }
+
         // Debug: log tile content loading errors
         ts.tileFailed.addEventListener((err) => {
-          console.error('[splat] tile failed:', err.url, err.message,
+          console.error('[3dtiles] tile failed:', err.url, err.message,
             err.error?.stack ?? err.error ?? '');
-        });
-        ts.tileLoad.addEventListener((tile) => {
-          console.log('[splat] tile loaded:', tile.contentUrl || tile.content?.url,
-            'primitives:', tile.content?._model?._sceneGraph?.components?.scenes?.length);
         });
 
         addPanoMarkers(layer, ds);
@@ -1717,6 +1772,7 @@
       // Reset clip center so next seed uses the new first layer
       if (!layers.some(l => l.tileset)) { cbOriginEcef = null; cbClearAllWireframes(); }
       renderLayerList();
+      updateTragwerkLegend();
     }
 
     function setLayerVisible(layerId, visible) {
@@ -1726,6 +1782,15 @@
       if (layer.tileset) layer.tileset.show = visible;
       const scanStationsOn = document.getElementById('scan-stations-toggle')?.checked ?? true;
       layer.panoEnts.forEach(e => { e.show = visible && scanStationsOn; });
+      updateTragwerkLegend();
+    }
+
+    function updateTragwerkLegend() {
+      const hasTragwerk = layers.some(l => {
+        const ds = allDatasets.find(d => d.id === l.dsId);
+        return ds?.group === 'Tragwerk' && l.visible;
+      });
+      document.getElementById('tragwerk-legend').style.display = hasTragwerk ? 'block' : 'none';
     }
 
     function flyToLayer(layer) {
@@ -1808,16 +1873,32 @@
       const loadedIds = new Set(layers.map(l => l.dsId));
       const compat    = allDatasets.filter(isCompat);
       const el = document.getElementById('modal-list');
-      el.innerHTML = compat.length
-        ? compat.map(ds => {
+
+      if (!compat.length) {
+        el.innerHTML = '<div style="color:#8b949e;font-size:0.83rem;padding:0.5rem">No compatible datasets.</div>';
+      } else {
+        // Group by ds.group (if present), ungrouped last
+        const groups = new Map();
+        for (const ds of compat) {
+          const g = ds.group || '—';
+          if (!groups.has(g)) groups.set(g, []);
+          groups.get(g).push(ds);
+        }
+        let html = '';
+        for (const [grp, dsList] of groups) {
+          html += `<div class="mds-group-hdr">${grp}</div>`;
+          for (const ds of dsList) {
             const loaded = loadedIds.has(ds.id);
-            const badge  = ds.type === 'cesium-splat' ? 'Gaussian Splat' : '3D Tiles';
-            return `<div class="mds-item ${loaded ? 'loaded' : ''}" data-dsid="${ds.id}">
+            const badge  = ds.type === 'cesium-splat' ? 'Splat' : '3D Tiles';
+            html += `<div class="mds-item ${loaded ? 'loaded' : ''}" data-dsid="${ds.id}">
               <span class="mds-name">${ds.name}</span>
               <span class="mds-badge">${badge}</span>
             </div>`;
-          }).join('')
-        : '<div style="color:#8b949e;font-size:0.83rem;padding:0.5rem">No compatible datasets.</div>';
+          }
+        }
+        el.innerHTML = html;
+      }
+
       el.querySelectorAll('.mds-item:not(.loaded)').forEach(item =>
         item.addEventListener('click', () => {
           const ds = allDatasets.find(d => d.id === item.dataset.dsid);

@@ -378,14 +378,40 @@ def generate(manifest_path, output_dir, lv95_origin):
     print(f'\nWrote {main_path}  ({len(standalone)} standalone buildings, terrain={terrain_tile is not None})')
 
     # ── per-group tilesets: one file per parent collection ───────────────────
-    group_paths = []  # [(parent_name, tileset_path), ...]
+    group_paths = []  # [(parent_name, leaf_name_or_None, tileset_path), ...]
     for parent_name, tile_bldg_list in sorted(group_tiles.items()):
         safe_parent = parent_name.replace('/', '_').replace(' ', '_').replace('\\', '_')
         filename    = f'tileset_{safe_parent}.json'
         group_root, group_bbox, _ = make_group_root(tile_bldg_list, root_bmin, root_bmax)
         path = write_tileset(filename, group_root, None, parent_name, tile_bbox=group_bbox)
-        group_paths.append((parent_name, path))
-        print(f'Wrote {path}  ({len(tile_bldg_list)} phases of "{parent_name}")')
+        group_paths.append((parent_name, None, path))
+        print(f'Wrote {path}  ({len(tile_bldg_list)} buildings in "{parent_name}")')
+
+        # ── per-leaf tilesets for multi-building groups ─────────────────────
+        # Generates one tileset per individual building so phases can be
+        # toggled independently in the viewer (e.g. Bauphase 1 vs 2 of 851).
+        if len(tile_bldg_list) > 1:
+            for tile, bldg in tile_bldg_list:
+                leaf_name = bldg['name']
+                safe_leaf = leaf_name.replace('/', '_').replace(' ', '_').replace('\\', '_')
+                leaf_filename = f'tileset_{safe_parent}_{safe_leaf}.json'
+                # Wrap the single REPLACE-chain tile in an ADD root
+                bmin = bldg.get('bbox_min', root_bmin)
+                bmax = bldg.get('bbox_max', root_bmax)
+                leaf_size = max(bmax[i] - bmin[i] for i in range(3))
+                leaf_root = {
+                    'boundingVolume': {'box': box_bounding_volume(bmin, bmax)},
+                    'geometricError': leaf_size * 10,
+                    'refine': 'ADD',
+                    'children': [tile],
+                }
+                path_leaf = write_tileset(
+                    leaf_filename, leaf_root, None,
+                    f'{parent_name} — {leaf_name}',
+                    tile_bbox=(bmin, bmax),
+                )
+                group_paths.append((parent_name, leaf_name, path_leaf))
+            print(f'  + {len(tile_bldg_list)} individual phase tilesets for "{parent_name}"')
 
     return main_path, group_paths
 
@@ -402,16 +428,21 @@ def _to_web_path(fs_path):
 def register_datasets(main_path, group_paths, datasets_path):
     """
     Add/update gesamtmodell entries in datasets.json.
-    Creates one entry for the main tileset and one per Bauphase group.
+    group_paths entries: (parent_name, leaf_name_or_None, tileset_path)
+      leaf_name=None → group tileset (all phases together)
+      leaf_name=str  → individual phase tileset
     """
     import datetime
     with open(datasets_path, encoding='utf-8') as f:
         datasets = json.load(f)
 
-    # Remove all existing gesamtmodell entries (main + any previous groups)
+    # Remove all existing gesamtmodell entries (main + any previous groups/leaves)
     datasets = [d for d in datasets if not d.get('id', '').startswith(DATASET_ID)]
 
     now = datetime.datetime.utcnow().isoformat() + 'Z'
+
+    def safe(s):
+        return s.replace('/', '_').replace(' ', '_').replace('\\', '_').replace('+', '_')
 
     # Main tileset (standalone buildings + terrain)
     datasets.append({
@@ -422,28 +453,40 @@ def register_datasets(main_path, group_paths, datasets_path):
         'path':        _to_web_path(main_path),
         'description': 'Gesamtmodell Eggiwil — all standalone buildings and terrain.',
         'crs':         'EPSG:2056',
+        'group':       'Gesamtmodell',
         'createdAt':   now,
     })
 
-    # One entry per Bauphase group
-    for parent_name, ts_path in group_paths:
-        safe = parent_name.replace('/', '_').replace(' ', '_').replace('\\', '_')
+    for parent_name, leaf_name, ts_path in group_paths:
+        if leaf_name is None:
+            # Group tileset — all phases of this building family together
+            ds_id   = f'{DATASET_ID}_{safe(parent_name)}'
+            ds_name = f'{parent_name} (alle Phasen)'
+            desc    = f'Alle Phasen von {parent_name}.'
+        else:
+            # Individual phase tileset
+            ds_id   = f'{DATASET_ID}_{safe(parent_name)}_{safe(leaf_name)}'
+            ds_name = leaf_name
+            desc    = f'{leaf_name} — Phase von {parent_name}.'
+
         datasets.append({
-            'id':          f'{DATASET_ID}_{safe}',
-            'name':        f'Gesamtmodell — {parent_name}',
+            'id':          ds_id,
+            'name':        ds_name,
             'type':        'cesium',
             'source':      'model',
             'path':        _to_web_path(ts_path),
-            'description': f'Bauphasen of {parent_name} (Gesamtmodell Eggiwil).',
+            'description': desc,
             'crs':         'EPSG:2056',
+            'group':       parent_name,
             'createdAt':   now,
         })
-        print(f'  Registered "{DATASET_ID}_{safe}" → {ts_path}')
 
     with open(datasets_path, 'w', encoding='utf-8') as f:
         json.dump(datasets, f, indent=2)
 
-    print(f'Registered {1 + len(group_paths)} dataset(s) in {datasets_path}')
+    n_groups = sum(1 for _, l, _ in group_paths if l is None)
+    n_leaves = sum(1 for _, l, _ in group_paths if l is not None)
+    print(f'Registered 1 main + {n_groups} group + {n_leaves} individual tilesets in {datasets_path}')
 
 
 # ── entry point ───────────────────────────────────────────────────────────────
