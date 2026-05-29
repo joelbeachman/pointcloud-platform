@@ -87,18 +87,35 @@ def deselect_all():
     bpy.ops.object.select_all(action='DESELECT')
 
 
+# Object name prefixes/substrings to exclude from building exports.
+# DGM = Digitales Geländemodell (terrain mesh embedded in some building collections).
+EXCLUDE_NAME_PREFIXES = ('DGM',)
+
 def select_objects(objects):
     """Select a list of objects; set the first as active.
-    Skips objects with zero scale (they're hidden in Blender but export as
-    singular matrices which crash CesiumJS when inverting the model matrix).
+
+    Skips:
+    - Zero-scale objects (hidden in Blender; export as singular matrices that
+      crash CesiumJS when inverting the model matrix).
+    - Viewport-hidden objects (hide_viewport=True; these are intentionally
+      invisible and should not appear in the export).
+    - Objects whose names start with EXCLUDE_NAME_PREFIXES (e.g. DGM terrain
+      meshes that are embedded inside building collections by mistake).
     """
     deselect_all()
     active = None
     for obj in objects:
         if obj.type in ('MESH', 'EMPTY', 'CURVE', 'SURFACE'):
+            # Skip zero-scale
             s = obj.scale
             if s.x == 0 or s.y == 0 or s.z == 0:
-                continue  # skip zero-scale (hidden) objects
+                continue
+            # Skip viewport-hidden
+            if obj.hide_viewport or obj.hide_get():
+                continue
+            # Skip excluded name prefixes (DGM terrain meshes, etc.)
+            if any(obj.name.startswith(p) for p in EXCLUDE_NAME_PREFIXES):
+                continue
             obj.select_set(True)
             if active is None:
                 active = obj
