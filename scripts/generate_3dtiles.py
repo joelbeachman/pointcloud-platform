@@ -166,26 +166,20 @@ def box_bounding_volume(bbox_min, bbox_max):
     """
     Build a 3D Tiles 'box' bounding volume from a local-space AABB.
     Format: [cx, cy, cz,  hx,0,0,  0,hy,0,  0,0,hz]
-    Note: Blender Z-up is exported as glTF Y-up, so swap Y↔Z for glTF frame.
-      Blender: (x, y, z) → glTF: (x, z, -y)
+
+    Tile bounding volumes are in the TILE's local coordinate system — the same
+    Z-up ENU space that the root transform maps FROM (Blender world space).
+    CesiumJS applies its Y-up→Z-up glTF correction internally to the model
+    geometry only; bounding volumes must NOT be converted to Y-up.
+    Using Y-up here places bounding sphere centres hundreds of metres below
+    the model (North ↔ Up axes swapped).
     """
-    # Blender bbox → glTF Y-up bbox
-    bx_min, by_min, bz_min = bbox_min
-    bx_max, by_max, bz_max = bbox_max
-
-    # glTF X = Blender X (East)
-    # glTF Y = Blender Z (Up)
-    # glTF Z = -Blender Y (-North)
-    gtlf_x_min, gtlf_x_max = bx_min, bx_max
-    gtlf_y_min, gtlf_y_max = bz_min, bz_max
-    gtlf_z_min, gtlf_z_max = -by_max, -by_min  # negate + swap
-
-    cx = (gtlf_x_min + gtlf_x_max) / 2
-    cy = (gtlf_y_min + gtlf_y_max) / 2
-    cz = (gtlf_z_min + gtlf_z_max) / 2
-    hx = (gtlf_x_max - gtlf_x_min) / 2
-    hy = (gtlf_y_max - gtlf_y_min) / 2
-    hz = (gtlf_z_max - gtlf_z_min) / 2
+    cx = (bbox_min[0] + bbox_max[0]) / 2
+    cy = (bbox_min[1] + bbox_max[1]) / 2
+    cz = (bbox_min[2] + bbox_max[2]) / 2
+    hx = (bbox_max[0] - bbox_min[0]) / 2
+    hy = (bbox_max[1] - bbox_min[1]) / 2
+    hz = (bbox_max[2] - bbox_min[2]) / 2
 
     return [cx, cy, cz,  hx, 0, 0,  0, hy, 0,  0, 0, hz]
 
