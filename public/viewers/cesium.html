@@ -1625,9 +1625,19 @@
       try {
         const url = ds.path.startsWith('http') ? ds.path : location.origin + ds.path;
         const ts  = await Cesium.Cesium3DTileset.fromUrl(url, {
-          // Raise tile cache to 4 GB — textured building tiles can be 80+ MB each
+          // Raise tile cache — textured building tiles can be 80+ MB each
           cacheBytes: 4 * 1024 * 1024 * 1024,
-          maximumCacheOverflowBytes: 1 * 1024 * 1024 * 1024,
+          maximumCacheOverflowBytes: 2 * 1024 * 1024 * 1024,
+          // Skip intermediate LOD levels so the ideal LOD is requested
+          // immediately without waiting through the REPLACE chain.
+          // This eliminates the blank-building flash when zooming close.
+          skipLevelOfDetail: true,
+          baseScreenSpaceError: 1024,
+          skipScreenSpaceErrorFactor: 16,
+          skipLevels: 1,
+          // Don't suppress tile content while waiting for a finer child tile
+          // (prevents buildings from going invisible at close range).
+          cullWithChildrenBounds: false,
         });
         viewer.scene.primitives.add(ts);
 

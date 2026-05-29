@@ -301,9 +301,10 @@ def generate(manifest_path, output_dir, lv95_origin):
             print(f'  ✓ terrain ({dst_terrain_name})')
 
     # ── helper: build a sub-tileset root node from a list of (tile, bldg) ────
-    def make_group_root(tile_bldg_list, fallback_bmin, fallback_bmax, root_size):
+    # Returns (node, (bbox_min, bbox_max), size) — caller uses bbox for root tile.
+    def make_group_root(tile_bldg_list, fallback_bmin, fallback_bmax):
         if not tile_bldg_list:
-            return None
+            return None, None, 0
         gb_mins = [b['bbox_min'] for _, b in tile_bldg_list if b.get('bbox_min')]
         gb_maxs = [b['bbox_max'] for _, b in tile_bldg_list if b.get('bbox_max')]
         if gb_mins:
@@ -311,12 +312,14 @@ def generate(manifest_path, output_dir, lv95_origin):
             gb_max = [max(x[i] for x in gb_maxs) for i in range(3)]
         else:
             gb_min, gb_max = fallback_bmin, fallback_bmax
-        return {
+        gb_size = max(gb_max[i] - gb_min[i] for i in range(3))
+        node = {
             'boundingVolume': {'box': box_bounding_volume(gb_min, gb_max)},
-            'geometricError': root_size * 10,
+            'geometricError': gb_size * 10,
             'refine': 'ADD',
             'children': [t for t, _ in tile_bldg_list],
         }
+        return node, (gb_min, gb_max), gb_size
 
     # ── compute global bbox (all buildings + terrain) ────────────────────────
     all_bmin = [b['bbox_min'] for b in buildings if b.get('bbox_min')]
@@ -334,12 +337,19 @@ def generate(manifest_path, output_dir, lv95_origin):
     root_size = max(root_bmax[i] - root_bmin[i] for i in range(3))
 
     # ── helper: write one tileset.json ───────────────────────────────────────
-    def write_tileset(filename, buildings_node, terrain_node, label):
+    # tile_bbox: (bbox_min, bbox_max) for the root tile's bounding volume.
+    # Use the group's own bbox (not the global one) so CesiumJS flies to the
+    # correct location when this tileset is loaded as a standalone layer.
+    def write_tileset(filename, buildings_node, terrain_node, label, tile_bbox=None):
         root_children = []
         if terrain_node:
             root_children.append(terrain_node)
         if buildings_node:
             root_children.append(buildings_node)
+
+        bv_min = tile_bbox[0] if tile_bbox else root_bmin
+        bv_max = tile_bbox[1] if tile_bbox else root_bmax
+        bv_size = max(bv_max[i] - bv_min[i] for i in range(3))
 
         ts = {
             'asset': {
@@ -351,11 +361,11 @@ def generate(manifest_path, output_dir, lv95_origin):
                     'label': label,
                 }
             },
-            'geometricError': root_size * 10,
+            'geometricError': bv_size * 10,
             'root': {
                 'transform': root_transform,
-                'boundingVolume': {'box': box_bounding_volume(root_bmin, root_bmax)},
-                'geometricError': root_size * 5,
+                'boundingVolume': {'box': box_bounding_volume(bv_min, bv_max)},
+                'geometricError': bv_size * 5,
                 'refine': 'ADD',
                 'children': root_children,
             }
@@ -367,8 +377,10 @@ def generate(manifest_path, output_dir, lv95_origin):
 
     # ── main tileset: standalone buildings (parent=None) + terrain ───────────
     standalone = group_tiles.pop(None, [])
-    standalone_root = make_group_root(standalone, root_bmin, root_bmax, root_size)
-    main_path = write_tileset('tileset.json', standalone_root, terrain_tile, 'Gesamtmodell Eggiwil')
+    standalone_root, standalone_bbox, _ = make_group_root(standalone, root_bmin, root_bmax)
+    # Main tileset includes terrain, so use global bbox (terrain extends beyond buildings)
+    main_path = write_tileset('tileset.json', standalone_root, terrain_tile,
+                              'Gesamtmodell Eggiwil', tile_bbox=None)
     print(f'\nWrote {main_path}  ({len(standalone)} standalone buildings, terrain={terrain_tile is not None})')
 
     # ── per-group tilesets: one file per parent collection ───────────────────
@@ -376,8 +388,8 @@ def generate(manifest_path, output_dir, lv95_origin):
     for parent_name, tile_bldg_list in sorted(group_tiles.items()):
         safe_parent = parent_name.replace('/', '_').replace(' ', '_').replace('\\', '_')
         filename    = f'tileset_{safe_parent}.json'
-        group_root  = make_group_root(tile_bldg_list, root_bmin, root_bmax, root_size)
-        path        = write_tileset(filename, group_root, None, parent_name)
+        group_root, group_bbox, _ = make_group_root(tile_bldg_list, root_bmin, root_bmax)
+        path = write_tileset(filename, group_root, None, parent_name, tile_bbox=group_bbox)
         group_paths.append((parent_name, path))
         print(f'Wrote {path}  ({len(tile_bldg_list)} phases of "{parent_name}")')
 
