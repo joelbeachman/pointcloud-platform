@@ -1923,16 +1923,15 @@
     "pointCount": 5023669,
     "createdAt": "2026-05-15T13:50:23.493Z",
     "historicalLV95": {
-      "E": 2628517,
-      "N": 1191809,
+      "E": 2628505,
+      "N": 1191842,
       "H": 890,
-      "yawDeg": 135,
+      "yawDeg": 170,
       "label": "Grosstannen, Eggiwil (Originalstandort 1684)",
       "historicalEnd": 1988
     },
     "building": "351",
     "buildingName": "Bauernhaus Eggiwil",
-    "phase": null,
     "phaseLabel": "Haus Eggiwil (LiDAR + Panoramas)"
   },
   {
@@ -2099,8 +2098,7 @@
     "description": "Gesamtmodell Eggiwil — all standalone buildings and terrain.",
     "crs": "EPSG:2056",
     "group": "Gesamtmodell",
-    "createdAt": "2026-06-01T05:13:29.582413Z",
-    "building": null
+    "createdAt": "2026-06-05T09:53:46.823740Z"
   },
   {
     "id": "gesamtmodell_2025_752",
@@ -2111,11 +2109,6 @@
     "description": "Alle Phasen von 2025_752.",
     "crs": "EPSG:2056",
     "group": "2025_752",
-    "createdAt": "2026-06-01T05:13:29.582413Z",
-    "building": "752",
-    "isGroupMaster": true,
-    "phase": 0,
-    "phaseLabel": "Alle Phasen",
-    "buildingName": "Stallscheune Meggen"
+    "createdAt": "2026-06-05T09:53:46.823740Z"
   }
 ]

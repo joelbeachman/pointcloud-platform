@@ -258,14 +258,7 @@
     .zt-slider { width: 100%; cursor: pointer; margin: 0.15rem 0; }
     #zt-photo-slider { accent-color: #58a6ff; }
     #zt-karten-slider { accent-color: #f0a500; }
-    #zt-offset-slider { accent-color: #3fb950; }
     .zt-axis { display: flex; justify-content: space-between; font-size: 0.6rem; color: #484f58; }
-    .zt-offset-row { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.25rem; }
-    .zt-offset-input {
-      width: 52px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
-      color: #e6edf3; font-size: 0.78rem; padding: 0.15rem 0.3rem; text-align: right; outline: none;
-    }
-    .zt-offset-input:focus { border-color: #3fb950; }
     .zt-hist-band { height: 3px; border-radius: 2px; margin: 1px 6px 3px; pointer-events: none; transition: background 0.3s; }
 
     /* Toolbar add button */
@@ -405,6 +398,66 @@
     #video-pip-stage iframe {
       display: block; width: 100%; height: 210px; border: 0;
     }
+
+    /* ── Historical Position Editor ── */
+    #hist-edit-panel {
+      display: none; position: absolute;
+      top: 108px; left: 228px; z-index: 30;
+      background: rgba(13,17,23,0.97); border: 1px solid #30363d; border-radius: 8px;
+      padding: 0.7rem 0.85rem; min-width: 310px;
+      font-size: 0.8rem; color: #e6edf3;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
+    #hist-edit-panel.open { display: block; }
+    .hep-title {
+      font-size: 0.78rem; font-weight: 600; color: #f0a500;
+      margin-bottom: 0.55rem;
+      display: flex; align-items: center; gap: 0.45rem;
+    }
+    .hep-layer-name {
+      flex: 1; color: #8b949e; font-weight: 500; font-size: 0.72rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #hep-close {
+      background: none; border: 1px solid #30363d; color: #8b949e;
+      border-radius: 4px; padding: 0.1rem 0.45rem; font-size: 0.72rem; cursor: pointer;
+    }
+    #hep-close:hover { background: #21262d; color: #e6edf3; }
+    .hep-row {
+      display: flex; align-items: center; gap: 0.3rem; margin-bottom: 0.35rem;
+    }
+    .hep-label { width: 50px; color: #8b949e; font-size: 0.74rem; }
+    .hep-row input[type="number"] {
+      flex: 1; min-width: 0;
+      background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
+      color: #e6edf3; padding: 0.2rem 0.35rem; font-size: 0.78rem;
+      text-align: right; font-variant-numeric: tabular-nums; outline: none;
+    }
+    .hep-row input[type="number"]:focus { border-color: #f0a500; }
+    .hep-nudge {
+      background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+      border-radius: 4px; padding: 0.15rem 0.4rem;
+      font-size: 0.7rem; cursor: pointer; min-width: 32px;
+      font-variant-numeric: tabular-nums;
+    }
+    .hep-nudge:hover { background: #30363d; border-color: #58a6ff; }
+    .hep-hint {
+      color: #484f58; font-size: 0.65rem; margin: 0.35rem 0 0.4rem;
+      line-height: 1.35;
+    }
+    .hep-actions {
+      display: flex; gap: 0.4rem; justify-content: flex-end; margin-top: 0.35rem;
+      padding-top: 0.4rem; border-top: 1px solid #21262d;
+    }
+    .hep-actions button {
+      background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+      border-radius: 5px; padding: 0.3rem 0.85rem; font-size: 0.76rem; cursor: pointer;
+    }
+    .hep-actions button:hover { background: #30363d; }
+    .hep-actions .hep-primary {
+      background: #1a4a2e; border-color: #2ea043; color: #3fb950;
+    }
+    .hep-actions .hep-primary:hover { background: #1f5a37; }
 
     /* ── Clip Box Panel ── */
     #clipbox-panel {
@@ -635,6 +688,12 @@
       <div style="padding:0.1rem 0.15rem 0.4rem">
         <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.07em;color:#8b949e;padding:0.25rem 0.35rem 0.35rem">Zeitreise</div>
 
+        <!-- Terrain (swisstopo swissALTI3D quantized-mesh) -->
+        <div class="layer-item" style="padding:0.2rem 0.35rem">
+          <input type="checkbox" id="zt-terrain-toggle" class="layer-vis" style="--lc:#3fb950">
+          <span class="layer-name" title="3D-Terrain (swisstopo swissALTI3D) – Karten und Luftbilder werden darauf drapiert.">Terrain</span>
+        </div>
+
         <!-- Historische Luftbilder -->
         <div class="layer-item" style="padding:0.2rem 0.35rem">
           <input type="checkbox" id="zt-photo-toggle" class="layer-vis" style="--lc:#58a6ff">
@@ -657,15 +716,6 @@
           <input type="range" id="zt-karten-slider" class="zt-slider" min="0" step="1" value="11">
           <div id="zt-karten-band" class="zt-hist-band"></div>
           <div class="zt-axis"><span id="zt-karten-min">1864</span><span>2013</span></div>
-        </div>
-
-        <!-- Elevation offset (shown when any layer is on) -->
-        <div id="zt-offset-section" style="display:none;padding:0.15rem 0.35rem 0.2rem">
-          <div style="font-size:0.6rem;color:#8b949e;margin-bottom:0.15rem">Höhen-Offset (m)</div>
-          <div class="zt-offset-row">
-            <input type="range" id="zt-offset-slider" class="zt-slider" min="-200" max="200" step="5" value="0" style="flex:1">
-            <input type="number" id="zt-offset-input" class="zt-offset-input" value="0" step="5">
-          </div>
         </div>
 
         <div style="font-size:0.6rem;color:#484f58;padding:0.1rem 0.35rem">© swisstopo</div>
@@ -753,6 +803,44 @@
         <span id="pano-scan-label">Scan 1 / 1</span>
         <button id="pano-btn-next">Next &#8594;</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ── Historical Position Editor ── -->
+  <div id="hist-edit-panel">
+    <div class="hep-title">
+      <span>Historische Position</span>
+      <span id="hep-name" class="hep-layer-name">—</span>
+      <button id="hep-close" title="Schließen">✕</button>
+    </div>
+    <div class="hep-row">
+      <span class="hep-label">E (m)</span>
+      <button class="hep-nudge" data-axis="E" data-step="-10">−10</button>
+      <button class="hep-nudge" data-axis="E" data-step="-1">−1</button>
+      <input type="number" id="hep-e" step="1">
+      <button class="hep-nudge" data-axis="E" data-step="1">+1</button>
+      <button class="hep-nudge" data-axis="E" data-step="10">+10</button>
+    </div>
+    <div class="hep-row">
+      <span class="hep-label">N (m)</span>
+      <button class="hep-nudge" data-axis="N" data-step="-10">−10</button>
+      <button class="hep-nudge" data-axis="N" data-step="-1">−1</button>
+      <input type="number" id="hep-n" step="1">
+      <button class="hep-nudge" data-axis="N" data-step="1">+1</button>
+      <button class="hep-nudge" data-axis="N" data-step="10">+10</button>
+    </div>
+    <div class="hep-row">
+      <span class="hep-label">Yaw (°)</span>
+      <button class="hep-nudge" data-axis="Y" data-step="-5">−5</button>
+      <button class="hep-nudge" data-axis="Y" data-step="-1">−1</button>
+      <input type="number" id="hep-yaw" step="1">
+      <button class="hep-nudge" data-axis="Y" data-step="1">+1</button>
+      <button class="hep-nudge" data-axis="Y" data-step="5">+5</button>
+    </div>
+    <div class="hep-hint">Pfeiltasten ←→ verschieben E (1 m), ↑↓ verschieben N (1 m). Shift+← / Shift+→ drehen Yaw (1°).</div>
+    <div class="hep-actions">
+      <button id="hep-reset" title="Werte zurücksetzen">Zurücksetzen</button>
+      <button id="hep-save" class="hep-primary" title="Position in datasets.json speichern">Speichern</button>
     </div>
   </div>
 
@@ -905,9 +993,34 @@
     viewer.scene.sun                 = undefined;
     viewer.scene.moon                = undefined;
     viewer.scene.skyAtmosphere       = undefined;
-    viewer.scene.globe.show          = false;   // hide blue sphere; we use local 3D Tiles only
+    viewer.scene.globe.show          = false;   // hide blue sphere by default; we use local 3D Tiles only
     viewer.scene.logarithmicDepthBuffer = false; // improves depth precision for near-surface tiles
     viewer.scene.pickTranslucentDepth  = true;  // allow pickPosition on translucent objects (splats)
+
+    // ── Swisstopo quantized-mesh terrain (loaded async; falls back silently) ──
+    // Free, no API key. High-res inside Switzerland (zoom 18), vertex normals
+    // for lighting. Imagery layers (Zeitreise) drape over this automatically.
+    //
+    // Vertical datum: swisstopo serves terrain heights in LN02 orthometric (the
+    // Swiss vertical datum). Our building tilesets are also in LN02 orthometric
+    // (GEOID_UNDULATION = 0 in generate_3dtiles.py), so they sit ON the terrain
+    // directly. No runtime height shift needed.
+    let swissTerrainReady = false;
+    Cesium.CesiumTerrainProvider.fromUrl(
+      'https://3d.geo.admin.ch/ch.swisstopo.terrain.3d/v1/',
+      { requestVertexNormals: true }
+    ).then(provider => {
+      viewer.terrainProvider = provider;
+      swissTerrainReady = true;
+      console.log('[terrain] swisstopo quantized-mesh loaded');
+    }).catch(err => {
+      console.warn('[terrain] swisstopo load failed — staying on ellipsoid:', err);
+    });
+
+    // When the globe shows without imagery, render a neutral terrain colour
+    // instead of the default blue ocean tint.
+    viewer.scene.globe.baseColor            = Cesium.Color.fromCssColorString('#3d4a3a');  // muted moss-green
+    viewer.scene.globe.showGroundAtmosphere = false;
     viewer.imageryLayers.removeAll();
     // Prevent zoom-back: disable globe collision detection (not needed without globe)
     viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
@@ -1370,15 +1483,21 @@
 
     // ── Georeferencing helpers ─────────────────────────────────────────────────
 
-    // Swiss LV95 (EPSG:2056) → WGS84 decimal degrees + ellipsoidal height
+    // Swiss LV95 (EPSG:2056) → WGS84 decimal degrees + height
     // Swisstopo approximate formulas (Reframe tech. report, ~1 m accuracy)
     // y' = (E − 2600000)/1e6,  x' = (N − 1200000)/1e6
+    //
+    // Vertical datum: we pass H through unchanged (LN02 orthometric). This matches
+    // the swisstopo terrain provider's reference frame so point clouds + buildings
+    // sit on terrain. The geoid-undulation term (h = H + 49.55 − 12.60·y − 22.64·x)
+    // was used to convert orthometric → WGS84 ellipsoidal but is now obsolete; see
+    // generate_3dtiles.py:GEOID_UNDULATION (also 0) for the matching change.
     function lv95ToWgs84(E, N, H) {
       const y = (E - 2600000) / 1e6;   // y' (easting aux)
       const x = (N - 1200000) / 1e6;   // x' (northing aux)
       const lon = (2.6779094 + 4.728982*y + 0.791484*y*x + 0.1306*y*x*x - 0.0436*y*y*y) * 100/36;
       const lat = (16.9023892 + 3.238272*x - 0.270978*y*y - 0.002528*x*x - 0.0447*y*y*x - 0.0140*x*x*x) * 100/36;
-      const h   = H + 49.55 - 12.60*y - 22.64*x;
+      const h   = H;   // LN02 orthometric (matches swisstopo terrain)
       return [lon, lat, h];
     }
 
@@ -1398,7 +1517,8 @@
     }
 
     // WGS84 geodetic → Swiss LV95 (iterative inverse of lv95ToWgs84)
-    // Guarantees exact round-trip: wgs84ToLv95(lv95ToWgs84(E,N,H)) ≡ (E,N,H)
+    // Guarantees exact round-trip: wgs84ToLv95(lv95ToWgs84(E,N,H)) ≡ (E,N,H).
+    // Heights pass through unchanged — both sides use LN02 orthometric.
     function wgs84ToLv95(lon, lat, h) {
       // Initial guess via swisstopo approximate inverse
       const phi = (lat * 3600 - 169028.66) / 10000;
@@ -1407,7 +1527,7 @@
               - 0.36*lam*phi*phi - 44.54*lam*lam*lam;
       let N = 1200147.07 + 308807.95*phi + 3745.25*lam*lam
               + 76.63*phi*phi - 194.56*lam*lam*phi + 119.79*phi*phi*phi;
-      let H = h - 49.55 + 12.60*lam + 22.64*phi;
+      let H = h;   // LN02 orthometric (matches swisstopo terrain)
       // Refine by Newton iteration on lv95ToWgs84
       for (let i = 0; i < 10; i++) {
         const [lon2, lat2, h2] = lv95ToWgs84(E, N, H);
@@ -1460,6 +1580,28 @@
     //     modelMatrix = Identity; ts._lv95Center is undefined.
     //     The JSON transform already maps local → FLM ECEF.
     //     modelMatrix acts on those ECEF results, so use an ECEF delta + rotation.
+    // Find a shared FLM anchor for a building. Case A (point cloud) pins its
+    // vertex centroid to historicalLV95, while Case B (model) would pin its
+    // bounding-sphere center. Those two centers are at different physical
+    // positions inside the building, so at the historical site the two layers
+    // end up offset by exactly that difference. Solution: use the point cloud's
+    // _lv95Center as the canonical anchor for every member of the building.
+    // Each Case B layer then translates by the SAME delta = P_hist − ECEF(anchor),
+    // preserving cloud↔model alignment.
+    function getHistoricalAnchorEcef(ds) {
+      if (!ds?.building) return null;
+      for (const l of layers) {
+        const t = l.tileset;
+        if (!t?._lv95Center) continue;
+        const lds = allDatasets.find(d => d.id === l.dsId);
+        if (lds?.building !== ds.building) continue;
+        const { x, y, z } = t._lv95Center;
+        const [lon, lat, h] = lv95ToWgs84(x, y, z);
+        return Cesium.Cartesian3.fromDegrees(lon, lat, h);
+      }
+      return null;
+    }
+
     function buildHistoricalModelMatrix(ds, ts) {
       const { E, N, H, yawDeg = 0 } = ds.historicalLV95;
       const [lon, lat, h] = lv95ToWgs84(E, N, H);
@@ -1482,10 +1624,16 @@
       }
 
       // Case B: embedded JSON transform — modelMatrix operates on ECEF world-space.
-      // Translate bounding-sphere centre from FLM-ECEF to hist-ECEF, then rotate.
-      const delta   = Cesium.Cartesian3.subtract(P_hist, ts.boundingSphere.center, new Cesium.Cartesian3());
+      // Use the shared building anchor if available so cloud + model translate by
+      // the same delta and stay aligned. Falls back to the layer's own bs.center
+      // if no anchor is available (legacy behavior, single-layer building).
+      const anchor  = getHistoricalAnchorEcef(ds) ?? ts.boundingSphere.center;
+      const delta   = Cesium.Cartesian3.subtract(P_hist, anchor, new Cesium.Cartesian3());
       const T_trans = Cesium.Matrix4.fromTranslation(delta);
       if (Math.abs(yawDeg) < 0.01) return T_trans;
+      // Yaw rotation pivots around the historical position. Building geometry
+      // already sat at (anchor + offset) at FLM; after T_trans it sits at
+      // (P_hist + offset). Rotating around P_hist preserves that offset shape.
       const E_inv  = Cesium.Matrix4.inverseTransformation(ENU_hist, new Cesium.Matrix4());
       const R_ecef = Cesium.Matrix4.multiply(ER, E_inv, new Cesium.Matrix4());
       return Cesium.Matrix4.multiply(R_ecef, T_trans, new Cesium.Matrix4());
@@ -2071,25 +2219,54 @@
       }
     }
 
+    // Returns every layer that belongs to the same building as the given layer
+    // AND has a historicalModelMatrix prepared. Falls back to just the clicked
+    // layer if it has no building (or no siblings).
+    function historicalGroupFor(layer) {
+      if (!layer) return [];
+      const ds = allDatasets.find(d => d.id === layer.dsId);
+      const bldg = ds?.building;
+      if (!bldg) return [layer];
+      return layers.filter(l => {
+        if (!l.historicalModelMatrix) return false;
+        const lds = allDatasets.find(d => d.id === l.dsId);
+        return lds?.building === bldg;
+      });
+    }
+
     function toggleHistoricalPosition(layerId) {
-      const layer = layers.find(l => l.id === layerId);
-      if (!layer?.tileset || !layer.historicalModelMatrix) return;
-      layer.atHistorical = !layer.atHistorical;
-      layer.tileset.modelMatrix = layer.atHistorical
-        ? layer.historicalModelMatrix
-        : layer.flmModelMatrix;
+      const clicked = layers.find(l => l.id === layerId);
+      if (!clicked?.tileset || !clicked.historicalModelMatrix) return;
+      const newState = !clicked.atHistorical;
+      const group = historicalGroupFor(clicked);
+      // Rebuild matrices for the whole group — the anchor (point cloud's
+      // _lv95Center) may not have been available when individual layers loaded.
+      for (const l of group) {
+        const lds = allDatasets.find(d => d.id === l.dsId);
+        if (lds?.historicalLV95) l.historicalModelMatrix = buildHistoricalModelMatrix(lds, l.tileset);
+      }
+      for (const l of group) {
+        l.atHistorical = newState;
+        l.tileset.modelMatrix = newState ? l.historicalModelMatrix : l.flmModelMatrix;
+      }
       renderLayerList();
       // Re-apply Zeitreise so the globe elevation updates to the new position
       if (ztApply) ztApply();
       if (ztUpdateHighlight) ztUpdateHighlight();
+      // Open / close the position editor along with the toggle
+      if (newState) {
+        histOpenEditor(clicked);
+      } else {
+        histCloseEditor();
+      }
       // Fly to the correct target position
-      if (layer.atHistorical) {
-        const ds = allDatasets.find(d => d.id === layer.dsId);
+      if (newState) {
+        const ds = allDatasets.find(d => d.id === clicked.dsId);
         if (ds?.historicalLV95) {
           const { E, N, H } = ds.historicalLV95;
           const [lon, lat, h] = lv95ToWgs84(E, N, H);
           const center = Cesium.Cartesian3.fromDegrees(lon, lat, h);
-          const r = layer.tileset.boundingSphere.radius;
+          const r = clicked.tileset.boundingSphere.radius;
           viewer.camera.flyToBoundingSphere(
             new Cesium.BoundingSphere(center, r),
             { offset: new Cesium.HeadingPitchRange(Cesium.Math.toRadians(45), Cesium.Math.toRadians(-30), r * 3), duration: 1.5 }
@@ -2097,8 +2274,136 @@
           return;
         }
       }
-      flyToLayer(layer);
+      flyToLayer(clicked);
     }
+
+    // ── Historical Position Editor ───────────────────────────────────────────
+    // Lets the user nudge a layer's historicalLV95 (E, N, yawDeg) at runtime,
+    // see the result live, and persist back to datasets.json via PATCH.
+    let histEditLayerId = null;     // layer being edited (null = panel closed)
+    let histEditOriginal = null;    // {E, N, yawDeg} snapshot for "Zurücksetzen"
+
+    function histOpenEditor(layer) {
+      const ds = allDatasets.find(d => d.id === layer.dsId);
+      if (!ds?.historicalLV95) return;
+      histEditLayerId  = layer.id;
+      histEditOriginal = {
+        E: ds.historicalLV95.E,
+        N: ds.historicalLV95.N,
+        yawDeg: ds.historicalLV95.yawDeg ?? 0,
+      };
+      document.getElementById('hep-name').textContent = ds.name || '';
+      document.getElementById('hep-e').value   = Math.round(histEditOriginal.E);
+      document.getElementById('hep-n').value   = Math.round(histEditOriginal.N);
+      document.getElementById('hep-yaw').value = histEditOriginal.yawDeg;
+      document.getElementById('hist-edit-panel').classList.add('open');
+    }
+    function histCloseEditor() {
+      histEditLayerId = null;
+      histEditOriginal = null;
+      document.getElementById('hist-edit-panel').classList.remove('open');
+    }
+    function histApplyFromInputs() {
+      if (!histEditLayerId) return;
+      const clicked = layers.find(l => l.id === histEditLayerId);
+      const clickedDs = clicked && allDatasets.find(d => d.id === clicked.dsId);
+      if (!clicked || !clickedDs?.historicalLV95) return;
+      const E   = parseFloat(document.getElementById('hep-e').value)   || histEditOriginal.E;
+      const N   = parseFloat(document.getElementById('hep-n').value)   || histEditOriginal.N;
+      const yaw = parseFloat(document.getElementById('hep-yaw').value) || 0;
+      // Apply to EVERY layer in the same building — historicalLV95 is a building property.
+      // (propagateHistoricalLV95 makes siblings share the same object by reference, so a
+      //  single in-place mutation updates them all; we re-build each layer's matrix below.)
+      clickedDs.historicalLV95.E      = E;
+      clickedDs.historicalLV95.N      = N;
+      clickedDs.historicalLV95.yawDeg = yaw;
+      for (const l of historicalGroupFor(clicked)) {
+        const lds = allDatasets.find(d => d.id === l.dsId);
+        if (!lds?.historicalLV95) continue;
+        l.historicalModelMatrix = buildHistoricalModelMatrix(lds, l.tileset);
+        if (l.atHistorical) l.tileset.modelMatrix = l.historicalModelMatrix;
+      }
+    }
+    function histNudge(axis, step) {
+      const map = { E: 'hep-e', N: 'hep-n', Y: 'hep-yaw' };
+      const el  = document.getElementById(map[axis]);
+      const cur = parseFloat(el.value) || 0;
+      el.value  = (cur + step).toFixed(axis === 'Y' ? 1 : 0);
+      histApplyFromInputs();
+    }
+    async function histSaveEditor() {
+      if (!histEditLayerId) return;
+      const clicked   = layers.find(l => l.id === histEditLayerId);
+      const clickedDs = clicked && allDatasets.find(d => d.id === clicked.dsId);
+      if (!clickedDs?.historicalLV95) return;
+
+      // Save to EVERY dataset that shares the building so the persisted state
+      // matches what the user sees. Sibling datasets may share by-reference in
+      // memory, but on disk each entry stores its own copy.
+      const targets = clickedDs.building
+        ? allDatasets.filter(d => d.building === clickedDs.building && d.historicalLV95)
+        : [clickedDs];
+
+      const btn = document.getElementById('hep-save');
+      const old = btn.textContent;
+      btn.textContent = '… speichern';
+
+      let saved = 0, failed = 0;
+      await Promise.all(targets.map(async ds => {
+        try {
+          const res = await fetch('/api/datasets/' + encodeURIComponent(ds.id), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ historicalLV95: ds.historicalLV95 }),
+          });
+          if (res.ok) saved++; else failed++;
+        } catch (e) { failed++; }
+      }));
+
+      if (failed === 0) {
+        // Refresh the snapshot so "Zurücksetzen" now means the just-saved values.
+        histEditOriginal = {
+          E: clickedDs.historicalLV95.E,
+          N: clickedDs.historicalLV95.N,
+          yawDeg: clickedDs.historicalLV95.yawDeg ?? 0,
+        };
+        btn.textContent = `✓ ${saved} gespeichert`;
+      } else {
+        btn.textContent = `✗ ${failed} fehlgeschlagen`;
+      }
+      setTimeout(() => { btn.textContent = old; }, 2000);
+    }
+    function histResetEditor() {
+      if (!histEditOriginal || !histEditLayerId) return;
+      document.getElementById('hep-e').value   = Math.round(histEditOriginal.E);
+      document.getElementById('hep-n').value   = Math.round(histEditOriginal.N);
+      document.getElementById('hep-yaw').value = histEditOriginal.yawDeg;
+      histApplyFromInputs();
+    }
+
+    document.getElementById('hep-close').addEventListener('click', histCloseEditor);
+    document.getElementById('hep-save' ).addEventListener('click', histSaveEditor);
+    document.getElementById('hep-reset').addEventListener('click', histResetEditor);
+    ['hep-e','hep-n','hep-yaw'].forEach(id =>
+      document.getElementById(id).addEventListener('input', histApplyFromInputs)
+    );
+    document.querySelectorAll('.hep-nudge').forEach(btn =>
+      btn.addEventListener('click', () => histNudge(btn.dataset.axis, parseFloat(btn.dataset.step)))
+    );
+    // Arrow-key shortcuts when the panel is open and not typing in an input
+    document.addEventListener('keydown', e => {
+      if (!histEditLayerId) return;
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      const k = e.key;
+      if      (k === 'ArrowLeft'  && e.shiftKey) histNudge('Y', -1);
+      else if (k === 'ArrowRight' && e.shiftKey) histNudge('Y',  1);
+      else if (k === 'ArrowLeft')                histNudge('E', -1);
+      else if (k === 'ArrowRight')               histNudge('E',  1);
+      else if (k === 'ArrowUp')                  histNudge('N',  1);
+      else if (k === 'ArrowDown')                histNudge('N', -1);
+      else return;
+      e.preventDefault();
+    });
 
     function removeLayer(layerId) {
       const idx = layers.findIndex(l => l.id === layerId);
@@ -2430,6 +2735,7 @@
       const KARTEN_TS     = ['18641231','19001231','19581231','19661231','19711231','19761231','19821231','19881231','19941231','20001231','20071231','20131231'];
 
       // DOM
+      const terrainToggle = document.getElementById('zt-terrain-toggle');
       const photoToggle   = document.getElementById('zt-photo-toggle');
       const photoSlider   = document.getElementById('zt-photo-slider');
       const photoYear     = document.getElementById('zt-photo-year');
@@ -2438,9 +2744,7 @@
       const kartenSlider   = document.getElementById('zt-karten-slider');
       const kartenYear     = document.getElementById('zt-karten-year');
       const kartenControls = document.getElementById('zt-karten-controls');
-      const offsetSection  = document.getElementById('zt-offset-section');
-      const offsetSlider   = document.getElementById('zt-offset-slider');
-      const offsetInput    = document.getElementById('zt-offset-input');
+      // (Offset slider removed — real terrain replaces the raised-ellipsoid workaround.)
 
       photoSlider.max  = PHOTO_TS.length - 1;
       photoSlider.value = PHOTO_TS.length - 1;
@@ -2451,20 +2755,6 @@
 
       const CH_RECT = Cesium.Rectangle.fromDegrees(5.96, 45.82, 10.49, 47.81);
       let ztPhotoLayer = null, ztKartenLayer = null;
-
-      function groundElevationWgs84() {
-        for (const layer of layers) {
-          const ref = layer.tileset ?? layer.subTilesets?.[0];
-          if (!ref) continue;
-          try {
-            const carto = Cesium.Cartographic.fromCartesian(ref.boundingSphere.center);
-            return carto.height;
-          } catch(e) {}
-        }
-        return 619;
-      }
-
-      function getManualOffset() { return parseInt(offsetInput.value) || 0; }
 
       // Highlight the portion of each slider that represents the historical period
       // (i.e. years when the active historical-placement layer was still at its original site).
@@ -2495,22 +2785,14 @@
         if (ztPhotoLayer)  { viewer.imageryLayers.remove(ztPhotoLayer);  ztPhotoLayer  = null; }
         if (ztKartenLayer) { viewer.imageryLayers.remove(ztKartenLayer); ztKartenLayer = null; }
 
-        const photoOn  = photoToggle.checked;
-        const kartenOn = kartenToggle.checked;
-        offsetSection.style.display = (photoOn || kartenOn) ? 'block' : 'none';
+        const terrainOn = terrainToggle.checked;
+        const photoOn   = photoToggle.checked;
+        const kartenOn  = kartenToggle.checked;
 
-        if (!photoOn && !kartenOn) {
-          viewer.scene.globe = new Cesium.Globe(Cesium.Ellipsoid.WGS84);
-          viewer.scene.globe.show = false;
-          return;
-        }
-
-        const elevOffset = groundElevationWgs84() + getManualOffset();
-        console.log('[Zeitreise] floor offset:', elevOffset.toFixed(0), 'm (base + manual offset)');
-        const wr = Cesium.Ellipsoid.WGS84.radii;
-        const raised = new Cesium.Ellipsoid(wr.x + elevOffset, wr.y + elevOffset, wr.z + elevOffset);
-        viewer.scene.globe = new Cesium.Globe(raised);
-        viewer.scene.globe.show = true;
+        // Globe must be visible whenever terrain OR any draped imagery is on.
+        // (The base globe stays grey since we removed skyAtmosphere; imagery layers
+        //  cover it when present, and terrain alone shows the actual landscape.)
+        viewer.scene.globe.show = (terrainOn || photoOn || kartenOn);
 
         // Add Karten first (bottom layer), photos on top
         if (kartenOn) {
@@ -2566,6 +2848,8 @@
       }
 
       // ── Event wiring ─────────────────────────────────────────────────────────
+      terrainToggle.addEventListener('change', applyZeitreise);
+
       photoToggle.addEventListener('change', () => {
         photoControls.style.display = photoToggle.checked ? 'block' : 'none';
         applyZeitreise();
@@ -2587,14 +2871,6 @@
         kartenSlider.value = idx; syncKartenLabel(idx); applyZeitreise();
       });
       kartenYear.addEventListener('keydown', e => { if (e.key === 'Enter') kartenYear.blur(); });
-
-      offsetSlider.addEventListener('input', () => {
-        offsetInput.value = offsetSlider.value; applyZeitreise();
-      });
-      offsetInput.addEventListener('change', () => {
-        const clamped = Math.max(-200, Math.min(200, parseInt(offsetInput.value) || 0));
-        offsetInput.value = clamped; offsetSlider.value = clamped; applyZeitreise();
-      });
 
       ztApply = applyZeitreise;
     }
@@ -2643,8 +2919,31 @@
       if (firstVisible) flyToLayer(firstVisible);
     }
 
+    // Propagate historicalLV95 across every dataset that shares a `building`.
+    // historicalLV95 is conceptually a *building* property (where the house once
+    // stood), not a dataset property. Without this, only the dataset where the
+    // field was hand-authored (e.g. the LiDAR point cloud) gets the "Originalstandort"
+    // toggle — sibling models would stay at FLM regardless. We copy by reference
+    // so live edits in the panel affect all siblings in one shot.
+    function propagateHistoricalLV95() {
+      const byBuilding = new Map();
+      for (const d of allDatasets) {
+        if (!d.building) continue;
+        if (!byBuilding.has(d.building)) byBuilding.set(d.building, []);
+        byBuilding.get(d.building).push(d);
+      }
+      for (const [bldg, group] of byBuilding) {
+        const source = group.find(d => d.historicalLV95);
+        if (!source) continue;
+        for (const d of group) {
+          if (d !== source && !d.historicalLV95) d.historicalLV95 = source.historicalLV95;
+        }
+      }
+    }
+
     async function loadDatasets() {
       allDatasets = await fetch('/api/datasets').then(r => r.json());
+      propagateHistoricalLV95();
       const compat = allDatasets.filter(isCompat);
 
       if (initBuilding) {

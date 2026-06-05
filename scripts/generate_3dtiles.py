@@ -30,12 +30,19 @@ DATASETS_JSON = 'data/datasets.json'
 # LV95 (EPSG:2056) origin in Blender local space = [0, 0, 0]
 LV95_ORIGIN = (2648466.518, 1177343.008, 570.290)  # (E, N, H_orthometric)
 
-# Geoid undulation at this location (EGM2008 / Swiss LHN95→ellipsoidal correction).
-# Switzerland: N ≈ 47–48 m.  Ellipsoidal H = orthometric H + N.
-# pyproj only has the Swiss geoid grid if proj-data-ch is installed, so we apply
-# the correction manually here.  Tune if the model still appears too high/low.
-GEOID_UNDULATION = 47.5  # metres (LHN95 → WGS84 ellipsoid)
-HEIGHT_OFFSET    = 1.5   # metres fine-tune vertical placement (empirically calibrated)
+# Vertical datum: LN02 orthometric (the Swiss vertical datum), matching the
+# swisstopo terrain provider's reference frame (https://3d.geo.admin.ch/
+# ch.swisstopo.terrain.3d/v1/). Keeping GEOID_UNDULATION = 0 means our building
+# tilesets use the same reference as the terrain, so they sit ON terrain instead
+# of floating ~47.5 m above it.
+#
+# History: this used to be 47.5 m (orthometric → WGS84 ellipsoidal). That was
+# correct for a Cesium-on-bare-ellipsoid setup but wrong once swisstopo terrain
+# (also orthometric in practice) was introduced. See documentation/PIPELINE.md.
+# If you wire a different terrain source that is genuinely in WGS84 ellipsoidal
+# heights, set this back to ~47.5 m for Switzerland (varies 45–50 m by location).
+GEOID_UNDULATION = 0.0
+HEIGHT_OFFSET    = 0.0   # metres fine-tune vertical placement (zero with swisstopo terrain)
 
 # Documented yaw of the Blender model relative to geographic North.
 MODEL_YAW_DEG = 2.2   # empirically calibrated; positive = CCW from East when viewed from above

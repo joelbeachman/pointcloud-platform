@@ -658,6 +658,77 @@ against visible reference features. Final values baked into `scripts/generate_3d
 
 ---
 
+## 2026-06-05 — Swisstopo terrain + vertical-datum migration + historical-position editor
+
+### Completed — Swisstopo quantized-mesh terrain
+
+- Integrated the swisstopo terrain provider `https://3d.geo.admin.ch/ch.swisstopo.terrain.3d/v1/` via `CesiumTerrainProvider.fromUrl()` with `requestVertexNormals: true` (vertex normals for lighting). Free, no token, Apache-2.0-compatible — matches the project's "no Ion" stance.
+- Added a **Terrain** checkbox to the Zeitreise section in the left sidebar. Independent of the Luftbilder / Karten toggles; turning any of the three on makes the globe visible, all three off hides it (preserves the minimalist single-tile-set default).
+- Removed the **Höhen-Offset** slider and its supporting machinery (`groundElevationWgs84()`, `getManualOffset()`, the raised-`Cesium.Globe(raised_ellipsoid)` rewrite per toggle). Real terrain replaces all of it.
+- Set `viewer.scene.globe.baseColor = '#3d4a3a'` (muted moss-green) and `showGroundAtmosphere = false` so the "terrain alone, no imagery" view shows a neutral landscape instead of the default blue ocean tint.
+
+### Completed — Vertical-datum migration (LN02 orthometric everywhere)
+
+Discovered that swisstopo's terrain serves heights in LN02 orthometric (the Swiss vertical datum), NOT WGS84 ellipsoidal as the Cesium quantized-mesh spec assumes. Our project up to this point had buildings + point clouds in WGS84 ellipsoidal via a +47.5 m geoid correction; this caused a ~47 m float of buildings above terrain.
+
+The fix was applied in three places to bring the whole project onto LN02 orthometric:
+
+- **`scripts/generate_3dtiles.py`**: `GEOID_UNDULATION = 0.0`, `HEIGHT_OFFSET = 0.0`. The previous +47.5 m + 1.5 m was correct for Cesium-on-bare-ellipsoid but wrong with a real terrain provider.
+- **All 146 tileset.json files in `data/cesium/gesamtmodell/`**: back-patched `root.transform` with the new GEOID=0 / HEIGHT=0 transform. ECEF origin shifted from `(4335367, 614920, 4622876)` to `(4335334, 614916, 4622840)` — exactly the geoid+fine-tune offset removed.
+- **`public/viewers/cesium.html`** — `lv95ToWgs84` / `wgs84ToLv95`: dropped the geoid-undulation term in the height calculation. Heights now pass through unchanged (LN02 orthometric in, LN02 orthometric out). This fixed the point-cloud float (`haus-eggiwil`) which positions itself at runtime via `lv95ModelMatrix()` — that path didn't go through the tileset transform.
+
+The round-trip invariant on `lv95ToWgs84 ↔ wgs84ToLv95` still holds. Helmert, historic placement, panoramas, and the Tragwerk sub-tilesets all share the same convention now — internally consistent.
+
+Intermediate step (since reverted): briefly used a runtime height-shift monkey-patch on the terrain provider (`requestTileGeometry` wrap, `_minimumHeight`/`_maximumHeight` += 47.5). Worked but coupled to Cesium internals; replaced with the data-side fix as the proper solution.
+
+### Completed — Historical-position editor
+
+Added a floating "Historische Position bearbeiten" panel that pops up when a layer with `historicalLV95` is toggled into historic mode:
+
+- Three fields: **E**, **N** (metres, integer), **Yaw** (degrees, fractional). Each row has ±1, ±5, ±10 / ±1, ±5 nudge buttons. Direct numeric input works too.
+- **Arrow keys** when panel is focused but not in an input: ←→ nudge E ±1 m, ↑↓ nudge N ±1 m, Shift+←/→ rotate Yaw ±1°.
+- Live preview: every change rebuilds `historicalModelMatrix` via the same `buildHistoricalModelMatrix(ds, ts)` used at load time; what you see while nudging is what gets persisted.
+- **Speichern** → `PATCH /api/datasets/:id` with the new `historicalLV95`. Button feedback briefly flips to `✓ N gespeichert` (or `✗ N fehlgeschlagen`).
+- **Zurücksetzen** restores values from when the panel was opened (or from the last save).
+
+### Completed — Building-aware historical position
+
+The first version of the editor only operated on the one dataset that had `historicalLV95` set (point cloud). Extended so the field is conceptually a *building* property:
+
+- `propagateHistoricalLV95()` runs after `allDatasets` is loaded. For every building, finds any dataset that has `historicalLV95`, and shares that object **by reference** with every sibling of the same building. A mutation on one updates all in memory; on disk each entry still stores its own copy.
+- `toggleHistoricalPosition()` now toggles every member of the building (`historicalGroupFor(layer)`). One click of ⌂ on the point cloud moves the cloud + all model phases together to the historical site.
+- `histApplyFromInputs()` rebuilds matrices for every group member at every nudge.
+- `histSaveEditor()` PATCHes every dataset that shares the building, fires concurrent requests via `Promise.all`, reports the count in the button feedback.
+
+### Bug fix — Cloud↔model alignment at the historical position
+
+Buildings + cloud aligned perfectly at Ballenberg but drifted apart by several metres at the historical site. Root cause: `buildHistoricalModelMatrix` was pinning each layer's *own* center to `P_hist`:
+
+- Case A (point cloud): pinned the vertex centroid (`_lv95Center`) to `P_hist`.
+- Case B (model with embedded root.transform): pinned the bounding-sphere center (`boundingSphere.center`) to `P_hist`.
+
+Those two "centers" are at slightly different physical positions inside the same building (the cloud centroid skews toward scan-dense areas; the model's bbox center is the geometric middle). At Ballenberg the misalignment was invisible because each representation was at its own correct LV95 position. Moving both centers to the same `P_hist` left the geometry around them offset by (model_center − cloud_center).
+
+**Fix**: added `getHistoricalAnchorEcef(ds)` which returns the ECEF position derived from the point cloud's `_lv95Center` for the building. Every Case B layer now translates by `P_hist − ECEF(anchor)` — the same delta. The relative offset between cloud and models at FLM is preserved exactly at the historical site. Case A is unchanged (it IS the anchor).
+
+Also rebuilds matrices for the whole group at `toggleHistoricalPosition` so layers that loaded before the point cloud's `_lv95Center` was available get their matrix recomputed with the correct anchor.
+
+### Lessons
+
+- The Cesium quantized-mesh spec says heights should be ellipsoidal; in practice, national terrain providers often use the local vertical datum (LN02 here). Always verify the height datum of any terrain source against your geometry before trusting alignment.
+- A "raised ellipsoid" hack to drape flat imagery on tile-content geometry was a clever workaround when no terrain provider was wired up. As soon as a real provider was added, the hack stopped having any purpose and became actively misleading. Lesson: workarounds that depend on an absent feature should be ripped out as soon as the feature is added.
+- When two representations of the same building have different "natural centers" (vertex centroid vs bounding-box center), the only way they stay aligned through any rigid transformation is to share a single anchor. Per-layer centers diverge whenever the transformation isn't the identity.
+- For interactive editing of building-level metadata (`historicalLV95`), in-memory sharing by reference + per-entry persistence on disk is a clean compromise — every dataset is self-contained on disk but the runtime edit experience is "edit once, applies everywhere."
+
+### Pending
+
+- [ ] Migrate `historicalLV95` to a separate per-building registry (e.g. `data/buildings/<id>.json`) so the schema reflects the semantics. Today the field is duplicated across every dataset of the same building.
+- [ ] Add a "Originalstandort initialisieren" affordance for buildings that don't yet have `historicalLV95` — currently you can only edit positions for buildings whose data was hand-authored with the field.
+- [ ] Save-versioning: today PATCH overwrites. Optionally append every save to a `data/datasets.history.jsonl` for rollback.
+- [ ] Capture a screenshot of the demo for the upcoming Wissam presentation (terrain + Originalstandort with PDF/video panel — strongest single visual).
+
+---
+
 ## Pending / Planned
 
 ### High priority
