@@ -3057,7 +3057,7 @@
     // ── Tool buttons ───────────────────────────────────────────────────────────
     document.getElementById('scan-stations-toggle').addEventListener('change', function () {
       allPanoEnts.forEach(e => { e.show = this.checked; });
-      if (panoDS) loadPanoScan(panoScanIdx, panoViewer?.getYaw() ?? 0);
+      if (panoDS) loadPanoScan(panoScanIdx, panoViewer?.getYaw() ?? 0, panoViewer?.getPitch() ?? 0);
     });
 
     document.querySelectorAll('.tool-btn[data-tool]').forEach(btn =>
@@ -4144,12 +4144,13 @@
             },
             createTooltipArgs: { size, distLabel, label, floorNote },
             clickHandlerFunc: (_e, args) => {
-              let initYaw = 0;
+              let initYaw = 0, initPitch = 0;
               if (panoViewer) {
                 const compass = panoViewer.getYaw() + (panos[panoScanIdx].northOffset || 0);
-                initYaw = compass - (panos[args.navIdx].northOffset || 0);
+                initYaw   = compass - (panos[args.navIdx].northOffset || 0);
+                initPitch = panoViewer.getPitch();
               }
-              loadPanoScan(args.navIdx, initYaw);
+              loadPanoScan(args.navIdx, initYaw, initPitch);
             },
             clickHandlerArgs: { navIdx: i },
           };
@@ -4162,9 +4163,19 @@
       panoDS = ds;
       const idx = scanId ? ds.panoramas.findIndex(p => p.id === scanId) : 0;
       panoScanIdx = idx >= 0 ? idx : 0;
+
+      // Carry the 3D camera direction into the panorama: convert Cesium heading
+      // (radians, 0 = North, positive = East) into a compass bearing in degrees,
+      // then subtract the panorama's northOffset to land in its local frame.
+      // Pitch maps directly (both use 0 = horizon, positive = up).
+      const p = panoDS.panoramas[panoScanIdx];
+      const compassDeg = Cesium.Math.toDegrees(viewer.camera.heading);
+      const initYaw    = compassDeg - (p.northOffset || 0);
+      const initPitch  = Cesium.Math.toDegrees(viewer.camera.pitch);
+
       document.getElementById('pano-overlay').classList.add('open');
       document.getElementById('pano-tooltip').style.display = 'none';
-      loadPanoScan(panoScanIdx, 0);
+      loadPanoScan(panoScanIdx, initYaw, initPitch);
       resizePanoCanvas();
       requestAnimationFrame(drawPanoCanvas);
     }
@@ -4176,7 +4187,7 @@
       panoCurPts = [];
     }
 
-    function loadPanoScan(idx, initYaw = 0) {
+    function loadPanoScan(idx, initYaw = 0, initPitch = 0) {
       if (!panoDS) return;
       panoScanIdx = idx;
       panoCurPts = [];
@@ -4192,10 +4203,13 @@
       const scanStationsOn = document.getElementById('scan-stations-toggle')?.checked ?? true;
       const hotspots = scanStationsOn ? computePanoHotspots(idx, panos) : [];
       if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
+      // Clamp pitch into Pannellum's valid range (Cesium occasionally reports
+      // values outside [-90, 90] when the camera is tilted past vertical).
+      const safePitch = Math.max(-85, Math.min(85, initPitch));
       panoViewer = pannellum.viewer('pano-div', {
         type: 'equirectangular', panorama: p.path,
         autoLoad: true, autoRotate: 0, compass: true,
-        northOffset: p.northOffset || 0, yaw: initYaw,
+        northOffset: p.northOffset || 0, yaw: initYaw, pitch: safePitch,
         hfov: 100, minHfov: 30, maxHfov: 150,
         hotSpots: hotspots, showControls: true, showZoomCtrl: true, showFullscreenCtrl: true,
       });
@@ -4288,12 +4302,21 @@
       return Cesium.Cartesian3.fromDegrees(lon, lat, h);
     }
 
-    document.getElementById('pano-btn-prev').addEventListener('click', () => {
-      if (panoScanIdx > 0) loadPanoScan(panoScanIdx - 1);
-    });
-    document.getElementById('pano-btn-next').addEventListener('click', () => {
-      if (panoDS && panoScanIdx < panoDS.panoramas.length - 1) loadPanoScan(panoScanIdx + 1);
-    });
+    // Preserve compass bearing + pitch when stepping between adjacent scans.
+    function nextPanoScan(delta) {
+      const target = panoScanIdx + delta;
+      if (!panoDS || target < 0 || target >= panoDS.panoramas.length) return;
+      let initYaw = 0, initPitch = 0;
+      if (panoViewer) {
+        const panos = panoDS.panoramas;
+        const compass = panoViewer.getYaw() + (panos[panoScanIdx].northOffset || 0);
+        initYaw   = compass - (panos[target].northOffset || 0);
+        initPitch = panoViewer.getPitch();
+      }
+      loadPanoScan(target, initYaw, initPitch);
+    }
+    document.getElementById('pano-btn-prev').addEventListener('click', () => nextPanoScan(-1));
+    document.getElementById('pano-btn-next').addEventListener('click', () => nextPanoScan( 1));
 
     document.getElementById('pano-div').addEventListener('mousedown', e => {
       if (e.button !== 0 || !activeTool || !panoDS || !panoViewer) return;

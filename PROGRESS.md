@@ -729,6 +729,26 @@ Also rebuilds matrices for the whole group at `toggleHistoricalPosition` so laye
 
 ---
 
+## 2026-06-05 — Panorama view-direction persistence
+
+### Completed
+
+When opening a panorama from a scan marker, the panorama now initializes facing the same direction the user was looking in the 3D scene — no more disorienting "where am I pointing?" moment.
+
+- `openPanoramaOverlay()` captures `viewer.camera.heading` and `viewer.camera.pitch` before invoking Pannellum.
+- Conversion: `initYaw = toDegrees(camera.heading) − scan.northOffset`. Pitch maps 1:1 (both conventions are 0 = horizon, positive = up).
+- `loadPanoScan()` gained an `initPitch` parameter, clamped to `[−85°, 85°]` to stay inside Pannellum's valid range (Cesium can report values outside that when the camera is near-vertical).
+- Hotspot scan-navigation (clicking the "go to next scan" arrows in 3D space) propagates compass bearing **and** pitch so the user keeps facing the same direction across scan stations.
+- Prev/Next buttons in the panorama bar now do the same — extracted into a small `nextPanoScan(delta)` helper.
+- Toggling "Show scan positions" while a panorama is open also preserves pitch on re-render.
+
+### Lessons
+
+- Cesium `camera.heading` and Pannellum `yaw` share the same convention (0 = N, positive = E), and `camera.pitch` matches Pannellum `pitch` (0 = horizon, positive = up). The only adapter needed is the per-scan `northOffset` to translate between compass bearing and the panorama's local frame.
+- Cesium occasionally reports `camera.pitch` slightly outside ±π/2 when the camera is tilted past vertical. Clamping the converted value to ±85° avoids edge-case Pannellum errors without visibly affecting the typical case.
+
+---
+
 ## Pending / Planned
 
 ### High priority
