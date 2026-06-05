@@ -104,6 +104,36 @@
 			white-space: nowrap; pointer-events: none; z-index: 100; line-height: 1.5;
 		}
 		.pnlm-hotspot.pano-nav-hotspot:hover .pano-nav-popup { display: block; }
+
+	/* ── Datasets panel ── */
+	#datasets-panel {
+		display: none; position: fixed; top: 56px; right: 0;
+		width: 260px; max-height: calc(100vh - 56px); overflow-y: auto;
+		background: #161b22; border-left: 1px solid #30363d;
+		z-index: 500; font-family: monospace; font-size: 0.8rem; color: #8b949e;
+	}
+	.dp-header {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 0.55rem 0.75rem; border-bottom: 1px solid #30363d;
+		font-weight: 600; color: #e6edf3; font-size: 0.82rem;
+	}
+	.dp-close { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1rem; padding: 0; }
+	.dp-close:hover { color: #e6edf3; }
+	.dp-item { padding: 0.5rem 0.75rem; border-bottom: 1px solid #21262d; }
+	.dp-item-name { color: #e6edf3; font-size: 0.8rem; margin-bottom: 0.15rem; }
+	.dp-item-desc { color: #8b949e; font-size: 0.72rem; margin-bottom: 0.3rem; }
+	.dp-load-btn {
+		background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.4);
+		color: #3fb950; border-radius: 4px; padding: 0.15rem 0.6rem;
+		cursor: pointer; font-size: 0.78rem; font-family: monospace;
+	}
+	.dp-load-btn:hover { background: rgba(63,185,80,0.22); }
+	.dp-toggle-btn {
+		background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.3);
+		color: #58a6ff; border-radius: 4px; padding: 0.2rem 0.65rem;
+		cursor: pointer; font-size: 0.82rem; font-family: monospace; white-space: nowrap;
+	}
+	.dp-toggle-btn:hover { background: rgba(88,166,255,0.2); }
 	</style>
 </head>
 <body>
@@ -120,7 +150,17 @@
       <a href="/viewers/potreenext.html">Potree-Next</a>
       <a href="/viewers/compare.html">Compare</a>
     </nav>
+    <button class="dp-toggle-btn" onclick="toggleDatasetsPanel()">&#8857; Datasets</button>
   </header>
+
+  <!-- Datasets panel -->
+  <div id="datasets-panel">
+    <div class="dp-header">
+      <span>Load Dataset</span>
+      <button class="dp-close" onclick="document.getElementById('datasets-panel').style.display='none'">&#x2715;</button>
+    </div>
+    <div id="dp-list" style="padding:0.5rem 0.75rem;color:#8b949e">Loading&hellip;</div>
+  </div>
 
 	<div class="potree_container" style="position:absolute;width:100%;height:calc(100% - 56px);left:0;top:56px;">
 		<div id="potree_render_area" style="background-image:url('../libs/potree18/build/resources/images/background.jpg');">
@@ -171,8 +211,169 @@
 	<script src="../libs/potree18/jstree/jstree.js"></script>
 	<script src="../libs/potree18/build/potree.js"></script>
 	<script src="../libs/potree18/plasio/js/laslaz.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/three@0.124.0/build/three.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/three@0.124.0/examples/js/loaders/GLTFLoader.js"></script>
 
 	<script type="module">
+		// ── Dataset helpers ──────────────────────────────────────────────────────
+		function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+		function escAttr(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+
+		window.loadPotreeDataset = function(path, name) {
+			Potree.loadPointCloud(path, name || path, e => {
+				const pc = e.pointcloud;
+				pc.material.size = 1;
+				pc.material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
+				pc.material.shape = Potree.PointShape.SQUARE;
+				pc.material.activeAttributeName = "rgba";
+				viewer.scene.addPointCloud(pc);
+				viewer.fitToScreen();
+			});
+			document.getElementById('datasets-panel').style.display = 'none';
+		};
+
+		// ── GLB overlay loader for cesium/3D-Tiles datasets ──────────────────────
+		const _glbOverlays = new Map(); // tilesetUrl → THREE.Group
+
+		window.loadGlbOverlay = async function(tilesetUrl, name) {
+			document.getElementById('datasets-panel').style.display = 'none';
+
+			if (_glbOverlays.has(tilesetUrl)) {
+				console.log('[GLB] already loaded:', tilesetUrl);
+				return;
+			}
+
+			let json;
+			try {
+				const r = await fetch(tilesetUrl);
+				json = await r.json();
+			} catch(e) {
+				console.error('[GLB] failed to fetch tileset:', tilesetUrl, e);
+				return;
+			}
+
+			const origin = json.asset?.extras?.lv95Origin;
+			if (!origin) {
+				console.error('[GLB] tileset missing lv95Origin in asset.extras');
+				return;
+			}
+
+			// Collect all .glb content URIs from the tile tree
+			const glbUris = [];
+			function collectGlb(tile) {
+				const uri = tile?.content?.uri;
+				if (uri?.endsWith('.glb')) glbUris.push(uri);
+				for (const child of (tile.children || [])) collectGlb(child);
+			}
+			collectGlb(json.root);
+
+			if (!glbUris.length) {
+				console.error('[GLB] no .glb content found in tileset');
+				return;
+			}
+
+			// Pick best LOD: prefer lod0, else lod1, else lod2, else first
+			const pick = (suffix) => glbUris.find(u => u.includes(suffix));
+			const chosen = pick('lod0') || pick('lod1') || pick('lod2') || glbUris[0];
+			const base = tilesetUrl.substring(0, tilesetUrl.lastIndexOf('/') + 1);
+			const glbUrl = base + chosen;
+
+			console.log(`[GLB] loading ${glbUrl} for "${name}"`);
+
+			const loader = new THREE.GLTFLoader();
+			loader.load(glbUrl, gltf => {
+				const group = gltf.scene;
+
+				// glTF is Y-up; Potree 1.8 scene is Z-up (LV95).
+				// Blender→glTF: (bx,by,bz)→(gx,gy,gz) = (bx, bz, -by)
+				// Inverse: bx=gx, by=-gz, bz=gy
+				// LV95 = Blender + origin, so:
+				//   scene_x = gltf_x  + origin[0]
+				//   scene_y = -gltf_z + origin[1]
+				//   scene_z = gltf_y  + origin[2]
+				const m = new THREE.Matrix4();
+				m.set(
+					1, 0,  0, origin[0],
+					0, 0, -1, origin[1],
+					0, 1,  0, origin[2],
+					0, 0,  0, 1
+				);
+				group.applyMatrix4(m);
+
+				viewer.scene.scene.add(group);
+				_glbOverlays.set(tilesetUrl, group);
+				console.log(`[GLB] added "${name}" to scene`);
+			}, undefined, e => {
+				console.error('[GLB] failed to load GLB:', glbUrl, e);
+			});
+		};
+
+		window.toggleGlbOverlay = function(tilesetUrl) {
+			const group = _glbOverlays.get(tilesetUrl);
+			if (group) group.visible = !group.visible;
+		};
+
+		window.toggleDatasetsPanel = async function() {
+			const panel = document.getElementById('datasets-panel');
+			if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+			panel.style.display = 'block';
+			const list = document.getElementById('dp-list');
+			list.innerHTML = 'Loading&hellip;';
+			try {
+				const res = await fetch('/api/datasets');
+				const all = await res.json();
+				const potreeDs  = all.filter(d => d.type === 'potree');
+				const cesiumDs  = all.filter(d => d.type === 'cesium');
+				if (!potreeDs.length && !cesiumDs.length) {
+					list.innerHTML = '<div style="padding:0.25rem 0;color:#484f58">No datasets available.</div>';
+					return;
+				}
+				list.innerHTML = '';
+				for (const d of potreeDs) {
+					const item = document.createElement('div');
+					item.className = 'dp-item';
+					item.innerHTML = `<div class="dp-item-name">${escHtml(d.name)}</div>` +
+						(d.description ? `<div class="dp-item-desc">${escHtml(d.description)}</div>` : '') +
+						`<button class="dp-load-btn">Load</button>`;
+					item.querySelector('.dp-load-btn').addEventListener('click', () => loadPotreeDataset(d.path, d.name));
+					list.appendChild(item);
+				}
+				if (cesiumDs.length) {
+					const hdr = document.createElement('div');
+					hdr.style.cssText = 'padding:0.4rem 0 0.2rem;font-size:0.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.05em';
+					hdr.textContent = '3D Models (GLB overlay)';
+					list.appendChild(hdr);
+					for (const d of cesiumDs) {
+						const item = document.createElement('div');
+						item.className = 'dp-item';
+						item.innerHTML = `<div class="dp-item-name">${escHtml(d.name)}</div>` +
+							(d.description ? `<div class="dp-item-desc">${escHtml(d.description)}</div>` : '') +
+							`<button class="dp-load-btn">Load GLB</button>`;
+						item.querySelector('.dp-load-btn').addEventListener('click', () => loadGlbOverlay(d.path, d.name));
+						list.appendChild(item);
+					}
+				}
+			} catch(e) {
+				list.innerHTML = `<div style="padding:0.25rem 0;color:#f85149">Error: ${escHtml(e.message)}</div>`;
+			}
+		};
+
+		// ── Resolve initial dataset from ?id= param ──────────────────────────────
+		const _dsId = new URLSearchParams(location.search).get('id');
+		let _initialPath = '/data/potree/haus-eggiwil/metadata.json';
+		let _initialName = 'Haus Eggiwil';
+		let _panoPath = '/data/panoramas/haus-eggiwil/metadata.json';
+		if (_dsId) {
+			try {
+				const _r = await fetch(`/api/datasets/${_dsId}`);
+				if (_r.ok) {
+					const _ds = await _r.json();
+					if (_ds.path) { _initialPath = _ds.path; _initialName = _ds.name || _dsId; }
+					_panoPath = _ds.panoramasPath || null;
+				}
+			} catch(e) { console.warn('Failed to resolve dataset', _dsId, e); }
+		}
+
 		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
 
 		viewer.setEDLEnabled(true);
@@ -699,7 +900,7 @@
 		});
 
 		// ── Point cloud + scan markers ────────────────────────────────────────
-		Potree.loadPointCloud("/data/potree/haus-eggiwil/metadata.json", "Haus Eggiwil", e => {
+		Potree.loadPointCloud(_initialPath, _initialName, e => {
 			const scene = viewer.scene;
 			const pointcloud = e.pointcloud;
 
@@ -711,7 +912,8 @@
 			scene.addPointCloud(pointcloud);
 			viewer.fitToScreen();
 
-			fetch("/data/panoramas/haus-eggiwil/metadata.json")
+			if (!_panoPath) return;
+			fetch(_panoPath)
 				.then(r => r.json())
 				.then(meta => {
 					panos = meta.panoramas;

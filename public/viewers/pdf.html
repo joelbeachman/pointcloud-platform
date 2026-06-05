@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dokument</title>
+  <link rel="stylesheet" href="/css/portal.css">
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { display: flex; flex-direction: column; background: #0d1117; }
+    .doc-toolbar {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 1rem; background: #161b22;
+      border-bottom: 1px solid #30363d;
+      color: #e6edf3; font-size: 0.85rem;
+    }
+    .doc-toolbar a { color: #58a6ff; text-decoration: none; }
+    .doc-toolbar a:hover { text-decoration: underline; }
+    .doc-toolbar .title { font-weight: 600; }
+    .doc-toolbar .meta  { color: #8b949e; }
+    .doc-toolbar .spacer { flex: 1; }
+    .doc-toolbar .open-tab {
+      background: #21262d; border: 1px solid #30363d;
+      color: #e6edf3; padding: 0.3rem 0.7rem; border-radius: 6px;
+      font-size: 0.8rem; cursor: pointer; text-decoration: none;
+    }
+    .doc-toolbar .open-tab:hover { background: #30363d; }
+    iframe { flex: 1; border: 0; width: 100%; background: #fff; }
+    .error { padding: 2rem; color: #f85149; }
+  </style>
+</head>
+<body>
+  <div class="doc-toolbar">
+    <a href="/">&larr; Datasets</a>
+    <span class="title" id="doc-title">Dokument</span>
+    <span class="meta" id="doc-meta"></span>
+    <span class="spacer"></span>
+    <a id="doc-open-tab" class="open-tab" target="_blank" rel="noopener">In neuem Tab öffnen</a>
+  </div>
+  <iframe id="doc-frame" title="Dokument"></iframe>
+
+  <script>
+    (async () => {
+      const params = new URLSearchParams(location.search);
+      const id = params.get('id');
+      const titleEl = document.getElementById('doc-title');
+      const metaEl  = document.getElementById('doc-meta');
+      const frame   = document.getElementById('doc-frame');
+      const openTab = document.getElementById('doc-open-tab');
+
+      if (!id) {
+        document.body.innerHTML = '<div class="error">No dataset id given (use ?id=...).</div>';
+        return;
+      }
+      try {
+        const res = await fetch('/api/datasets/' + encodeURIComponent(id));
+        if (!res.ok) throw new Error('Dataset ' + id + ' not found');
+        const ds = await res.json();
+        titleEl.textContent = ds.name || 'Dokument';
+        const parts = [];
+        if (ds.building) parts.push('Gebäude ' + ds.building);
+        if (ds.source)   parts.push(ds.source);
+        if (ds.description) parts.push(ds.description);
+        metaEl.textContent = parts.length ? '· ' + parts.join(' · ') : '';
+        const src = encodeURI(ds.path);
+        frame.src = src + '#view=FitH';
+        openTab.href = src;
+      } catch (e) {
+        document.body.innerHTML = '<div class="error">' + e.message + '</div>';
+      }
+    })();
+  </script>
+</body>
+</html>

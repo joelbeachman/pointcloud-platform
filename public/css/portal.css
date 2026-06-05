@@ -190,6 +190,78 @@ h2 {
 .badge-splat { background: rgba(163,113,247,0.15); }
 .badge-panorama { background: rgba(240,136,62,0.15); }
 .badge-e57 { background: rgba(210,153,34,0.15); }
+.badge-potree { background: rgba(88,166,255,0.15); }
+.badge-document { background: rgba(248,81,73,0.15); }
+.badge-video { background: rgba(255,205,57,0.15); }
+
+/* House cards grid */
+.section-title {
+  font-size: 0.95rem; font-weight: 600; color: #e6edf3;
+  margin: 0.5rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem;
+}
+.section-count {
+  font-size: 0.7rem; color: #8b949e; background: #21262d;
+  border: 1px solid #30363d; border-radius: 10px;
+  padding: 0.1rem 0.55rem; font-weight: 500;
+}
+.house-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+.house-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  display: flex; align-items: center; gap: 0.85rem;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.house-card:hover {
+  border-color: #58a6ff;
+}
+.house-num {
+  font-family: 'Menlo','Consolas',monospace;
+  font-size: 1.15rem; font-weight: 700;
+  color: #58a6ff;
+  background: rgba(88,166,255,0.1);
+  border: 1px solid rgba(88,166,255,0.3);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem; min-width: 56px; text-align: center;
+  flex-shrink: 0;
+}
+.house-body { flex: 1; min-width: 0; }
+.house-title {
+  font-weight: 600; font-size: 0.92rem; color: #e6edf3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.house-meta {
+  color: var(--muted); font-size: 0.75rem; margin-top: 0.2rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.house-actions {
+  display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-end;
+}
+.house-actions a {
+  padding: 0.35rem 0.7rem; border-radius: 5px;
+  font-size: 0.78rem; text-decoration: none;
+  background: #21262d; border: 1px solid var(--border); color: #e6edf3;
+  white-space: nowrap;
+}
+.house-actions a.btn-primary {
+  background: #238636; border-color: #2ea043; color: #fff;
+}
+.house-actions a.btn-primary:hover { background: #2ea043; }
+.house-secondary {
+  display: flex; gap: 0.3rem;
+}
+.house-secondary a {
+  padding: 0.18rem 0.55rem; font-size: 0.7rem;
+  background: #0d1117; color: #8b949e;
+}
+.house-secondary a:hover { background: #21262d; color: #e6edf3; border-color: #58a6ff; }
+
+.orphan-list { display: grid; gap: 0.5rem; }
 
 .dataset-info { flex: 1; }
 .dataset-name { font-weight: 600; font-size: 0.95rem; }

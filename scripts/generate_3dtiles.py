@@ -371,11 +371,21 @@ def generate(manifest_path, output_dir, lv95_origin):
 
     # ── main tileset: standalone buildings (parent=None) + terrain ───────────
     standalone = group_tiles.pop(None, [])
-    standalone_root, standalone_bbox, _ = make_group_root(standalone, root_bmin, root_bmax)
-    # Main tileset includes terrain, so use global bbox (terrain extends beyond buildings)
-    main_path = write_tileset('tileset.json', standalone_root, terrain_tile,
-                              'Gesamtmodell Eggiwil', tile_bbox=None)
-    print(f'\nWrote {main_path}  ({len(standalone)} standalone buildings, terrain={terrain_tile is not None})')
+    main_path = os.path.join(output_dir, 'tileset.json')
+    # A focused export (--building / --phase) only knows about a slice of the
+    # model. Rewriting tileset.json from that slice would drop every other
+    # building from the Gesamtmodell view. Preserve the existing main tileset
+    # in that case.
+    if manifest.get('focused') and os.path.exists(main_path):
+        print(f'\n[main] skipping tileset.json rewrite — focused run '
+              f'(building={manifest.get("building_filter")!r}, '
+              f'phase={manifest.get("phase_filter")!r}). Existing main preserved.')
+    else:
+        standalone_root, standalone_bbox, _ = make_group_root(standalone, root_bmin, root_bmax)
+        main_path = write_tileset('tileset.json', standalone_root, terrain_tile,
+                                  'Gesamtmodell Eggiwil', tile_bbox=None)
+        print(f'\nWrote {main_path}  ({len(standalone)} standalone buildings, '
+              f'terrain={terrain_tile is not None})')
 
     # ── per-group tilesets: one file per parent collection ───────────────────
     group_paths = []  # [(parent_name, leaf_name_or_None, tileset_path), ...]
@@ -427,7 +437,15 @@ def _to_web_path(fs_path):
 
 def register_datasets(main_path, group_paths, datasets_path):
     """
-    Add/update gesamtmodell entries in datasets.json.
+    Merge gesamtmodell entries into datasets.json.
+
+    Behavior:
+    - Build the new entries from the current manifest (main + groups + leaves).
+    - Replace any existing entry whose id matches a new id (upsert).
+    - PRESERVE every other gesamtmodell_* entry (so a focused per-building
+      re-export doesn't wipe entries for buildings that aren't in this manifest).
+    - Warn about preserved entries whose tileset.json file no longer exists.
+
     group_paths entries: (parent_name, leaf_name_or_None, tileset_path)
       leaf_name=None → group tileset (all phases together)
       leaf_name=str  → individual phase tileset
@@ -436,16 +454,14 @@ def register_datasets(main_path, group_paths, datasets_path):
     with open(datasets_path, encoding='utf-8') as f:
         datasets = json.load(f)
 
-    # Remove all existing gesamtmodell entries (main + any previous groups/leaves)
-    datasets = [d for d in datasets if not d.get('id', '').startswith(DATASET_ID)]
-
     now = datetime.datetime.utcnow().isoformat() + 'Z'
 
     def safe(s):
         return s.replace('/', '_').replace(' ', '_').replace('\\', '_').replace('+', '_')
 
-    # Main tileset (standalone buildings + terrain)
-    datasets.append({
+    # ── Build new entries ─────────────────────────────────────────────────────
+    new_entries = []
+    new_entries.append({
         'id':          DATASET_ID,
         'name':        DATASET_NAME,
         'type':        'cesium',
@@ -459,17 +475,15 @@ def register_datasets(main_path, group_paths, datasets_path):
 
     for parent_name, leaf_name, ts_path in group_paths:
         if leaf_name is None:
-            # Group tileset — all phases of this building family together
             ds_id   = f'{DATASET_ID}_{safe(parent_name)}'
             ds_name = f'{parent_name} (alle Phasen)'
             desc    = f'Alle Phasen von {parent_name}.'
         else:
-            # Individual phase tileset
             ds_id   = f'{DATASET_ID}_{safe(parent_name)}_{safe(leaf_name)}'
             ds_name = leaf_name
             desc    = f'{leaf_name} — Phase von {parent_name}.'
 
-        datasets.append({
+        new_entries.append({
             'id':          ds_id,
             'name':        ds_name,
             'type':        'cesium',
@@ -481,12 +495,67 @@ def register_datasets(main_path, group_paths, datasets_path):
             'createdAt':   now,
         })
 
+    # ── Merge: keep old entries except where a new id replaces them ───────────
+    new_ids = {e['id'] for e in new_entries}
+
+    preserved      = []   # old gesamtmodell entries kept (not in new manifest)
+    overridden     = []   # old gesamtmodell entries replaced by a new one
+    stale_warnings = []   # preserved entries whose tileset file is gone
+
+    # Resolve the project root once so we can sanity-check paths on disk.
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(datasets_path)))
+
+    final = []
+    for d in datasets:
+        did = d.get('id', '')
+        if not did.startswith(DATASET_ID):
+            # Non-gesamtmodell entry (PDFs, video, point clouds, samples) — keep as-is.
+            final.append(d)
+            continue
+        if did in new_ids:
+            # Replaced by a new entry below; drop the old.
+            overridden.append(did)
+            continue
+        # Preserve this old gesamtmodell entry — but warn if the tileset is gone.
+        ts_path = d.get('path', '')
+        if ts_path.startswith('/'):
+            fs_path = os.path.join(project_root, ts_path.lstrip('/'))
+        else:
+            fs_path = ts_path
+        if not os.path.exists(fs_path):
+            stale_warnings.append((did, ts_path))
+        preserved.append(d)
+        final.append(d)
+
+    # Append new entries (those that override are dropped above; the new versions
+    # take their place; brand-new ids land here too).
+    final.extend(new_entries)
+
+    # Dedupe by id (defensive — should already be unique).
+    seen, deduped = set(), []
+    for d in final:
+        if d['id'] in seen:
+            continue
+        seen.add(d['id']); deduped.append(d)
+
     with open(datasets_path, 'w', encoding='utf-8') as f:
-        json.dump(datasets, f, indent=2)
+        json.dump(deduped, f, indent=2, ensure_ascii=False)
 
     n_groups = sum(1 for _, l, _ in group_paths if l is None)
     n_leaves = sum(1 for _, l, _ in group_paths if l is not None)
-    print(f'Registered 1 main + {n_groups} group + {n_leaves} individual tilesets in {datasets_path}')
+    print(f'Registered 1 main + {n_groups} group + {n_leaves} individual tilesets')
+    print(f'  → {len(new_entries)} new/upserted entries')
+    print(f'  → {len(overridden)} old entries replaced')
+    print(f'  → {len(preserved)} preserved gesamtmodell entries (other buildings, not in this run)')
+    if stale_warnings:
+        print(f'  !! {len(stale_warnings)} preserved entries point at MISSING tileset files:')
+        for did, p in stale_warnings[:8]:
+            print(f'       {did}  →  {p}')
+        if len(stale_warnings) > 8:
+            print(f'       ... and {len(stale_warnings) - 8} more')
+        print(f'     Run a full export (no --building filter) to rebuild these,')
+        print(f'     or delete the orphaned entries manually.')
+    print(f'  Total entries in {datasets_path}: {len(deduped)}')
 
 
 # ── entry point ───────────────────────────────────────────────────────────────

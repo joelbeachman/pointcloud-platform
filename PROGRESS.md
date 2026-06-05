@@ -576,6 +576,88 @@ against visible reference features. Final values baked into `scripts/generate_3d
 
 ---
 
+## 2026-05-31 → 2026-06-05 — Multi-datatype integration + Blender pipeline hardening + Wissam-Präsentation
+
+### Completed — Building-centric navigation
+
+- Backfilled `building`, `phase`, `phaseLabel`, `isGroupMaster`, `buildingName` on every dataset via new `scripts/backfill_building_phase.py`. Currently 159 datasets across 94 indexed buildings, 17 group masters, 12 entries with `buildingName`.
+- Portal landing page restructured (`public/js/portal.js`, `public/index.html`): one card per house grouped by `building`, type-filter buttons removed in favor of search-only navigation, "Andere Datensätze" section below for non-building entries.
+- Cesium viewer (`public/viewers/cesium.html`): layer list now clusters layers by `building` under collapsible group headers with master checkbox (checked / indeterminate / unchecked tri-state), visible-count badge, fly-to per group.
+- Cesium "Add Layer" modal regrouped by building first (label `"NNN — buildingName"`), falls back to `ds.group`, then "Andere"; a per-group "Ganzes Gebäude laden" button bulk-loads via the same logic as `?building=NNN`.
+- New URL parameter `?building=NNN` on the Cesium viewer: loads ALL cesium-compatible datasets for that house at once, point cloud (source=lidar/photogrammetry) auto-on, models/phases off, falls back to the "alle Phasen" master if no point cloud. `activeBuildingPinned` keeps the docs panel locked to the chosen building.
+- Default Cesium landing (no URL params) now opens the Gesamtmodell instead of "first compatible dataset."
+
+### Completed — Documents, videos, and the "Dokumente & Medien" sidebar
+
+- Added new dataset types `document` and `video` in `datasets.json` schema, portal `VIEWER_MAP` / `ICONS` / `BADGE_CLASS`, and `public/css/portal.css`.
+- New standalone viewers: `public/viewers/pdf.html` (iframe wrapper) and `public/viewers/video.html` (HTML5 `<video>` OR YouTube `<iframe>` based on `youtubeId`).
+- New "Dokumente & Medien" section in the Cesium right sidebar that filters to the active building. PDFs open as a slide-out overlay (left of the right sidebar, ~45% of viewport); point cloud stays interactive in the remaining viewport.
+- Video Picture-in-Picture (`#video-pip`) supports both `<video>` (mp4) and `<iframe>` (YouTube) via a generic `#video-pip-stage` container that swaps content based on `ds.youtubeId`.
+- Registered three new datasets:
+  - `doc-351-bauernhaus-eggiwil` — Bauhistorische Dokumentation für Geb. 351
+  - `doc-752-stallscheune-meggen` — Bauhistorische Dokumentation für Geb. 752
+  - `vid-351-drone-yk0sxdykx9w` — Drohnenflug-Ausschnitt (YouTube embed, start=95 end=119)
+- Linked `haus-eggiwil` and `haus-eggiwil-potree` point clouds to building 351 via the backfill script's `EXPLICIT_BUILDINGS` dict.
+
+### Completed — Blender export hardening (`scripts/export_blender_glb.py`)
+
+- Added CLI flags via the `--` separator: `--building NNN`, `--phase N`, `--skip-terrain`. Filter is applied recursively, so it works even when buildings are nested under category collections (`Häuser → Mit_Nummer → 2025_752`).
+- Auto-disambiguation of GLB filenames: when a leaf collection's name doesn't already contain the parent's building number, the GLB filename gets that number appended. So a generic collection literally named `1. Bauphase` under parent `2025_752` writes to `1._Bauphase_752.glb` instead of stomping on other buildings' `1._Bauphase.glb`.
+- Phase-container detection: when a non-leaf collection's name matches `N. Bauphase`, its descendants are merged into one GLB instead of being exported as separate child GLBs. Fixes the case where a Bauphase is structured as a parent of WIP sub-collections (e.g. 752's `2. Bauphase` holding `test` + `new`).
+- Removed the eye-icon hide filter (`obj.hide_get()`). Only the explicit render-disable flag (`obj.hide_viewport`) still excludes objects, so artists' temporary outliner toggles no longer silently drop collections from the export.
+- Loud warnings on empty leaf collections: when a leaf has mesh verts in source but zero objects pass the export filter, a `[WARNING]` is printed and bubbled up into `manifest["errors"]` (and printed at the end). No more silent skips.
+- Manifest now carries `focused: bool`, `building_filter`, `phase_filter`, `terrain_exported` so downstream tools know whether they're looking at a full or partial export.
+
+### Completed — 3D Tiles generation hardening (`scripts/generate_3dtiles.py`)
+
+- **Merge mode instead of wipe.** `register_datasets()` now upserts: keeps every existing `gesamtmodell_*` entry not in the current manifest, replaces matching IDs, warns about preserved entries pointing at missing tileset files on disk. A focused per-building re-export no longer drops the other buildings.
+- **Main tileset preserved on focused runs.** When `manifest["focused"]` is set and `tileset.json` already exists, the main is left untouched. Per-building tilesets still get written. The Gesamtmodell view is only rewritten on a full export (no filter flags).
+
+### Completed — Backfill script (`scripts/backfill_building_phase.py`)
+
+- New file: authoritative source for derived dataset fields. Runs after `generate_3dtiles.py` and is fully idempotent.
+- `EXPLICIT_BUILDINGS` dict: pinpoint dataset IDs to building numbers when the regex-from-group derivation can't reach them (point clouds, documents, videos without a `group` field).
+- `BUILDING_NAMES` dict: building-number → friendly name lookup (currently 351 → "Bauernhaus Eggiwil", 752 → "Stallscheune Meggen"); propagated as `buildingName` to every dataset matching that building.
+- `MANUAL_RELABELS` dict: per-id field overrides for hand-fixing known-broken Blender exports. Now empty since the 752 export was fixed at source; the block is documented as the place to add future workarounds.
+
+### Completed — Documentation for the supervisor meeting
+
+- `documentation/PIPELINE.md` (new): codebase + pipeline architecture, library inventory, archival-workflow proposal addressing the 4.9 GB monolith Blender file.
+- `documentation/PIPELINE_BITES.md` (new): 35+ self-contained, slide-sized explanation snippets organized A–I, plus a P section with concrete step-by-step pipelines (Blender, LiDAR, documents/video, browser-side house-loading sequence).
+- `documentation/PRESENTATION_MONDAY.md` (new): structured German-language presentation outline answering Wissam's email — 4-part schema *(Anwendung → Daten → Pipeline → Demo)* for each of UC1–UC4, with each use case explicitly tagged to research questions RQ1–RQ5 from `pointclouds.tex`. Closing matrix maps each RQ to evidence + remaining gaps.
+
+### Bug fixes
+
+- **Building 752 — both phases looked alike.** Root cause: Blender file had `2. Bauphase` structured as a parent of WIP sub-collections `test` + `new`. The export descended into them and emitted `test.glb` + `new.glb`. Fixed by adding the phase-container detection in `export_blender_glb.py`.
+- **Building 752 — Bauphase 1 collided across buildings.** Root cause: generic collection name `1. Bauphase` under parent `2025_752` wrote to `1._Bauphase.glb`, overwriting any other building's identically-named phase. Fixed by the parent-disambiguation rule in `export_blender_glb.py`.
+- **Focused export wiped all other buildings.** Ran `blender ... --building 752`, then `generate_3dtiles.py` — the latter's old wipe-and-reregister logic removed every non-752 `gesamtmodell_*` entry from `datasets.json`. Recovered by parsing `extras.label` from each remaining `tileset_*.json` on disk (the label encodes parent/leaf identity as `"<parent> — <leaf>"`); reconstructed 146 gesamtmodell entries. Fixed for future runs by making `register_datasets()` a merge.
+- **Focused export emptied the main tileset.** `tileset.json` was overwritten with only the 3 buildings from the focused manifest, leaving `root.children: []`. Recovered via `git checkout HEAD -- data/cesium/gesamtmodell/tileset.json`. Prevented in future runs by the `manifest["focused"]` gate.
+- **The MANUAL_RELABELS block became stale.** After a clean 752 re-export the relabeled IDs no longer existed; the relabels would have silently no-op'd but were misleading. Block cleared.
+
+### Recovery & forensic notes
+
+- `data/datasets.json`'s `gesamtmodell_*` entries are NOT committed in git in any meaningful version — they're a derived artifact of `generate_3dtiles.py`. The non-gesamtmodell entries (point clouds, PDFs, video, samples) ARE preserved across runs.
+- 146 tileset `.json` files (config) ARE tracked. GLBs and binary payload are gitignored. Hence the recovery path works: tilesets + their `extras.label` survive a generate run, even if `datasets.json` is wiped.
+- Main `tileset.json` IS tracked → `git checkout HEAD` is a one-line recovery.
+- The "what survives a focused export wipe" decision tree is now codified in `documentation/PIPELINE.md` § 5.
+
+### Lessons
+
+- The Blender file structure (collection naming, hierarchy depth) directly determines the dataset IDs in the platform. Generic collection names (`1. Bauphase` without a building suffix) create silent collisions. The right fix is at the source (rename in Blender), but the export script now also defensively disambiguates.
+- A wipe-and-rewrite registration step is fine for one-shot setups but lethal for focused iterations. Merge-or-die: any tool that writes to a shared registry should merge by ID, not replace by prefix.
+- The `extras.label` field in a tileset.json is a quietly load-bearing piece of metadata — it's what made post-wipe reconstruction possible. Document this contract.
+- "What goes into git" deserves a one-pager. Today's split (tracked: scripts + config + small JSON; gitignored: binary payload + the .blend) survived multiple incidents — that lesson should not be in someone's head.
+
+### Pending
+
+- [ ] Migrate `Gesamtsmodell_V3.blend` from monolith (4.9 GB) to per-building `.blend` files (~200 MB each). Proposed structure in `documentation/PIPELINE.md` § 5.1.
+- [ ] Migrate `data/datasets.json` to `data/datasets/<id>.json` once entry count climbs past ~500. Proposed in `documentation/PIPELINE.md` § 5.3.
+- [ ] Real FEM data for UC3 — currently using plausibility colors; CustomShader pipeline is ready to ingest numeric values.
+- [ ] User-group validation of the platform (Konservator / Forscher / Besucher personas) — required for definitive answers to RQ2 + RQ5.
+- [ ] Re-export the Gesamtmodell with the hardened `export_blender_glb.py` so that every building benefits from the parent-disambiguation rule and the phase-container collapse.
+
+---
+
 ## Pending / Planned
 
 ### High priority

@@ -16,6 +16,7 @@ Output: data/blender/export/
 import bpy
 import json
 import os
+import re
 import sys
 
 # ── config ────────────────────────────────────────────────────────────────────
@@ -25,6 +26,46 @@ OUTPUT_DIR  = os.path.normpath(os.path.join(SCRIPT_DIR, '..', 'data', 'blender',
 EXPORT_COLLECTIONS  = ['Häuser']   # per-building GLBs from these
 TERRAIN_COLLECTIONS = ['Terrain']  # combined terrain GLB from these
 SKIP_COLLECTIONS    = ['Terrain_Substitute', 'Misc']  # too heavy / point clouds
+
+# ── CLI args (parsed after the `--` separator that Blender passes through) ───
+# Usage:
+#   blender --background file.blend --python scripts/export_blender_glb.py -- --building 752
+#
+# --building NNN    Only export top-level child collections under EXPORT_COLLECTIONS
+#                   whose name contains NNN. Other buildings are skipped entirely
+#                   (no risk of GLB filenames colliding with them).
+# --phase N         Only export leaf/phase-container collections named "N. Bauphase".
+#                   Other collections (other Bauphasen, placeholders like "2022_752")
+#                   are skipped. Combine with --building for "phase 1 of building 752".
+# --skip-terrain    Don't re-export terrain.glb (saves time on focused runs).
+def _parse_cli():
+    if '--' not in sys.argv:
+        return {}
+    argv = sys.argv[sys.argv.index('--') + 1:]
+    out = {}
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == '--building' and i + 1 < len(argv):
+            out['building'] = argv[i + 1]; i += 2
+        elif a == '--phase' and i + 1 < len(argv):
+            out['phase'] = argv[i + 1]; i += 2
+        elif a == '--skip-terrain':
+            out['skip_terrain'] = True; i += 1
+        else:
+            print(f'[cli] unknown arg ignored: {a!r}'); i += 1
+    return out
+
+CLI = _parse_cli()
+BUILDING_FILTER = CLI.get('building')   # e.g. "752", or None for all buildings
+PHASE_FILTER    = CLI.get('phase')      # e.g. "1", or None for all phases
+SKIP_TERRAIN    = CLI.get('skip_terrain', False)
+if BUILDING_FILTER:
+    print(f'[cli] --building active: only exporting buildings matching {BUILDING_FILTER!r}')
+if PHASE_FILTER:
+    print(f'[cli] --phase active: only exporting Bauphase {PHASE_FILTER!r} collections')
+if SKIP_TERRAIN:
+    print(f'[cli] --skip-terrain: skipping terrain.glb')
 
 # Set to True when running on a machine with limited RAM (≤ 8 GB).
 # Purges all packed textures before export so materials will have no textures.
@@ -97,10 +138,14 @@ def select_objects(objects):
     Skips:
     - Zero-scale objects (hidden in Blender; export as singular matrices that
       crash CesiumJS when inverting the model matrix).
-    - Viewport-hidden objects (hide_viewport=True; these are intentionally
-      invisible and should not appear in the export).
+    - Render-disabled objects (hide_viewport=True 🖥 monitor icon — explicitly
+      excluded from renders / dependency graph).
     - Objects whose names start with EXCLUDE_NAME_PREFIXES (e.g. DGM terrain
       meshes that are embedded inside building collections by mistake).
+
+    Does NOT skip eye-icon-hidden objects (hide_get()) — that flag is purely a
+    viewport convenience the artist uses while modeling, and silently dropping
+    such collections caused 752 to lose its 2. Bauphase export.
     """
     deselect_all()
     active = None
@@ -110,8 +155,8 @@ def select_objects(objects):
             s = obj.scale
             if s.x == 0 or s.y == 0 or s.z == 0:
                 continue
-            # Skip viewport-hidden
-            if obj.hide_viewport or obj.hide_get():
+            # Skip render-disabled (monitor icon) — these are intentionally excluded.
+            if obj.hide_viewport:
                 continue
             # Skip excluded name prefixes (DGM terrain meshes, etc.)
             if any(obj.name.startswith(p) for p in EXCLUDE_NAME_PREFIXES):
@@ -193,16 +238,60 @@ def is_leaf_collection(col):
     return len(col.children) == 0
 
 
+# Match collection names like "1. Bauphase", "2. Bauphase 752", "10. Bauphase".
+_PHASE_NAME_RE = re.compile(r'^\s*(\d+)\.\s*Bauphase\b', re.IGNORECASE)
+
+def phase_number_of(col_name):
+    """Return the Bauphase number from a collection name, or None if it's not a phase."""
+    m = _PHASE_NAME_RE.match(col_name)
+    return m.group(1) if m else None
+
+def passes_phase_filter(col):
+    """When --phase N is active, only collections named 'N. Bauphase' pass."""
+    if not PHASE_FILTER:
+        return True
+    n = phase_number_of(col.name)
+    return n == PHASE_FILTER
+
+def is_phase_container(col):
+    """A non-leaf collection that semantically represents one Bauphase.
+
+    When the artist organizes a phase as a parent collection holding several
+    sub-collections (e.g. work-in-progress drafts named "test" / "new"),
+    we treat the parent as a single export rather than recursing — otherwise
+    we end up with anonymous "test.glb" / "new.glb" files instead of a clean
+    "N._Bauphase_<building>.glb".
+    """
+    return not is_leaf_collection(col) and _PHASE_NAME_RE.match(col.name) is not None
+
+
 def export_collection_recursive(col, manifest_buildings, rel_path_prefix='buildings', parent_name=None):
     """
     Recursively export leaf collections as individual GLBs.
     Leaf = a collection with no child collections.
+    Exception: a non-leaf collection whose name matches "N. Bauphase" is treated
+    as a single export (its sub-collection geometry is merged into one GLB).
     parent_name: immediate parent collection name (used to group Bauphase variants
                  of the same building into separate tilesets in generate_3dtiles.py).
     """
-    if is_leaf_collection(col):
-        # Export this collection as one GLB
+    # When --phase N is active, skip leaves/phase-containers that aren't the matching Bauphase.
+    # (We still recurse through non-leaf non-phase collections to find matching phases below.)
+    if (is_leaf_collection(col) or is_phase_container(col)) and not passes_phase_filter(col):
+        print(f'  [phase-filter] skipping {col.name!r} (does not match --phase {PHASE_FILTER})')
+        return
+
+    if is_leaf_collection(col) or is_phase_container(col):
+        # Export this collection as one GLB.
+        # Disambiguate the filename by appending the parent's building number
+        # when the collection name doesn't already contain it. This prevents
+        # generic-named collections like "1. Bauphase" from overwriting each
+        # other across different buildings.
         safe_name = col.name.replace('/', '_').replace(' ', '_').replace('\\', '_')
+        if parent_name:
+            m = re.search(r'(\d{3,4}[a-z]?)$', parent_name)
+            bldg_num = m.group(1) if m else None
+            if bldg_num and bldg_num not in safe_name:
+                safe_name = f'{safe_name}_{bldg_num}'
         glb_rel   = f'{rel_path_prefix}/{safe_name}.glb'
         glb_abs   = os.path.join(OUTPUT_DIR, glb_rel)
 
@@ -248,7 +337,17 @@ def export_collection_recursive(col, manifest_buildings, rel_path_prefix='buildi
                 'vertex_count': vcount,
             })
         else:
-            print(f'  [ERROR] export failed for {col.name}')
+            msg = (f'export skipped/failed for leaf collection {col.name!r} '
+                   f'(parent={parent_name!r}) — {vcount} mesh verts in source, '
+                   f'but no objects passed the export filter '
+                   f'(check hide_viewport / DGM prefix / zero-scale).')
+            print(f'  [WARNING] {msg}')
+            # Bubble it up so it lands in manifest["errors"] and is visible after the run.
+            global _PENDING_WARNINGS
+            try:
+                _PENDING_WARNINGS.append(msg)
+            except NameError:
+                _PENDING_WARNINGS = [msg]
     else:
         # Recurse into child collections; this collection becomes the parent for its children
         print(f'  [{col.name}] → {len(col.children)} sub-collections')
@@ -259,7 +358,17 @@ def export_collection_recursive(col, manifest_buildings, rel_path_prefix='buildi
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-manifest = {'buildings': [], 'terrain': None, 'errors': []}
+manifest = {
+    'buildings': [],
+    'terrain': None,
+    'errors': [],
+    # Mark focused runs so generate_3dtiles.py knows not to rebuild the main
+    # tileset.json (which would drop all the buildings not included in this run).
+    'focused':           bool(BUILDING_FILTER or PHASE_FILTER),
+    'building_filter':   BUILDING_FILTER,
+    'phase_filter':      PHASE_FILTER,
+    'terrain_exported':  not (SKIP_TERRAIN or BUILDING_FILTER),
+}
 
 # 1. Export buildings (per leaf-collection)
 print('\n=== Exporting buildings ===')
@@ -271,18 +380,61 @@ for col_name in EXPORT_COLLECTIONS:
         continue
     col = bpy.data.collections[col_name]
     print(f'\n[{col_name}]  sub-collections: {[c.name for c in col.children]}')
-    if col.children:
-        for child in col.children:
-            export_collection_recursive(child, manifest['buildings'], parent_name=None)
+    children = list(col.children) if col.children else [col]
+
+    if BUILDING_FILTER:
+        # The Häuser tree may be organised by category first ("Mit_Nummer",
+        # "Ohne_Nummer", ...) and only then by building. Find every collection
+        # (anywhere in the descent) whose name contains the filter, but stop
+        # the search once a match is found on a branch — we want the building
+        # collection, not deeper phase sub-collections.
+        def find_matching(c, path_parents):
+            if BUILDING_FILTER in c.name:
+                return [(c, path_parents)]
+            hits = []
+            for ch in c.children:
+                hits.extend(find_matching(ch, path_parents + [c.name]))
+            return hits
+
+        matches = []
+        for ch in children:
+            matches.extend(find_matching(ch, []))
+
+        if not matches:
+            msg = (f'--building {BUILDING_FILTER!r}: no collection found anywhere '
+                   f'under "{col_name}". Top-level children were: '
+                   f'{[c.name for c in children]}')
+            print(f'  [WARNING] {msg}')
+            manifest['errors'].append(msg)
+            continue
+        print(f'  [filter] matched {len(matches)} collection(s):')
+        for c, parents in matches:
+            chain = ' → '.join(parents + [c.name]) if parents else c.name
+            print(f'           {chain}')
+        # Export from each match, preserving the in-Blender parent name so phase
+        # children get the right parent in the manifest.
+        for c, parents in matches:
+            initial_parent = parents[-1] if parents else None
+            export_collection_recursive(c, manifest['buildings'], parent_name=initial_parent)
     else:
-        export_collection_recursive(col, manifest['buildings'], parent_name=None)
+        for child in children:
+            export_collection_recursive(child, manifest['buildings'], parent_name=None)
 
 # 2. Export terrain (all Terrain objects as one combined GLB)
-print('\n=== Exporting terrain ===')
-terrain_objects = []
-for col_name in TERRAIN_COLLECTIONS:
-    if col_name in bpy.data.collections:
-        terrain_objects.extend(all_objects_recursive(bpy.data.collections[col_name]))
+if SKIP_TERRAIN or BUILDING_FILTER:
+    # On a focused per-building run, terrain rarely needs to change.
+    # Re-run without --building (or without --skip-terrain) to refresh it.
+    if BUILDING_FILTER and not SKIP_TERRAIN:
+        print('\n=== Skipping terrain (focused --building run) ===')
+    else:
+        print('\n=== Skipping terrain (--skip-terrain) ===')
+    terrain_objects = []
+else:
+    print('\n=== Exporting terrain ===')
+    terrain_objects = []
+    for col_name in TERRAIN_COLLECTIONS:
+        if col_name in bpy.data.collections:
+            terrain_objects.extend(all_objects_recursive(bpy.data.collections[col_name]))
 
 if terrain_objects:
     terrain_glb = os.path.join(OUTPUT_DIR, 'terrain.glb')
@@ -311,6 +463,10 @@ else:
     print('  [skip] no terrain objects found')
 
 # 3. Save manifest
+try:
+    manifest['errors'].extend(_PENDING_WARNINGS)
+except NameError:
+    pass
 manifest_path = os.path.join(OUTPUT_DIR, 'manifest.json')
 with open(manifest_path, 'w', encoding='utf-8') as f:
     json.dump(manifest, f, indent=2, ensure_ascii=False)
@@ -318,3 +474,7 @@ with open(manifest_path, 'w', encoding='utf-8') as f:
 print(f'\n=== Done ===')
 print(f'  {len(manifest["buildings"])} building GLBs exported')
 print(f'  manifest → {manifest_path}')
+if manifest['errors']:
+    print(f'\n  !! {len(manifest["errors"])} WARNING(S) — check manifest.json["errors"]:')
+    for e in manifest['errors']:
+        print(f'     - {e}')

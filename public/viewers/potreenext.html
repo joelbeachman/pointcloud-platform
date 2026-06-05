@@ -128,6 +128,36 @@
 		white-space: nowrap; pointer-events: none; z-index: 100; line-height: 1.5;
 	}
 	.pnlm-hotspot.pano-nav-hotspot:hover .pano-nav-popup { display: block; }
+
+	/* ── Datasets panel ── */
+	#datasets-panel {
+		display: none; position: fixed; top: 56px; right: 0;
+		width: 260px; max-height: calc(100vh - 56px); overflow-y: auto;
+		background: #161b22; border-left: 1px solid #30363d;
+		z-index: 500; font-family: monospace; font-size: 0.8rem; color: #8b949e;
+	}
+	.dp-header {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 0.55rem 0.75rem; border-bottom: 1px solid #30363d;
+		font-weight: 600; color: #e6edf3; font-size: 0.82rem;
+	}
+	.dp-close { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1rem; padding: 0; }
+	.dp-close:hover { color: #e6edf3; }
+	.dp-item { padding: 0.5rem 0.75rem; border-bottom: 1px solid #21262d; }
+	.dp-item-name { color: #e6edf3; font-size: 0.8rem; margin-bottom: 0.15rem; }
+	.dp-item-desc { color: #8b949e; font-size: 0.72rem; margin-bottom: 0.3rem; }
+	.dp-load-btn {
+		background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.4);
+		color: #3fb950; border-radius: 4px; padding: 0.15rem 0.6rem;
+		cursor: pointer; font-size: 0.78rem; font-family: monospace;
+	}
+	.dp-load-btn:hover { background: rgba(63,185,80,0.22); }
+	.dp-toggle-btn {
+		background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.3);
+		color: #58a6ff; border-radius: 4px; padding: 0.2rem 0.65rem;
+		cursor: pointer; font-size: 0.82rem; font-family: monospace; white-space: nowrap;
+	}
+	.dp-toggle-btn:hover { background: rgba(88,166,255,0.2); }
 </style>
 </head>
 <body>
@@ -145,7 +175,17 @@
     <a href="/viewers/potreenext.html" class="active">Potree-Next</a>
     <a href="/viewers/compare.html">Compare</a>
   </nav>
+  <button class="dp-toggle-btn" onclick="toggleDatasetsPanel()">&#8857; Datasets</button>
 </header>
+
+<!-- Datasets panel -->
+<div id="datasets-panel">
+  <div class="dp-header">
+    <span>Load Dataset</span>
+    <button class="dp-close" onclick="document.getElementById('datasets-panel').style.display='none'">&#x2715;</button>
+  </div>
+  <div id="dp-list" style="padding:0.5rem 0.75rem;color:#8b949e">Loading&hellip;</div>
+</div>
 
 <div id="potree" style="width:100%;height:calc(100% - 56px);position:fixed;top:56px;">
 	<span style="position:relative">
@@ -211,6 +251,101 @@
 
 <script type="module">
 
+	// ── Dataset helpers ──────────────────────────────────────────────────────
+	function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+	window.loadPotreeDataset = async function(path, name) {
+		const pc = await PotreeLoader.load(path);
+		scene.root.children.push(pc);
+		pc.name = name || path;
+		controls.zoomTo(pc);
+		document.getElementById('datasets-panel').style.display = 'none';
+	};
+
+	window.loadCesiumDataset = async function(dataset) {
+		const list = document.getElementById('dp-list');
+		list.innerHTML = `<div style="padding:0.5rem 0.75rem;color:#8b949e">Loading ${escHtml(dataset.name)}&hellip;</div>`;
+		try {
+			const tiles = await TDTilesLoader.load(dataset.path);
+			if (tiles.rootTransform) {
+				const rt = tiles.rootTransform; // column-major 4×4, tile-local → ECEF
+				tiles.projector = {
+					forward([x, y, z]) {
+						const ex = rt[0]*x + rt[4]*y + rt[ 8]*z + rt[12];
+						const ey = rt[1]*x + rt[5]*y + rt[ 9]*z + rt[13];
+						const ez = rt[2]*x + rt[6]*y + rt[10]*z + rt[14];
+						return _ecefToLv95.forward([ex, ey, ez]);
+					}
+				};
+			}
+			// Re-project bounding box to LV95 viewer space so zoomTo works
+			const bv = tiles.root.boundingVolume;
+			const bvCenter = tiles.project([bv.position.x, bv.position.y, bv.position.z]);
+			const bvR = bv.radius;
+			tiles.boundingBox.min.set(bvCenter[0] - bvR, bvCenter[1] - bvR, bvCenter[2] - bvR);
+			tiles.boundingBox.max.set(bvCenter[0] + bvR, bvCenter[1] + bvR, bvCenter[2] + bvR);
+
+			scene.root.children.push(tiles);
+			tiles.name = dataset.name || dataset.path;
+			controls.zoomTo(tiles);
+			document.getElementById('datasets-panel').style.display = 'none';
+		} catch(e) {
+			list.innerHTML = `<div style="padding:0.5rem 0.75rem;color:#f85149">Error: ${escHtml(e.message)}</div>`;
+			console.error('[3DTiles] Failed to load', dataset.path, e);
+		}
+	};
+
+	window.toggleDatasetsPanel = async function() {
+		const panel = document.getElementById('datasets-panel');
+		if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+		panel.style.display = 'block';
+		const list = document.getElementById('dp-list');
+		list.innerHTML = 'Loading&hellip;';
+		try {
+			const res = await fetch('/api/datasets');
+			const all = await res.json();
+			const viewable = all.filter(d => d.type === 'potree' || d.type === 'cesium');
+			if (!viewable.length) {
+				list.innerHTML = '<div style="padding:0.5rem 0.75rem;color:#484f58">No datasets available.</div>';
+				return;
+			}
+			list.innerHTML = '';
+			for (const d of viewable) {
+				const item = document.createElement('div');
+				item.className = 'dp-item';
+				const tag = d.type === 'cesium' ? '3D Tiles' : 'Potree';
+				item.innerHTML = `<div class="dp-item-name">${escHtml(d.name)} <span style="color:#8b949e;font-size:0.7rem">${tag}</span></div>` +
+					(d.description ? `<div class="dp-item-desc">${escHtml(d.description)}</div>` : '') +
+					`<button class="dp-load-btn">Load</button>`;
+				if (d.type === 'cesium') {
+					item.querySelector('.dp-load-btn').addEventListener('click', () => loadCesiumDataset(d));
+				} else {
+					item.querySelector('.dp-load-btn').addEventListener('click', () => loadPotreeDataset(d.path, d.name));
+				}
+				list.appendChild(item);
+			}
+		} catch(e) {
+			list.innerHTML = `<div style="padding:0.5rem 0.75rem;color:#f85149">Error: ${escHtml(e.message)}</div>`;
+		}
+	};
+
+	// ── Resolve initial dataset from ?id= param ──────────────────────────────
+	const _dsId = new URLSearchParams(location.search).get('id');
+	let _initialDs   = null;
+	let _initialPath = '/data/potree/haus-eggiwil/metadata.json';
+	let _initialName = 'Haus Eggiwil';
+	let _panoPath = '/data/panoramas/haus-eggiwil/metadata.json';
+	if (_dsId) {
+		try {
+			const _r = await fetch(`/api/datasets/${_dsId}`);
+			if (_r.ok) {
+				_initialDs = await _r.json();
+				if (_initialDs.path) { _initialPath = _initialDs.path; _initialName = _initialDs.name || _dsId; }
+				_panoPath = _initialDs.panoramasPath || null;
+			}
+		} catch(e) { console.warn('Failed to resolve dataset', _dsId, e); }
+	}
+
 	// WebGPU availability check
 	if (!navigator.gpu) {
 		document.getElementById("webgpu-error").style.display = "block";
@@ -227,6 +362,12 @@
 	import {installToolbar} from "toolbar";
 	import {installSidebar} from "sidebar";
 	import {PotreeLoader} from "potree";
+	import { proj4 } from 'proj4';
+	import {TDTilesLoader} from '../libs/potreenext/src/modules/3DTiles/3DTilesLoader.js';
+
+	const _ECEF = '+proj=geocent +datum=WGS84 +units=m';
+	const _LV95 = '+proj=somerc +lat_0=46.9524055555556 +lon_0=7.43958333333333 +k_0=1 +x_0=2600000 +y_0=1200000 +ellps=bessel +towgs84=674.374,15.056,405.346,0,0,0,0 +units=m +no_defs';
+	const _ecefToLv95 = proj4(_ECEF, _LV95);
 
 	let canvas = document.getElementById("canvas");
 	let elPotree = document.getElementById("potree");
@@ -258,12 +399,16 @@
 		document.getElementById("msg_dbg").textContent = report;
 	});
 
-	// PotreeLoader reads metadata.json (same PotreeConverter 2.x format as Potree 1.8)
-	PotreeLoader.load("/data/potree/haus-eggiwil/metadata.json").then(pointcloud => {
-		scene.root.children.push(pointcloud);
-		pointcloud.name = "Haus Eggiwil";
-		controls.zoomTo(pointcloud);
-	});
+	// Load initial dataset: 3D Tiles (cesium) or Potree point cloud
+	if (_initialDs?.type === 'cesium') {
+		loadCesiumDataset(_initialDs);
+	} else {
+		PotreeLoader.load(_initialPath).then(pointcloud => {
+			scene.root.children.push(pointcloud);
+			pointcloud.name = _initialName;
+			controls.zoomTo(pointcloud);
+		});
+	}
 
 	// Optional Gaussian splat: ?splat=<url> loads a 3DGS PLY file alongside the point cloud
 	{
@@ -766,7 +911,7 @@
 	// ── Scan markers ─────────────────────────────────────────────────────────
 	const markerData = [];
 
-	fetch("/data/panoramas/haus-eggiwil/metadata.json")
+	if (_panoPath) fetch(_panoPath)
 		.then(r => r.json())
 		.then(meta => {
 			panos = meta.panoramas;
