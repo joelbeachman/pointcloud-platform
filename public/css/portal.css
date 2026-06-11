@@ -1,3 +1,23 @@
+/*
+ * portal.css — styles for the portal landing page (public/index.html, portal.js)
+ * and shared chrome reused by the viewer pages.
+ *
+ * Dark GitHub-like theme. Sections, in order:
+ *   1. Theme variables (:root)
+ *   2. Reset + base (body)
+ *   3. Header / nav
+ *   4. Layout + hero
+ *   5. Viewer cards (static links to the viewer pages)
+ *   6. Dataset list chrome (header bar, buttons, rows, type badges)
+ *   7. House cards grid (one card per building, see portal.js renderHouseCard)
+ *   8. Ungrouped dataset rows ("Andere Datensätze")
+ *   9. Empty/loading states
+ *  10. "Add dataset" modal
+ *  11. Filter buttons (reused from compare page)
+ *  12. Viewer page chrome (iframe + toolbar)
+ */
+
+/* ── 1. Theme variables ─────────────────────────────────────────────────── */
 :root {
   --bg: #0d1117;
   --bg2: #161b22;
@@ -13,6 +33,7 @@
   --yellow: #d29922;
 }
 
+/* ── 2. Reset + base ────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -22,6 +43,7 @@ body {
   min-height: 100vh;
 }
 
+/* ── 3. Header / nav (sticky top bar) ───────────────────────────────────── */
 header {
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
@@ -61,6 +83,7 @@ nav a:hover, nav a.active {
   border-bottom-color: var(--accent);
 }
 
+/* ── 4. Layout + hero ───────────────────────────────────────────────────── */
 main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
 
 .hero {
@@ -88,6 +111,7 @@ h2 {
   letter-spacing: 0.05em;
 }
 
+/* ── 5. Viewer cards (static links to viewer pages) ─────────────────────── */
 .viewer-cards { margin-bottom: 3rem; }
 
 .card-grid {
@@ -135,12 +159,13 @@ h2 {
   font-family: monospace;
 }
 
+/* Per-viewer accent colour on the card's top edge */
 .potree { border-top: 3px solid var(--accent); }
 .cesium { border-top: 3px solid var(--green); }
 .splat  { border-top: 3px solid var(--purple); }
 .panorama { border-top: 3px solid var(--orange); }
 
-.datasets-section {}
+/* ── 6. Dataset list chrome (header bar, buttons, rows, type badges) ────── */
 .datasets-header {
   display: flex;
   justify-content: space-between;
@@ -194,7 +219,7 @@ h2 {
 .badge-document { background: rgba(248,81,73,0.15); }
 .badge-video { background: rgba(255,205,57,0.15); }
 
-/* House cards grid */
+/* ── 7. House cards grid (one card per building, rendered by portal.js) ── */
 .section-title {
   font-size: 0.95rem; font-weight: 600; color: #e6edf3;
   margin: 0.5rem 0 0.75rem; display: flex; align-items: center; gap: 0.5rem;
@@ -261,6 +286,7 @@ h2 {
 }
 .house-secondary a:hover { background: #21262d; color: #e6edf3; border-color: #58a6ff; }
 
+/* ── 8. Ungrouped dataset rows ("Andere Datensätze") ────────────────────── */
 .orphan-list { display: grid; gap: 0.5rem; }
 
 .dataset-info { flex: 1; }
@@ -284,6 +310,7 @@ h2 {
 }
 .btn-del { color: var(--red) !important; }
 
+/* ── 9. Empty/loading states ────────────────────────────────────────────── */
 .empty-state {
   text-align: center;
   padding: 3rem 1rem;
@@ -295,7 +322,7 @@ h2 {
 
 .loading { color: var(--muted); padding: 1rem; text-align: center; }
 
-/* Modal */
+/* ── 10. "Add dataset" modal ────────────────────────────────────────────── */
 .modal {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.7);
@@ -344,7 +371,7 @@ h2 {
   cursor: pointer;
 }
 
-/* Filter buttons (reused from compare page) */
+/* ── 11. Filter buttons (reused from compare page) ──────────────────────── */
 .layout-btn {
   background: #21262d;
   border: 1px solid #30363d;
@@ -359,7 +386,7 @@ h2 {
 .layout-btn:hover { background: #30363d; color: #e6edf3; }
 .layout-btn.active { border-color: #58a6ff; color: #58a6ff; background: rgba(88,166,255,0.08); }
 
-/* Viewer pages */
+/* ── 12. Viewer page chrome (iframe + toolbar) ──────────────────────────── */
 .viewer-frame {
   width: 100%;
   height: calc(100vh - 56px);

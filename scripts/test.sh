@@ -1,6 +1,17 @@
 #!/bin/bash
-# test.sh — Basic end-to-end tests for the platform
-# Run: bash scripts/test.sh
+# test.sh — Smoke/end-to-end tests against a running platform server.
+#
+# Checks (via curl against http://localhost:3000):
+#   - API health + dataset listing return expected JSON
+#   - portal and viewer pages respond with HTTP 200
+#   - sample data files are served under /data (run download_samples.sh first)
+#   - POST + DELETE round-trip on /api/datasets
+#
+# If no server is reachable it starts `node server.js` in the background and
+# kills it again at the end. Prints a PASS/FAIL summary; exit code is non-zero
+# if any check failed.
+#
+# Run from the repo root: bash scripts/test.sh
 
 set -e
 export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"

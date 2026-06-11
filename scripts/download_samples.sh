@@ -1,6 +1,16 @@
 #!/bin/bash
-# download_samples.sh — Download all open sample datasets for the platform
-# Run from /workspace: bash scripts/download_samples.sh
+# download_samples.sh — Fetch/generate the open sample datasets used by the platform.
+#
+# Populates data/ (relative to the repo root, next to this scripts/ dir) with:
+#   1. data/splats/nike.splat                 — Gaussian splat sample (HuggingFace)
+#   2. data/pointclouds/sample-las/autzen.laz — LiDAR sample (PDAL test data)
+#   3. data/pointclouds/demo-sphere/          — synthetic cloud via
+#                                               scripts/generate_demo_pointcloud.js
+#
+# Idempotent: each step is skipped if its output file already exists.
+# Requires: curl, node (loads nvm if present for step 3).
+#
+# Run: bash scripts/download_samples.sh   (any cwd; paths derive from script location)
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

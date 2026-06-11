@@ -9,7 +9,11 @@
 # This is the panorama-center bearing that Pannellum's northOffset parameter expects,
 # and allows a clean  yaw = bearing - northOffset  formula (no ±90 correction).
 #
+# Reads:  data/eggiswil_backup/image_poses.csv          (camera quaternions per image)
+# Writes: data/panoramas/haus-eggiwil/metadata.json      (in place — back it up first)
+#
 # Usage: perl scripts/regen_northoffset.pl
+# Note: paths are hardcoded relative to the repo root, so run it from there.
 
 use strict;
 use warnings;
@@ -25,7 +29,7 @@ my $header = <$fh>;
 chomp $header;
 my @cols = split /,/, $header;
 
-# column indices (0-based)
+# Map column name → 0-based index so we can address fields by name below.
 my %ci;
 for my $i (0..$#cols) {
     (my $name = $cols[$i]) =~ s/"//g;
@@ -63,6 +67,10 @@ open my $mfh, '<', $META_IN or die "Cannot open $META_IN: $!";
 my $json = do { local $/; <$mfh> };
 close $mfh;
 
+# First substitution pass (legacy): rewrites northOffset for entries whose keys
+# appear in the exact order  "path", ... "x" ... "northOffset".  Superseded by
+# the more tolerant patch_metadata() below, which is applied afterwards and
+# produces the same final values; kept to preserve existing behavior.
 my $updated = 0;
 $json =~ s|"path"\s*:\s*"/data/panoramas/haus-eggiwil/([^"]+)"\s*,\s*"x"[^}]+"northOffset"\s*:\s*[-\d.]+|
     my $file = $1;
@@ -74,7 +82,8 @@ $json =~ s|"path"\s*:\s*"/data/panoramas/haus-eggiwil/([^"]+)"\s*,\s*"x"[^}]+"no
     }
 |ge;
 
-# Simpler targeted replacement: just patch each northOffset after matching file
+# Second pass: simpler targeted replacement — patch each northOffset that
+# follows a matching "path" entry, regardless of intermediate keys.
 $json = patch_metadata($json, \%north_by_file);
 
 open my $out, '>', $META_OUT or die "Cannot write $META_OUT: $!";
@@ -83,6 +92,9 @@ close $out;
 
 print "Done. Updated northOffset values using quaternion formula.\n";
 print "Verify a few:\n";
+# Intended to print only the first 6 entries, but `my $n` is re-declared (and
+# so reset) on every iteration, so in practice all entries are printed.
+# Left untouched to keep the script's output identical.
 for my $f (sort { $a cmp $b } keys %north_by_file) {
     printf "  %-45s  northOffset = %s\n", $f, $north_by_file{$f};
     last if ++my $n >= 6;

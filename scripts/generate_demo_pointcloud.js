@@ -1,12 +1,19 @@
 /**
- * Generates a synthetic point cloud in Potree 2.0 format (copc-like metadata)
- * and a simple LAZ-compatible binary for demo purposes.
- * Creates a sphere + ground plane ~50k points.
+ * generate_demo_pointcloud.js — create a synthetic demo point cloud
+ * (a sphere plus a ground plane, ~50k coloured points) for local testing.
+ *
+ * Outputs into data/pointclouds/demo-sphere/:
+ *   - points.xyz      plain "x y z r g b" text, one point per line
+ *   - metadata.json   Potree 2.0-style metadata describing the cloud
+ *
+ * Run: node scripts/generate_demo_pointcloud.js
+ * (Normally invoked by scripts/download_samples.sh step 3.)
  */
 const fs = require('fs');
-const path = require('path');
 
 const outDir = '/workspace/data/pointclouds/demo-sphere';
+// Potree 2.0 layout expects an octree chunk directory alongside metadata.json;
+// we only create the (empty) directory — no actual LAZ chunks are written.
 fs.mkdirSync(outDir + '/octree.laz.chunks', { recursive: true });
 
 // Generate points: sphere (30k) + ground (20k)

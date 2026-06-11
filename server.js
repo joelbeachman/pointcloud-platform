@@ -1,3 +1,36 @@
+/**
+ * server.js — Express backend for the point-cloud web platform.
+ *
+ * Responsibilities:
+ *   1. Serve the static front-end (portal landing page + viewers) from public/.
+ *   2. Serve raw assets (point clouds, splats, panoramas) from DATA_DIR under /data.
+ *   3. Expose a small JSON "datasets" registry persisted in <DATA_DIR>/datasets.json.
+ *   4. Compute server-side elevation profiles by reading 3D Tiles .pnts files.
+ *   5. Proxy CesiumJS from the official CDN, patching unsafe .slice() calls
+ *      on the fly (see "Cesium CDN proxy" section below).
+ *
+ * Route map (all JSON unless noted):
+ *   GET    /api/health                   liveness check → { status, time }
+ *   GET    /api/datasets                 list all registered datasets
+ *   GET    /api/datasets/:id             fetch one dataset by id (404 if missing)
+ *   POST   /api/datasets                 register a dataset (schema-validated)
+ *   PATCH  /api/datasets/:id             merge-update a dataset (null value deletes a key)
+ *   DELETE /api/datasets/:id             remove a dataset from the registry
+ *   POST   /api/datasets/validate        validate metadata without saving
+ *   GET    /api/metadata/schema          describe the metadata schema
+ *   POST   /api/helmert                  Helmert transform via scripts/helmert.py
+ *   POST   /api/profile                  elevation profile sampled from .pnts tiles
+ *   GET    /cesium-proxy/Cesium.js       patched Cesium.js fetched from CDN (cached, JS)
+ *   GET    /cesium-proxy/Workers/:worker patched/cached Cesium worker scripts (JS)
+ *   GET    /cesium-proxy/*               redirect anything else to the Cesium CDN
+ *   GET    /cesium-proxy/debug/:line     inspect patched Cesium.js (currently shadowed
+ *                                        by the wildcard route above — see note there)
+ *   Static: /      → public/   (portal, viewers, JS/CSS)
+ *           /data  → DATA_DIR  (point clouds, splats, panoramas)
+ *
+ * Run: node server.js   (PORT and DATA_DIR overridable via environment)
+ */
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -89,11 +122,12 @@ function isValidDate(str) {
   return /^\d{4}-\d{2}-\d{2}$/.test(str);
 }
 
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// ── Middleware ────────────────────────────────────────────────────────────────
+app.use(cors());                                          // allow cross-origin viewers/tools
+app.use(express.json());                                  // parse JSON request bodies
+app.use(express.static(path.join(__dirname, 'public')));  // portal + viewer pages at /
 
-// Serve data directory (point clouds, splats, panoramas)
+// Serve data directory (point clouds, splats, panoramas) at /data
 app.use('/data', express.static(DATA_DIR));
 
 // Resolve panoramasPath → inline panoramas array so all viewers get a consistent shape.
@@ -108,7 +142,11 @@ function resolvePanoramas(dataset) {
   }
 }
 
-// API: list all datasets
+// ── Dataset registry CRUD ─────────────────────────────────────────────────────
+// The registry is a flat JSON array in <DATA_DIR>/datasets.json, read/written
+// on every request (small file, no caching needed).
+
+// GET /api/datasets — list all registered datasets (panoramasPath resolved inline).
 app.get('/api/datasets', (req, res) => {
   const dbPath = path.join(DATA_DIR, 'datasets.json');
   if (!fs.existsSync(dbPath)) return res.json([]);
@@ -116,7 +154,7 @@ app.get('/api/datasets', (req, res) => {
   res.json(datasets.map(resolvePanoramas));
 });
 
-// API: get single dataset
+// GET /api/datasets/:id — fetch a single dataset by id; 404 JSON error if missing.
 app.get('/api/datasets/:id', (req, res) => {
   const dbPath = path.join(DATA_DIR, 'datasets.json');
   if (!fs.existsSync(dbPath)) return res.status(404).json({ error: 'Not found' });
@@ -126,7 +164,9 @@ app.get('/api/datasets/:id', (req, res) => {
   res.json(resolvePanoramas(dataset));
 });
 
-// API: register a dataset
+// POST /api/datasets — register a new dataset. Fills in id/createdAt/source/
+// description defaults, validates against the schema (400 on failure), then
+// appends to datasets.json and echoes the stored record.
 app.post('/api/datasets', (req, res) => {
   const dbPath = path.join(DATA_DIR, 'datasets.json');
   const datasets = fs.existsSync(dbPath)
@@ -153,7 +193,8 @@ app.post('/api/datasets', (req, res) => {
   res.json(dataset);
 });
 
-// API: delete a dataset
+// DELETE /api/datasets/:id — remove a dataset from the registry (idempotent:
+// returns { ok: true } even if the id did not exist). Does not delete files.
 app.delete('/api/datasets/:id', (req, res) => {
   const dbPath = path.join(DATA_DIR, 'datasets.json');
   if (!fs.existsSync(dbPath)) return res.status(404).json({ error: 'Not found' });
@@ -163,7 +204,9 @@ app.delete('/api/datasets/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// API: update (patch) a dataset
+// PATCH /api/datasets/:id — shallow-merge the request body into the stored
+// dataset. A value of null deletes that key (e.g. clearing modelMatrix).
+// Result is re-validated (400 on failure) before being persisted.
 app.patch('/api/datasets/:id', (req, res) => {
   const dbPath = path.join(DATA_DIR, 'datasets.json');
   if (!fs.existsSync(dbPath)) return res.status(404).json({ error: 'Not found' });
@@ -190,7 +233,10 @@ app.patch('/api/datasets/:id', (req, res) => {
   res.json(updated);
 });
 
-// API: compute Helmert transformation (Python/numpy)
+// ── Geometry endpoints ────────────────────────────────────────────────────────
+
+// POST /api/helmert — compute a Helmert transformation by piping the JSON body
+// to scripts/helmert.py (Python/numpy) on stdin and returning its stdout JSON.
 app.post('/api/helmert', (req, res) => {
   const input = JSON.stringify(req.body);
   const script = path.join(__dirname, 'scripts', 'helmert.py');
@@ -296,6 +342,9 @@ app.post('/api/profile', (req, res) => {
   if (tiles.length === 0) return res.status(404).json({ error: 'no .pnts tiles found' });
 
   // ── Parse each tile ───────────────────────────────────────────────────────
+  // .pnts layout: 28-byte header (magic/version/byte lengths) + feature-table
+  // JSON + binary body. Positions are float32 xyz relative to RTC_CENTER;
+  // RGB (if present) is uint8 triplets. Read in blocks to bound memory.
   const results = [];
   const hw = Number(halfWidth);
   const maxPts = Math.min(Number(maxPoints) || 150000, 500000);
@@ -363,12 +412,15 @@ app.post('/api/profile', (req, res) => {
   res.json(results);
 });
 
-// Health check
+// ── Misc API ──────────────────────────────────────────────────────────────────
+
+// GET /api/health — liveness check used by scripts/test.sh and monitoring.
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// API: validate dataset metadata without saving
+// POST /api/datasets/validate — dry-run schema validation of a metadata object;
+// returns { valid: true } or 400 with { valid: false, errors }. Saves nothing.
 app.post('/api/datasets/validate', (req, res) => {
   const validation = validateMetadata(req.body);
   if (validation.valid) {
@@ -378,7 +430,9 @@ app.post('/api/datasets/validate', (req, res) => {
   }
 });
 
-// API: get metadata schema
+// GET /api/metadata/schema — machine-readable description of the dataset
+// metadata schema (required fields, enums, known optional fields) so client
+// forms can stay in sync with the server-side validation above.
 app.get('/api/metadata/schema', (req, res) => {
   res.json({
     coreFields: CORE_METADATA_FIELDS,
@@ -496,8 +550,13 @@ function patchJs(label, code) {
 
 // ── Cesium.js proxy ───────────────────────────────────────────────────────────
 
+// In-memory cache: a single shared promise for the (large) patched Cesium.js,
+// so the CDN download + patch happens at most once per server lifetime.
+// On failure the promise is cleared so the next request retries.
 let _cesiumPromise = null;
 
+// GET /cesium-proxy/Cesium.js — serve the patched Cesium.js (1h browser cache).
+// Falls back to a plain CDN redirect if the download/patch fails.
 app.get('/cesium-proxy/Cesium.js', (_req, res) => {
   if (!_cesiumPromise) {
     const cdnUrl = `${CESIUM_CDN_BASE}/Cesium.js`;
@@ -528,8 +587,12 @@ app.get('/cesium-proxy/Cesium.js', (_req, res) => {
 // All workers are fetched from CDN and served through here.
 // decodeSpz.js gets the same safe-slice patch as Cesium.js.
 
+// workerName → promise of (possibly patched) worker source text.
 const _workerCache = new Map();
 
+// GET /cesium-proxy/Workers/:worker — serve a Cesium worker script from cache,
+// patching decodeSpz.js with the safe-slice helpers. Falls back to a CDN
+// redirect on error.
 app.get('/cesium-proxy/Workers/:worker', (req, res) => {
   const workerName = req.params.worker;
   if (!_workerCache.has(workerName)) {
@@ -563,12 +626,19 @@ app.get('/cesium-proxy/Workers/:worker', (req, res) => {
 
 // ── Generic Cesium CDN pass-through (Assets, ThirdParty, etc.) ────────────────
 
+// GET /cesium-proxy/* — redirect any other Cesium asset request to the CDN.
 app.get('/cesium-proxy/*', (req, res) => {
   const subPath = req.params[0];
   res.redirect(`${CESIUM_CDN_BASE}/${subPath}`);
 });
 
 // ── Debug: inspect patched Cesium.js at a given line ──────────────────────────
+// GET /cesium-proxy/debug/:line — print the patched Cesium.js around a 1-based
+// line number, for debugging the patch regexes.
+// NOTE: registered after the /cesium-proxy/* wildcard above, so the wildcard
+// matches first and this handler is currently never reached (requests redirect
+// to the CDN). Kept as-is to avoid changing routing behavior; move it above
+// the wildcard if you need it.
 app.get('/cesium-proxy/debug/:line', async (req, res) => {
   if (!_cesiumPromise) return res.status(503).send('Cesium.js not loaded yet');
   try {

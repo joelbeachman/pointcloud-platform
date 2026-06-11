@@ -1,8 +1,23 @@
-// Portal: one card per house, plus a flat section for ungrouped datasets.
+/**
+ * portal.js — logic for the portal landing page (public/index.html).
+ *
+ * Renders the dataset catalogue as one card per house/building ("Häuser"),
+ * plus a flat list for datasets without a building ("Andere Datensätze").
+ * Each card/row links to the appropriate viewer page with ?id= / ?building=.
+ *
+ * Server endpoints used (see server.js):
+ *   GET    /api/datasets      load the full dataset registry on page load
+ *   POST   /api/datasets      register a new dataset via the "add" modal form
+ *   DELETE /api/datasets/:id  remove a dataset (Remove button on a row)
+ *
+ * Rendering is plain template strings into #datasets-list; the search box
+ * (#search-input) filters the in-memory list client-side and re-renders.
+ */
 
-let allDatasets = [];
-let searchQuery = '';
+let allDatasets = [];   // full registry from GET /api/datasets
+let searchQuery = '';   // current contents of the search box (raw)
 
+// Maps dataset.type → viewer page(s) offered for it in the flat dataset rows.
 const VIEWER_MAP = {
   cesium:        [
     { label: 'Cesium',       url: '/viewers/cesium.html' },
@@ -19,18 +34,21 @@ const VIEWER_MAP = {
   video:         [{ label: 'Abspielen',   url: '/viewers/video.html' }],
 };
 
+// Badge icon (HTML entity) per dataset type.
 const ICONS = {
   pointcloud: '&#9632;', cesium: '&#9679;', splat: '&#10022;',
   panorama: '&#9900;', e57: '&#11036;', potree: '&#8857;',
   document: '&#128196;', video: '&#127916;',
 };
 
+// Badge background colour class (portal.css) per dataset type.
 const BADGE_CLASS = {
   pointcloud: 'badge-pointcloud', cesium: 'badge-cesium', splat: 'badge-splat',
   panorama: 'badge-panorama', e57: 'badge-e57', potree: 'badge-potree',
   document: 'badge-document', video: 'badge-video',
 };
 
+// Escape user-supplied strings before interpolating into innerHTML templates.
 function escHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -75,6 +93,7 @@ function houseMatchesSearch(house, q) {
   return house.datasets.some(d => matchesSearch(d, q));
 }
 
+// One-line German summary of a house's datasets, e.g. "2× Punktwolke · 1× Dokument".
 function summarize(datasets) {
   const counts = { pointcloud: 0, model: 0, document: 0, video: 0, other: 0 };
   for (const d of datasets) {
@@ -147,6 +166,7 @@ function renderDatasetRow(d) {
     </div>`;
 }
 
+// Re-render the whole list (houses + ungrouped) applying the current search query.
 function render() {
   const container = document.getElementById('datasets-list');
   const q = (searchQuery || '').toLowerCase().trim();
@@ -172,6 +192,7 @@ function render() {
   container.innerHTML = html;
 }
 
+// Fetch the registry from GET /api/datasets and render it.
 async function loadDatasets() {
   const container = document.getElementById('datasets-list');
   try {
@@ -187,12 +208,16 @@ async function loadDatasets() {
   }
 }
 
+// Remove a dataset via DELETE /api/datasets/:id, then reload the list.
+// Must stay a global function: dataset rows reference it via inline onclick.
 async function deleteDataset(id) {
   if (!confirm('Datensatz entfernen?')) return;
   await fetch(`/api/datasets/${id}`, { method: 'DELETE' });
   loadDatasets();
 }
 
+// Wire up UI events: live search, and the "add dataset" modal
+// (open/cancel/backdrop-click/submit → POST /api/datasets).
 document.addEventListener('DOMContentLoaded', () => {
   const searchEl = document.getElementById('search-input');
   if (searchEl) searchEl.addEventListener('input', e => { searchQuery = e.target.value; render(); });
