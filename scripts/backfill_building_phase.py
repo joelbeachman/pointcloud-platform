@@ -49,6 +49,10 @@ MANUAL_RELABELS = {}
 
 
 def building_from_group(group: str) -> str | None:
+    """Extract a 3-digit building number from a group name (e.g. '2022_752' → '752').
+
+    Returns None for meta/collection groups, which don't denote a single building.
+    """
     if not group:
         return None
     if group in META_GROUPS or group in COLLECTION_GROUPS:
@@ -62,6 +66,7 @@ def building_from_group(group: str) -> str | None:
 
 
 def is_group_master(name: str) -> bool:
+    """Group-master datasets ('<building> (alle Phasen)') show all phases at once."""
     return "alle Phasen" in (name or "")
 
 

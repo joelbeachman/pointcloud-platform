@@ -15,6 +15,12 @@ Example:
     curl -X POST http://localhost:3000/api/datasets -H 'Content-Type: application/json' \
       -d '{"name":"Site 1","type":"e57","source":"lidar","path":"/data/panoramas/site1/metadata.json"}'
 """
+# NOTE: the docstring above is printed as usage help — keep it accurate.
+#
+# Pipeline position: standalone alternative to `process.py --extract-panoramas`
+# when only the panorama viewer output is needed (no 3D Tiles conversion).
+# The metadata.json it writes is consumed by the platform's panorama viewer;
+# the dataset must be registered manually (see the curl hint above).
 
 import sys
 import os
@@ -38,7 +44,6 @@ except ImportError:
 def spherical_to_equirectangular(points_xyz, width=4096, height=2048):
     """Convert a set of XYZ points (relative to scanner) into an equirectangular image."""
     img = np.zeros((height, width, 3), dtype=np.uint8)
-    count = np.zeros((height, width), dtype=np.int32)
 
     x, y, z = points_xyz[:, 0], points_xyz[:, 1], points_xyz[:, 2]
     r = np.sqrt(x**2 + y**2 + z**2)
@@ -55,12 +60,12 @@ def spherical_to_equirectangular(points_xyz, width=4096, height=2048):
     px = np.clip(px, 0, width - 1)
     py = np.clip(py, 0, height - 1)
 
-    # Color by intensity or distance
+    # No real RGB panorama is assembled here — shade by normalised range with a
+    # sepia tint (R, 0.8·G, 0.6·B) so the preview reads as depth, not colour.
     intensity = np.clip(r / r.max() * 255, 0, 255).astype(np.uint8)
     img[py, px, 0] = intensity  # R
     img[py, px, 1] = (intensity * 0.8).astype(np.uint8)  # G
     img[py, px, 2] = (intensity * 0.6).astype(np.uint8)  # B
-    count[py, px] += 1
 
     return img
 

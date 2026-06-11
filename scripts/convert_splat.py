@@ -7,16 +7,25 @@ CesiumJS 1.135+.
 
 Usage:
     python3 scripts/convert_splat.py <input.splat> <output_dir>
+
+Pipeline position: optional post-step after process.py has produced a .splat
+(from a 3DGS PLY) in data/splats/. Writes <output_dir>/splat.glb and
+<output_dir>/tileset.json; the result is loaded as a 3D Tiles layer in the
+Cesium viewer instead of the antimatter15-style splat renderer.
 """
 import sys, os, json, struct, math, gzip
 import numpy as np
 
-STRIDE = 32  # bytes per splat
-SH_C0  = 0.28209479177387814  # 1 / (2*sqrt(pi))
+STRIDE = 32  # bytes per splat: 3×f32 pos | 3×f32 log-scale | RGBA u8 | WXYZ quat u8
+SH_C0  = 0.28209479177387814  # 1 / (2*sqrt(pi)) — SH degree-0 basis constant
+# SPZ stores colours as quantized SH DC coefficients scaled by 0.15 — this must
+# match the constant in the SPZ reference codec (and Cesium's SPZ decoder),
+# otherwise colours come out washed out or oversaturated.
 COLOR_SCALE = 0.15
 
 
 def load_splat(path):
+    """Parse a .splat file into (positions, log_scales, rgba_colors, rotations_wxyz)."""
     raw = np.frombuffer(open(path, 'rb').read(), dtype=np.uint8)
     n   = len(raw) // STRIDE
     raw = raw[: n * STRIDE].reshape(n, STRIDE)
@@ -176,6 +185,7 @@ def build_glb(spz_bytes, n):
 
 
 def build_tileset(positions):
+    """Build a single-tile tileset.json declaring the gaussian-splatting extensions."""
     ctr    = positions.mean(axis=0)
     radius = float(np.linalg.norm(positions - ctr, axis=1).max()) * 1.05
     return {

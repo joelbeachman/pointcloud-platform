@@ -11,8 +11,13 @@ Usage:
 
 Reads:  data/blender/export/manifest.json
 Writes: data/cesium/gesamtmodell/tileset.json  (+ LOD GLBs next to it)
+        data/cesium/gesamtmodell/tileset_<group>[_<phase>].json (per group/phase)
 
-The tileset is registered in datasets.json automatically.
+The tilesets are registered in datasets.json automatically.
+
+Pipeline position (run from the repo root — all paths are relative):
+  export_blender_glb.py (in Blender)  →  this script  →  backfill_building_phase.py
+The output tilesets are served by server.js and loaded in the Cesium viewer.
 """
 
 import json
@@ -222,6 +227,11 @@ def make_building_tile(building, lod_files):
 
 
 def generate(manifest_path, output_dir, lv95_origin):
+    """Build all tileset.json files + LOD GLBs from the Blender export manifest.
+
+    Returns (main_tileset_path, group_paths) where group_paths is a list of
+    (parent_name, leaf_name_or_None, tileset_path) consumed by register_datasets.
+    """
     with open(manifest_path, encoding='utf-8') as f:
         manifest = json.load(f)
 

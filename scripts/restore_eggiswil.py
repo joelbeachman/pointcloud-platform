@@ -7,7 +7,12 @@ data/panoramas/haus-eggiwil/ and generates metadata.json with LV95 coordinates
 normalised to local (relative to the cesium tileset centre).
 
 Usage:
-    python3 scripts/restore_eggiswil.py
+    python3 scripts/restore_eggiswil.py   (from the repo root — paths are relative)
+
+Pipeline position: one-off recovery utility for the haus-eggiwil panorama
+dataset. Inputs: data/eggiswil_backup/{images/,image_poses.csv}. Output:
+data/panoramas/haus-eggiwil/{*.jpg,metadata.json}, consumed by the panorama
+viewer (dataset 'haus-eggiwil' must already exist in datasets.json).
 """
 
 import csv

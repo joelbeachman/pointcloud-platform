@@ -11,6 +11,10 @@ Output: data/blender/export/
   manifest.json            ← tile list for generate_3dtiles.py
   buildings/<name>.glb     ← one GLB per leaf collection in Häuser
   terrain.glb              ← all Terrain collection objects combined
+
+Pipeline position: first stage of the Gesamtmodell chain. Follow up with
+  python3 scripts/generate_3dtiles.py          (GLBs → georeferenced 3D Tiles)
+  python3 scripts/backfill_building_phase.py   (derive building/phase fields)
 """
 
 import bpy

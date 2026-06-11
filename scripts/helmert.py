@@ -12,6 +12,11 @@ Writes JSON to stdout: {R, s, t, residuals, rms, verification}
   residuals – per-point residual in metres
   rms  – root-mean-square residual
   verification – per-point debug dict {target, computed, delta}
+
+Pipeline position: invoked by server.js (POST /api/helmert) when the user picks
+matching point pairs in the georeferencing UI. The resulting {R, s, t} JSON can
+be saved to a file and passed to process.py via --helmert to bake the local →
+LV95 (EPSG:2056) transform into converted tilesets/splats.
 """
 import sys, json
 import numpy as np

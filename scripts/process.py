@@ -64,8 +64,18 @@ Metadata options (all optional):
   --description TEXT      Human-readable description
   --source-path PATH    Original source file path
 """
+# NOTE: the docstring above doubles as the argparse --help text — keep it in sync.
+#
+# Pipeline position (see scripts/README.md for the full picture):
+#   upstream:   raw capture files (TLS scans, drone photogrammetry, 3DGS training
+#               output); optionally a Helmert JSON produced via helmert.py
+#               (server.js POST /api/helmert) for local→LV95 georeferencing.
+#   downstream: writes tiles/splats under <data-dir> and registers them in
+#               <data-dir>/datasets.json, which server.js serves to the viewers.
+#   The Blender Gesamtmodell goes through export_blender_glb.py +
+#   generate_3dtiles.py instead of this script.
 
-import sys, os, json, struct, shutil, re, argparse, datetime, glob, math, itertools, math, itertools
+import sys, os, json, struct, shutil, re, argparse, datetime, glob, math
 import numpy as np
 
 # ── Defaults ─────────────────────────────────────────────────────────
@@ -76,19 +86,13 @@ LV95_X_MIN, LV95_X_MAX = 2600000, 2650000
 LV95_Y_MIN, LV95_Y_MAX = 1150000, 1200000
 LV95_Z_MIN, LV95_Z_MAX = 300, 2500
 
-# LOD configuration
-DEFAULT_LOD_LEVELS = [
-    {'name': 'high', 'ratio': 1.0},      # 100% of points
-    {'name': 'medium', 'ratio': 0.2},    # 20% of points
-    {'name': 'low', 'ratio': 0.05}      # 5% of points
-]
-
 # ── Format detection ──────────────────────────────────────────────────────────
 
 POINTCLOUD_EXTS = {'.las', '.laz', '.e57', '.xyz', '.txt', '.pts', '.ptx', '.pcd'}
 MESH_EXTS       = {'.obj', '.glb', '.gltf', '.stl'}
 
 def detect_format(path):
+    """Classify input file as 'pointcloud' | 'mesh' | 'splat' | 'splat_ply'."""
     ext = os.path.splitext(path)[1].lower()
     if ext in POINTCLOUD_EXTS: return 'pointcloud'
     if ext in MESH_EXTS:       return 'mesh'
@@ -101,6 +105,7 @@ def detect_format(path):
     )
 
 def _detect_ply(path):
+    """Disambiguate .ply files by sniffing the header (3DGS / mesh / plain cloud)."""
     with open(path, 'rb') as f:
         header = f.read(4096).decode('ascii', errors='ignore')
     if any(tok in header for tok in ('f_dc_0', 'scale_0', 'rot_0', 'opacity')):
@@ -132,6 +137,7 @@ def detect_lv95_coordinates(xyz):
 # ── Slug helpers ──────────────────────────────────────────────────────────────
 
 def slugify(name):
+    """Derive a URL/path-safe dataset ID from a human-readable name."""
     return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
 
 
@@ -197,163 +203,8 @@ def write_pnts(xyz, rgb, out_path):
     return ctr
 
 
-def voxel_grid_sample(xyz, voxel_size):
-    """Sample points using voxel grid (one point per voxel)."""
-    # Create voxel key from quantized coordinates
-    grid = {}
-    for point in xyz:
-        key = (int(point[0] // voxel_size),
-               int(point[1] // voxel_size),
-               int(point[2] // voxel_size))
-        if key not in grid:
-            grid[key] = len(xyz)
-
-    # Sample one point from each occupied voxel
-    indices = []
-    for key in grid:
-        if grid[key] > 0:
-            indices.append(grid[key])
-
-    return xyz[indices] if indices else xyz
-
-
-def calculate_lod_geometric_error(xyz, lod_ratio):
-    """
-    Calculate geometric error for an LOD level.
-
-    Uses expected point spacing as proxy for screen-space error.
-    Approximation: screen_error ≈ 1.5 × point_spacing
-    """
-    n = len(xyz)
-
-    # Estimate point density (points per unit volume)
-    center = xyz.mean(axis=0)
-    radius = float(np.linalg.norm(xyz - center, axis=1).max()) * 1.05
-    volume = (4/3) * math.pi * (radius ** 3)
-
-    if volume > 0:
-        point_density = n / volume
-        point_spacing = point_density ** (-1/3)
-    else:
-        point_spacing = 0.01  # fallback
-
-    # LOD geometric error: error grows as LOD gets coarser
-    # Use point_spacing as proxy, multiply by LOD-specific factor
-    lod_factors = {
-        'high': 0.5,      # Finest: half point spacing
-        'medium': 1.5,    # Medium: 1.5x point spacing
-        'low': 3.0,         # Coarsest: 3x point spacing
-    }
-
-    base_error = point_spacing * 1.5
-    return base_error * lod_factors.get(lod_ratio, 1.0)
-
-
-def write_lod_tileset(xyz, out_dir, name, ds_id, lod_levels=None):
-    """
-    Write multi-resolution 3D Tiles with LOD support.
-
-    If lod_levels is None, uses DEFAULT_LOD_LEVELS.
-    lod_levels can be a list of LOD ratios, e.g.:
-        [{'name': 'low', 'ratio': 0.05}, {'name': 'medium', 'ratio': 0.2}]
-    """
-    if lod_levels is None:
-        lod_levels = DEFAULT_LOD_LEVELS
-
-    center = xyz.mean(axis=0)
-    radius = float(np.linalg.norm(xyz - center, axis=1).max()) * 1.05
-    n = len(xyz)
-
-    # Write each LOD level
-    lod_dirs = {}
-    for lod in lod_levels:
-        lod_name = lod['name']
-        lod_ratio = lod['ratio']
-
-        # Subsample for this LOD
-        if lod_ratio < 1.0:
-            n_lod = max(1000, int(n * lod_ratio))  # Minimum 1000 points
-            if n_lod >= n:
-                xyz_lod = xyz
-            else:
-                xyz_lod = poisson_disk_sample(xyz, n_lod)
-        else:
-            xyz_lod = xyz
-
-        # Create LOD directory
-        lod_dir = os.path.join(out_dir, lod_name)
-        os.makedirs(lod_dir, exist_ok=True)
-
-        # Write .pnts file
-        pnts_path = os.path.join(lod_dir, 'r.pnts')
-        write_pnts(xyz_lod, None, pnts_path)
-
-        # Calculate geometric error for this LOD
-        geo_error = calculate_lod_geometric_error(xyz, lod_ratio)
-
-        lod_dirs[lod_name] = {
-            'lod': lod_name,
-            'n_points': len(xyz_lod),
-            'geometricError': geo_error,
-            'directory': lod_name,
-            'file_size': os.path.getsize(pnts_path)
-        }
-
-        print(f"  LOD {lod_name}: {len(xyz_lod):,} pts, error={geo_error:.2f}m")
-
-    # Build hierarchical tileset
-    # Level 0 is the finest (or specified first level)
-    first_lod = lod_levels[0]
-    root_lod = lod_dirs[first_lod['name']]
-
-    ts = {
-        "asset": {"version": "1.1"},
-        "geometricError": root_lod['geometricError'],
-        "root": {
-            "geometricError": 0,
-            "refine": "ADD",
-            "boundingVolume": {
-                "sphere": [float(center[0]), float(center[1]),
-                           float(center[2]), float(radius)]
-            },
-            "content": {"uri": f"{first_lod['name']}/r.pnts"}
-        }
-    }
-
-    # Add LOD levels as children
-    current_level = ts['root']
-    for i, lod in enumerate(lod_levels[1:], start=1):
-        lod_dir = lod_dirs[lod['name']]
-        child = {
-            "geometricError": lod_dir['geometricError'],
-            "refine": "ADD",
-            "boundingVolume": {
-                "sphere": [float(center[0]), float(center[1]),
-                           float(center[2]), float(lod_dir['geometricError'])]
-            },
-            "content": {"uri": f"{lod['name']}/r.pnts"}
-        }
-
-        # Add children to appropriate parent level
-        if i == 1:
-            # First child is direct child of root
-            ts['root']['children'] = [child]
-        else:
-            # Subsequent children are added to previous level
-            while 'children' not in current_level:
-                current_level = current_level['children'][-1]
-            current_level['children'].append(child)
-
-    # Write tileset
-    ts_path = os.path.join(out_dir, 'tileset.json')
-    with open(ts_path, 'w') as f:
-        json.dump(ts, f, indent=2)
-    print(f"    wrote {ts_path}")
-
-    return ts_path, lod_dirs
-
-
 def write_tileset(center, radius, content_uri, out_path):
+    """Write a minimal single-tile tileset.json (sphere bounding volume)."""
     geo_err = float(radius) * 2
     ts = {
         "asset": {"version": "1.1"},
@@ -392,7 +243,8 @@ def read_las(path):
     metadata = {}
 
     if hasattr(las, 'red'):
-        # LAS stores colour as 16-bit — scale to 8-bit
+        # LAS stores colour as 16-bit — scale to 8-bit (65535/255 = 257).
+        # Some writers store 8-bit values anyway, hence the max() check.
         scale = 257.0 if np.asarray(las.red).max() > 255 else 1.0
         rgb = np.column_stack([
             (np.asarray(las.red)   / scale).astype(np.uint8),
@@ -733,6 +585,12 @@ def load_helmert_params(helmert_path):
 
 def process_pointcloud(input_path, out_dir, name, ds_id, data_dir, register,
                       extract_panoramas=False, helmert_params=None, **kwargs):
+    """Convert a point cloud to a single-tile 3D Tiles tileset under out_dir.
+
+    For E57 inputs with extract_panoramas=True, additionally renders
+    equirectangular panoramas and registers the dataset as type 'e57'
+    (panorama viewer) instead of 'cesium'.
+    """
     ext = os.path.splitext(input_path)[1].lower()
     print(f"[point cloud] {os.path.basename(input_path)}")
 
@@ -845,6 +703,7 @@ def process_pointcloud(input_path, out_dir, name, ds_id, data_dir, register,
 # ── Processor: mesh → GLB tileset ────────────────────────────────────────────
 
 def process_mesh(input_path, out_dir, name, ds_id, data_dir, register, helmert_params=None, **kwargs):
+    """Convert a triangle mesh to a single-GLB 3D Tiles tileset under out_dir."""
     print(f"[mesh] {os.path.basename(input_path)}")
     try:
         import trimesh
@@ -905,6 +764,7 @@ def process_mesh(input_path, out_dir, name, ds_id, data_dir, register, helmert_p
 # ── Processor: .splat copy ────────────────────────────────────────────────────
 
 def process_splat(input_path, data_dir, name, ds_id, register, **kwargs):
+    """Copy an already-converted .splat file into <data-dir>/splats and register it."""
     print(f"[splat] {os.path.basename(input_path)}")
     out_dir  = os.path.join(data_dir, 'splats')
     os.makedirs(out_dir, exist_ok=True)
@@ -1156,6 +1016,7 @@ def _make_dataset(ds_id, name, ds_type, source, path, input_path, **kwargs):
 
 
 def register_dataset(data_dir, dataset):
+    """Upsert the dataset entry (keyed by id) into <data-dir>/datasets.json."""
     db_path = os.path.join(data_dir, 'datasets.json')
     datasets = []
     if os.path.exists(db_path):
