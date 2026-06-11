@@ -18,14 +18,14 @@ Budget constraint: this window + the next 5h window only.
 
 ## Batches
 
-### Batch A — Python pipeline  — STATUS: in progress (this window)
+### Batch A — Python pipeline  — STATUS: done (this window) — commit cleanup(batch-a)
 Files: scripts/process.py, scripts/generate_3dtiles.py, scripts/export_blender_glb.py,
 scripts/convert_splat.py, scripts/extract_e57.py, scripts/backfill_building_phase.py,
 scripts/helmert.py, scripts/restore_eggiswil.py
 Deliverable: clean + document each; add scripts/README.md describing the pipeline
 (inputs → stages → outputs) and how the scripts chain together.
 
-### Batch B — Server + frontend glue — STATUS: in progress (this window)
+### Batch B — Server + frontend glue — STATUS: done (this window) — commit cleanup(batch-b)
 Files: server.js, scripts/generate_demo_pointcloud.js, public/js/portal.js,
 public/css/portal.css, scripts/download_samples.sh, scripts/test.sh,
 scripts/regen_northoffset.pl
