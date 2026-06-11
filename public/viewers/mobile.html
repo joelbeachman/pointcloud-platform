@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <!-- Mobile-first: lock zoom so pinch goes to the 3D scene, not the page -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Ballenberg — Mobile Demo</title>
+  <!-- Same Cesium proxy boot as cesium.html (keeps the splat-decoder patch path
+       identical; for these two GLB demos we don't hit it, but the URL must match). -->
+  <script>window.CESIUM_BASE_URL = '/cesium-proxy/';</script>
+  <script src="/cesium-proxy/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.140/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    #cesiumContainer { position: fixed; inset: 0; }
+    .cesium-widget-credits, .cesium-viewer-bottom { display: none !important; }
+
+    /* ── Splash (no ?demo= given) ── */
+    #splash { position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 22px; background: #0d1117;
+      color: #e6edf3; z-index: 30; padding: 24px; box-sizing: border-box; }
+    #splash h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; text-align: center; }
+    #splash p  { font-size: 13px; color: #8b949e; margin: 0 0 20px; text-align: center; }
+    .demo-btn { width: 100%; max-width: 340px; padding: 20px; border-radius: 16px;
+      border: 1px solid #30363d; background: #161b22; color: #e6edf3; font-size: 17px;
+      font-weight: 600; text-align: left; text-decoration: none; display: block;
+      box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+    .demo-btn small { display: block; font-weight: 400; font-size: 13px; color: #8b949e; margin-top: 6px; }
+    .demo-btn:active { background: #21262d; }
+
+    /* ── Big touch control bar (one demo loaded) ── */
+    #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      display: flex; gap: 10px; padding: 14px calc(14px + env(safe-area-inset-right))
+      calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+      background: linear-gradient(to top, rgba(13,17,23,.92), rgba(13,17,23,0)); }
+    #bar button, #bar a { flex: 1; padding: 16px; border-radius: 14px; border: none;
+      font-size: 16px; font-weight: 600; color: #fff; text-align: center; text-decoration: none; }
+    #toggleBtn { background: #2f6feb; }
+    #toggleBtn.hist { background: #b8860b; }
+    .phase-btn { background: rgba(48,54,61,.85); }
+    .phase-btn.active { background: #2f6feb; }
+    .ghost { background: rgba(48,54,61,.85) !important; flex: 0 0 auto !important;
+      width: 54px; color: #c9d1d9 !important; }
+
+    /* ── Status / loading pill ── */
+    #status { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%;
+      transform: translateX(-50%); z-index: 25; background: rgba(22,27,34,.92);
+      color: #e6edf3; padding: 8px 16px; border-radius: 20px; font-size: 13px;
+      border: 1px solid #30363d; white-space: nowrap; }
+    #status.hidden { display: none; }
+
+    /* ── Tragwerk legend ── */
+    #legend { position: fixed; top: calc(12px + env(safe-area-inset-top));
+      left: calc(12px + env(safe-area-inset-left)); z-index: 22; background: rgba(22,27,34,.92);
+      border: 1px solid #30363d; border-radius: 12px; padding: 12px 14px; color: #e6edf3;
+      font-size: 12px; display: none; max-width: 60vw; }
+    #legend h5 { margin: 0 0 8px; font-size: 12px; }
+    .lg-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    .lg-sw { width: 14px; height: 14px; border-radius: 3px; flex: 0 0 auto; }
+
+    /* ── Zeitreise imagery panel (Eggiwil demo) ── */
+    #imgPanel { position: fixed; z-index: 22; display: none;
+      top: calc(12px + env(safe-area-inset-top));
+      left: calc(12px + env(safe-area-inset-left));
+      right: calc(12px + env(safe-area-inset-right));
+      background: rgba(22,27,34,.92); border: 1px solid #30363d; border-radius: 12px;
+      padding: 10px 12px; }
+    .img-row { display: flex; align-items: center; gap: 10px; }
+    .seg { display: inline-flex; background: #0d1117; border: 1px solid #30363d;
+      border-radius: 9px; overflow: hidden; }
+    .seg button { border: none; background: transparent; color: #8b949e; font-size: 13px;
+      font-weight: 600; padding: 9px 16px; min-height: 38px; }
+    .seg button.active { background: #2f6feb; color: #fff; }
+    .img-year { margin-left: auto; color: #e6edf3; font-size: 16px; font-weight: 600;
+      font-variant-numeric: tabular-nums; min-width: 70px; text-align: right; }
+    #imgSlider { width: 100%; height: 30px; accent-color: #2f6feb; margin: 8px 0 4px; }
+    /* "building was/is here" timeframe indicator, same 0–100% scale as the slider */
+    #imgBand { height: 5px; border-radius: 3px; background: rgba(255,255,255,.06); }
+    .img-ends { display: flex; justify-content: space-between; margin-top: 3px;
+      color: #8b949e; font-size: 11px; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+
+  <div id="splash">
+    <h1>Ballenberg — Demo</h1>
+    <p>Wähle eine Ansicht</p>
+    <a class="demo-btn" href="?demo=eggiwil">Haus Eggiwil — Standort
+      <small>Originalstandort 1684 ↔ Ballenberg heute</small></a>
+    <a class="demo-btn" href="?demo=phases">Stallscheune Meggen — Bauphasen
+      <small>Zwei Bauphasen des Gebäudes umschalten</small></a>
+    <a class="demo-btn" href="?demo=tragwerk">Tragwerk — Lastverteilung
+      <small>Holzkonstruktion nach Lastzonen eingefärbt</small></a>
+  </div>
+
+  <div id="status" class="hidden"></div>
+  <div id="legend">
+    <h5>Lastverteilung</h5>
+    <div class="lg-row"><div class="lg-sw" style="background:#e74c3c"></div>Kehlbälken — Biegung (hoch)</div>
+    <div class="lg-row"><div class="lg-sw" style="background:#e67e22"></div>Außenfeld (Reihe 00 / 05)</div>
+    <div class="lg-row"><div class="lg-sw" style="background:#f1c40f"></div>Übergang (Reihe 01 / 04)</div>
+    <div class="lg-row"><div class="lg-sw" style="background:#2ecc71"></div>Mittelfeld (Reihe 02 / 03)</div>
+  </div>
+
+  <div id="imgPanel">
+    <div class="img-row">
+      <div class="seg">
+        <button id="segKarten">Karte</button>
+        <button id="segPhoto">Luftbild</button>
+      </div>
+      <span class="img-year" id="imgYear">—</span>
+    </div>
+    <input type="range" id="imgSlider" min="0" max="0" value="0">
+    <div id="imgBand"></div>
+    <div class="img-ends"><span id="imgMinLbl"></span><span id="imgMaxLbl"></span></div>
+  </div>
+
+  <div id="bar" style="display:none">
+    <a class="ghost" href="./mobile.html" title="Zurück">‹</a>
+    <button id="toggleBtn" style="display:none"></button>
+    <button id="ph1" class="phase-btn" style="display:none">1. Bauphase</button>
+    <button id="ph2" class="phase-btn" style="display:none">2. Bauphase</button>
+  </div>
+
+  <script>
+  // ════════════════════════════════════════════════════════════════════════
+  //  MOBILE SPIKE — model-only. Two kiosk demos, no point cloud, no tools.
+  //  Coordinate/matrix helpers copied verbatim from cesium.html (candidates
+  //  for extraction into a shared /js/lv95.js — see review_3 / mobile plan).
+  // ════════════════════════════════════════════════════════════════════════
+
+  // Mobile-tuned tile cache. cesium.html uses 4 GB / 2 GB — that OOM-crashes
+  // mobile Safari. 256 MB / 64 MB is plenty for one building's LOD chain.
+  const MOBILE_CACHE = {
+    cacheBytes: 256 * 1024 * 1024,
+    maximumCacheOverflowBytes: 64 * 1024 * 1024,
+    // Gentler than the desktop's aggressive skip — start coarse, refine.
+    skipLevelOfDetail: false,
+    cullWithChildrenBounds: false,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const status = (msg) => { const s = $('status'); if (msg == null) { s.classList.add('hidden'); } else { s.textContent = msg; s.classList.remove('hidden'); } };
+
+  // ── Viewer: everything stripped, touch camera controls kept ──────────────
+  const viewer = new Cesium.Viewer('cesiumContainer', {
+    animation: false, baseLayerPicker: false, fullscreenButton: false, vrButton: false,
+    geocoder: false, homeButton: false, infoBox: false, sceneModePicker: false,
+    selectionIndicator: false, timeline: false, navigationHelpButton: false,
+    scene3DOnly: true, terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+  });
+  const scene = viewer.scene;
+  scene.backgroundColor = Cesium.Color.fromCssColorString('#0d1117');
+  scene.skyBox = scene.sun = scene.moon = scene.skyAtmosphere = undefined;
+  scene.globe.baseColor = Cesium.Color.fromCssColorString('#3d4a3a');
+  scene.globe.showGroundAtmosphere = false;
+  scene.globe.show = false;                 // shown once a demo loads
+  scene.logarithmicDepthBuffer = false;
+  // Continuous render: guarantees terrain + draped imagery refresh when the
+  // building (and camera) jumps to the other location. (Render-on-demand left
+  // the background stale on location change.)
+  scene.requestRenderMode = false;
+  // Soften DPI on very high-density screens to keep fill-rate sane.
+  if (window.devicePixelRatio > 2) viewer.resolutionScale = 2 / window.devicePixelRatio;
+
+  // ── swisstopo terrain (verbatim from cesium.html) ────────────────────────
+  Cesium.CesiumTerrainProvider.fromUrl(
+    'https://3d.geo.admin.ch/ch.swisstopo.terrain.3d/v1/',
+    { requestVertexNormals: true }
+  ).then(p => { viewer.terrainProvider = p; scene.requestRender(); })
+   .catch(e => console.warn('[terrain] swisstopo failed — ellipsoid fallback:', e));
+
+  // ── Coordinate / matrix helpers (verbatim from cesium.html) ──────────────
+  function lv95ToWgs84(E, N, H) {
+    const y = (E - 2600000) / 1e6, x = (N - 1200000) / 1e6;
+    const lon = (2.6779094 + 4.728982*y + 0.791484*y*x + 0.1306*y*x*x - 0.0436*y*y*y) * 100/36;
+    const lat = (16.9023892 + 3.238272*x - 0.270978*y*y - 0.002528*x*x - 0.0447*y*y*x - 0.0140*x*x*x) * 100/36;
+    return [lon, lat, H];
+  }
+  function isLv95(x, y) { return x > 2484000 && x < 2834000 && y > 1074000 && y < 1299000; }
+  function lv95ModelMatrix(E, N, H) {
+    const [lon, lat, h] = lv95ToWgs84(E, N, H);
+    const enu = Cesium.Transforms.eastNorthUpToFixedFrame(Cesium.Cartesian3.fromDegrees(lon, lat, h));
+    const shift = Cesium.Matrix4.fromTranslation(new Cesium.Cartesian3(-E, -N, -H));
+    return Cesium.Matrix4.multiply(enu, shift, new Cesium.Matrix4());
+  }
+  // Shared building anchor: the point cloud's _lv95Center if one is loaded.
+  // Model-only => no cloud => returns null => buildHistoricalModelMatrix falls
+  // back to the model's own bbox centre (self-consistent with nothing to align).
+  const loaded = [];   // [{ tileset, ds }]
+  // Override anchor: the point cloud's LV95 centroid, read from its tileset.json
+  // (no 72 MB download). Desktop anchors the historical placement to this; using
+  // the model's own bbox centre instead lands the building in the wrong spot.
+  let histAnchorLV95 = null;
+  function getHistoricalAnchorEcef(ds) {
+    if (histAnchorLV95) {
+      const [lon, lat, h] = lv95ToWgs84(histAnchorLV95.x, histAnchorLV95.y, histAnchorLV95.z);
+      return Cesium.Cartesian3.fromDegrees(lon, lat, h);
+    }
+    if (!ds?.building) return null;
+    for (const l of loaded) {
+      const t = l.tileset;
+      if (!t?._lv95Center || l.ds?.building !== ds.building) continue;
+      const [lon, lat, h] = lv95ToWgs84(t._lv95Center.x, t._lv95Center.y, t._lv95Center.z);
+      return Cesium.Cartesian3.fromDegrees(lon, lat, h);
+    }
+    return null;
+  }
+  function buildHistoricalModelMatrix(ds, ts) {
+    const { E, N, H, yawDeg = 0 } = ds.historicalLV95;
+    const [lon, lat, h] = lv95ToWgs84(E, N, H);
+    const P_hist = Cesium.Cartesian3.fromDegrees(lon, lat, h);
+    const ENU_hist = Cesium.Transforms.eastNorthUpToFixedFrame(P_hist);
+    const th = -Cesium.Math.toRadians(yawDeg), c = Math.cos(th), s = Math.sin(th);
+    const R_loc = Cesium.Matrix4.fromArray([ c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ]);
+    const ER = Cesium.Matrix4.multiply(ENU_hist, R_loc, new Cesium.Matrix4());
+    if (ts._lv95Center) {   // Case A (point cloud) — not used in model-only mode
+      const { x: cx, y: cy, z: cz } = ts._lv95Center;
+      const T = Cesium.Matrix4.fromTranslation(new Cesium.Cartesian3(-cx, -cy, -cz));
+      return Cesium.Matrix4.multiply(ER, T, new Cesium.Matrix4());
+    }
+    // Case B (model): translate bbox centre (or shared anchor) to P_hist.
+    const anchor = getHistoricalAnchorEcef(ds) ?? ts.boundingSphere.center;
+    const delta = Cesium.Cartesian3.subtract(P_hist, anchor, new Cesium.Cartesian3());
+    const T_trans = Cesium.Matrix4.fromTranslation(delta);
+    if (Math.abs(yawDeg) < 0.01) return T_trans;
+    const E_inv = Cesium.Matrix4.inverseTransformation(ENU_hist, new Cesium.Matrix4());
+    const R_ecef = Cesium.Matrix4.multiply(ER, E_inv, new Cesium.Matrix4());
+    return Cesium.Matrix4.multiply(R_ecef, T_trans, new Cesium.Matrix4());
+  }
+
+  // ── Tileset loader (mobile cache, Case-B embedded transform respected) ────
+  async function loadTileset(path) {
+    const url = path.startsWith('http') ? path : location.origin + path;
+    const ts = await Cesium.Cesium3DTileset.fromUrl(url, MOBILE_CACHE);
+    scene.primitives.add(ts);
+    // gesamtmodell tilesets carry an embedded ECEF transform (Case B); only
+    // override if vertices are raw LV95 (they aren't here, but stay faithful).
+    const cc = ts.boundingSphere.center;
+    if (isLv95(cc.x, cc.y)) { ts._lv95Center = { x: cc.x, y: cc.y, z: cc.z }; ts.modelMatrix = lv95ModelMatrix(cc.x, cc.y, cc.z); }
+    return ts;
+  }
+
+  // Re-request imagery whenever the camera SETTLES — fires for a completed fly,
+  // a fly the user interrupts by touching (a `complete` callback would not), and
+  // manual pan/zoom. Tiles added mid-flight load at the coarse far-view LOD; this
+  // pulls full resolution once the view arrives.
+  const reapplyImagery = () => { if (imgSlider) applyImagery(); };
+  // After the camera settles, the draped imagery is only as sharp as the terrain
+  // tiles loaded so far. Re-request it once the tile queue fully drains (terrain
+  // at final LOD) — the same state a manual slider touch hits, now automatic.
+  let imgNeedsRefine = false;
+  function refineImageryWhenSettled() {
+    if (!imgSlider) return;
+    if (viewer.scene.globe.tilesLoaded) { imgNeedsRefine = false; reapplyImagery(); }
+    else { imgNeedsRefine = true; }   // wait for the tile queue to drain (below)
+  }
+  viewer.camera.moveEnd.addEventListener(refineImageryWhenSettled);
+  viewer.scene.globe.tileLoadProgressEvent.addEventListener((queued) => {
+    if (imgSlider && imgNeedsRefine && queued === 0) { imgNeedsRefine = false; reapplyImagery(); }
+  });
+
+  function flyTo(ts) {
+    viewer.camera.flyToBoundingSphere(ts.boundingSphere,
+      { offset: new Cesium.HeadingPitchRange(Cesium.Math.toRadians(35), Cesium.Math.toRadians(-28),
+        ts.boundingSphere.radius * 3.2), duration: 1.4 });
+  }
+
+  // ── Catalog (fetch once, run the same propagate as production) ────────────
+  let catalog = [];
+  async function loadCatalog() {
+    catalog = await fetch('/api/datasets').then(r => r.json());
+    // propagateHistoricalLV95: share the field by reference to building siblings
+    const byB = new Map();
+    for (const d of catalog) { if (d.building) (byB.get(d.building) ?? byB.set(d.building, []).get(d.building)).push(d); }
+    for (const [, g] of byB) { const src = g.find(d => d.historicalLV95); if (src) for (const d of g) if (d !== src && !d.historicalLV95) d.historicalLV95 = src.historicalLV95; }
+  }
+  const byId = (id) => catalog.find(d => d.id === id);
+
+  // ══ swisstopo Zeitreise — map/orthophoto + year slider (ports cesium.html) ═
+  // Oldest → newest so the slider reads left=old, right=current.
+  const PHOTO_TS = ['1926','1927','1929','1930','1931','1932','1933','1934','1935','1936','1937','1938','1939','1940','1941','1942','1943','1944','1945','1946','1947','1948','1949','1950','1951','1952','1953','1954','1955','1956','1957','1958','1959','1960','1961','1962','1963','1964','1965','1966','1967','1968','1969','1970','1971','1972','1973','1974','1975','1976','1977','1978','1979','1980','1981','1982','1983','1984','1985','1986','1987','1988','1989','1990','1991','1992','1993','1994','1995','1996','1997','1998','1999','2000','2001','2002','2003','2004','2005','2006','2007','2008','2009','2010','2011','2012','2013','2014','2015','2016','2017','2018','2019','2020','2021','2022','2023','2024','2025','current'];
+  const KARTEN_LABELS = ['1864','1900','1958','1966','1971','1976','1982','1988','1994','2000','2007','2013'];
+  const KARTEN_TS     = ['18641231','19001231','19581231','19661231','19711231','19761231','19821231','19881231','19941231','20001231','20071231','20131231'];
+  const CH_RECT = Cesium.Rectangle.fromDegrees(5.96, 45.82, 10.49, 47.81);
+
+  let imgMode = 'photo';   // 'photo' (Luftbild) | 'karten' (Karte)
+  let imgLayer = null, imgSlider = null;
+  let imgBuiltYear = 0, imgRelocYear = 0, imgAtHist = false;
+  const imgArr = () => (imgMode === 'photo' ? PHOTO_TS : KARTEN_LABELS);
+  const yrInt  = (arr, i) => { const t = arr[i]; return t === 'current' ? 9999 : parseInt(t); };
+  // Nearest slider index for a target year (built year 1684 clamps to the oldest entry).
+  const imgNearest = (year) => { const a = imgArr(); return a.reduce((b, _, i) => Math.abs(yrInt(a,i)-year) < Math.abs(yrInt(a,b)-year) ? i : b, 0); };
+
+  // Green band = the timeframe the building was/is at the currently-shown
+  // location. Original site: built → relocation (1684–1988). Ballenberg:
+  // relocation → now (1988–present). Same 0–100% scale as the slider.
+  function imgUpdateBand() {
+    const a = imgArr(), last = a.length - 1;
+    const rp = last ? (imgNearest(imgRelocYear) / last * 100) : 0;
+    const here = 'rgba(46,160,67,.6)', away = 'rgba(255,255,255,.06)';
+    $('imgBand').style.background = imgAtHist
+      ? `linear-gradient(to right, ${here} 0 ${rp}%, ${away} ${rp}% 100%)`
+      : `linear-gradient(to right, ${away} 0 ${rp}%, ${here} ${rp}% 100%)`;
+    $('imgMinLbl').textContent = a[0];
+    $('imgMaxLbl').textContent = a[last] === 'current' ? 'Aktuell' : a[last];
+  }
+
+  let imgPrev = null;   // previous layer, retired late so a reload never flashes grey
+  function applyImagery() {
+    scene.globe.show = true;
+    const i = +imgSlider.value;
+    const prov = (imgMode === 'karten')
+      ? new Cesium.UrlTemplateImageryProvider({
+          url: `https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.zeitreihen/default/${KARTEN_TS[i]}/3857/{z}/{x}/{y}.png`,
+          credit: '© swisstopo', rectangle: CH_RECT, minimumLevel: 8, maximumLevel: 17 })
+      : new Cesium.UrlTemplateImageryProvider({
+          url: `https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage-product/default/${PHOTO_TS[i]}/3857/{z}/{x}/{y}.jpeg`,
+          credit: '© swisstopo', rectangle: CH_RECT, minimumLevel: 8, maximumLevel: 19 });
+    // Add the new layer ON TOP, then retire the current one only after the new
+    // tiles have had time to load — so reloads (on arrival or slider change) never
+    // expose the grey globe. Any still-pending older layer is dropped at once so
+    // rapid slider drags stay bounded to ~2 layers.
+    if (imgPrev) { try { viewer.imageryLayers.remove(imgPrev); } catch (_) {} imgPrev = null; }
+    const prev = imgLayer;
+    imgLayer = viewer.imageryLayers.addImageryProvider(prov);
+    if (prev) {
+      imgPrev = prev;
+      setTimeout(() => { if (imgPrev === prev) { try { viewer.imageryLayers.remove(prev); } catch (_) {} imgPrev = null; } }, 800);
+    }
+    const t = imgArr()[i];
+    $('imgYear').textContent = (t === 'current') ? 'Aktuell' : t;
+    imgUpdateBand();
+  }
+  function imgSetMode(mode) {
+    const y = yrInt(imgArr(), +imgSlider.value);   // remap current year into the new domain
+    imgMode = mode;
+    imgSlider.max = imgArr().length - 1;
+    imgSlider.value = imgNearest(y);
+    $('segPhoto').classList.toggle('active', mode === 'photo');
+    $('segKarten').classList.toggle('active', mode === 'karten');
+    applyImagery();
+  }
+  // Old site → relocation year 1988 (the oldest imagery has no coverage there);
+  // Ballenberg → most recent. Forces a fresh imagery load on every location change.
+  function imgSetYearForPosition(atHistorical) {
+    imgAtHist = atHistorical;
+    imgSlider.value = atHistorical ? imgNearest(imgRelocYear) : imgArr().length - 1;
+    applyImagery();
+  }
+  function initZeitreise(builtYear, relocYear) {
+    imgBuiltYear = builtYear || 0;
+    imgRelocYear = relocYear || 0;
+    imgAtHist = false;
+    imgSlider = $('imgSlider');
+    imgMode = 'photo';
+    imgSlider.max = PHOTO_TS.length - 1;
+    imgSlider.value = PHOTO_TS.length - 1;          // default Ballenberg view = current
+    $('segPhoto').classList.add('active');
+    $('segKarten').onclick = () => imgSetMode('karten');
+    $('segPhoto').onclick  = () => imgSetMode('photo');
+    imgSlider.oninput = applyImagery;
+    $('imgPanel').style.display = 'block';
+    applyImagery();
+  }
+
+  // ══ DEMO 1 — Eggiwil: Originalstandort ↔ Ballenberg (model-only) ══════════
+  async function demoEggiwil() {
+    status('Lade Modell Haus Eggiwil …');
+    await loadCatalog();
+    const ds = byId('gesamtmodell_351_2025_351');   // current-phase model, full LOD chain
+    if (!ds) { status('Datensatz gesamtmodell_351_2025_351 fehlt'); return; }
+    if (!ds.historicalLV95) { status('Kein historischer Standort für 351'); return; }
+    const ts = await loadTileset(ds.path);
+    loaded.push({ tileset: ts, ds });
+    const flm = Cesium.Matrix4.clone(ts.modelMatrix);
+    // Anchor historical placement to the point cloud's LV95 centroid (matches
+    // desktop) — read from the cloud's tileset.json, not its 72 MB payload.
+    try {
+      const cloud = byId('haus-eggiwil');
+      if (cloud) {
+        const ct = await fetch(location.origin + cloud.path).then(r => r.json());
+        const sph = ct.root?.boundingVolume?.sphere;
+        if (sph && isLv95(sph[0], sph[1])) histAnchorLV95 = { x: sph[0], y: sph[1], z: sph[2] };
+      }
+    } catch (e) { console.warn('[eggiwil] cloud anchor fetch failed:', e.message); }
+    const hist = buildHistoricalModelMatrix(ds, ts);
+    let atHist = false;
+    scene.globe.show = true;
+    flyTo(ts);
+    status(null);
+
+    // Background map / orthophoto with year slider. Built year parsed from the
+    // historical label ("… Originalstandort 1684"); default position is
+    // Ballenberg → most recent year (set inside initZeitreise).
+    const ym = String(ds.historicalLV95.label || '').match(/(\d{4})/);
+    initZeitreise(ym ? parseInt(ym[1]) : 0, ds.historicalLV95.historicalEnd || 0);
+
+    const btn = $('toggleBtn');
+    btn.style.display = '';
+    const paint = () => { btn.textContent = atHist ? '→ Ballenberg heute' : '→ Originalstandort 1684'; btn.classList.toggle('hist', atHist); };
+    paint();
+    btn.onclick = () => {
+      atHist = !atHist;
+      ts.modelMatrix = atHist ? hist : flm;
+      // Fly to wherever the building now sits.
+      if (atHist) {
+        const { E, N, H } = ds.historicalLV95;
+        const [lon, lat, h] = lv95ToWgs84(E, N, H);
+        const ctr = Cesium.Cartesian3.fromDegrees(lon, lat, h);
+        const r = ts.boundingSphere.radius;
+        viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(ctr, r),
+          { offset: new Cesium.HeadingPitchRange(Cesium.Math.toRadians(35), Cesium.Math.toRadians(-28), r * 3.2), duration: 1.5 });
+      } else { flyTo(ts); }
+      paint();
+      imgSetYearForPosition(atHist);   // old → built year (oldest), new → most recent
+      scene.requestRender();
+    };
+  }
+
+  // ══ DEMO 2 — Tragwerk: per-element load colours (CustomShader) ════════════
+  const TRAGWERK_COLORS = {
+    'Kehlbälken': '#e74c3c', 'Reihe_00': '#e67e22', 'Reihe_05': '#e67e22',
+    'Reihe_01': '#f1c40f', 'Reihe_04': '#f1c40f', 'Reihe_02': '#2ecc71', 'Reihe_03': '#27ae60',
+  };
+  const makeShader = (hex) => {
+    const r = (parseInt(hex.slice(1,3),16)/255).toFixed(4),
+          g = (parseInt(hex.slice(3,5),16)/255).toFixed(4),
+          b = (parseInt(hex.slice(5,7),16)/255).toFixed(4);
+    return new Cesium.CustomShader({ fragmentShaderText:
+      `void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material){ material.diffuse=vec3(${r},${g},${b}); material.alpha=1.0; }` });
+  };
+  async function demoTragwerk() {
+    status('Lade Tragwerk …');
+    await loadCatalog();
+    const elems = catalog.filter(d => d.group === 'Tragwerk' && Object.keys(TRAGWERK_COLORS).some(k => d.path.includes(k)));
+    if (!elems.length) { status('Keine Tragwerk-Elemente gefunden'); return; }
+    let first = null, ok = 0;
+    for (const ds of elems) {
+      const key = Object.keys(TRAGWERK_COLORS).find(k => ds.path.includes(k));
+      try {
+        const ts = await loadTileset(ds.path);
+        ts.customShader = makeShader(TRAGWERK_COLORS[key]);   // ← the mobile-GPU risk under test
+        loaded.push({ tileset: ts, ds });
+        first = first || ts; ok++;
+        status(`Lade Tragwerk … ${ok}/${elems.length}`);
+      } catch (e) { console.warn('[Tragwerk] skip', key, e.message); }
+    }
+    if (!first) { status('Tragwerk konnte nicht geladen werden'); return; }
+    scene.globe.show = true;
+    $('legend').style.display = 'block';
+    flyTo(first);
+    status(null);
+  }
+
+  // ══ DEMO 3 — Stallscheune Meggen: two construction phases ═════════════════
+  async function demoPhases() {
+    status('Lade Stallscheune Meggen …');
+    await loadCatalog();
+    const p1 = byId('gesamtmodell_2025_752_1._Bauphase');
+    const p2 = byId('gesamtmodell_2025_752_2._Bauphase');
+    if (!p1 || !p2) { status('Bauphasen-Datensätze fehlen'); return; }
+    const ts1 = await loadTileset(p1.path);
+    const ts2 = await loadTileset(p2.path);
+    loaded.push({ tileset: ts1, ds: p1 }, { tileset: ts2, ds: p2 });
+    scene.globe.show = true;     // terrain context (no Zeitreise imagery for this demo)
+    flyTo(ts2);
+    status(null);
+
+    const b1 = $('ph1'), b2 = $('ph2');
+    b1.style.display = ''; b2.style.display = '';
+    function showPhase(n) {
+      ts1.show = (n === 1);
+      ts2.show = (n === 2);
+      b1.classList.toggle('active', n === 1);
+      b2.classList.toggle('active', n === 2);
+      scene.requestRender();
+    }
+    b1.onclick = () => showPhase(1);
+    b2.onclick = () => showPhase(2);
+    showPhase(1);   // start at the earliest phase; tap 2. Bauphase to see it built out
+  }
+
+  // ── Router ────────────────────────────────────────────────────────────────
+  const demos = { eggiwil: demoEggiwil, phases: demoPhases, tragwerk: demoTragwerk };
+  const demo = new URLSearchParams(location.search).get('demo');
+  if (demos[demo]) {
+    $('splash').style.display = 'none';
+    $('bar').style.display = 'flex';
+    demos[demo]().catch(e => { console.error(e); status('Fehler: ' + e.message); });
+  }
+  </script>
+</body>
+</html>

@@ -218,10 +218,13 @@ All `.json`/`.csv` config files survive (tracked). Re-copy binaries from externa
   - Sequential number (`m.num`) shown in panel # column, 3D scene, and panorama canvas
   - Coords tool: dot only in scene, full coordinates in panel only
   - Area polygons close in panorama canvas; number floats above line midpoint / at area centroid
-- **Potree viewer removed** — Cesium is now the sole point cloud viewer
-  - Deleted `public/viewers/potree.html`
-  - Removed Point Cloud nav from all pages; compare viewer defaults to Cesium vs Cesium
-  - Portal simplified: only cesium / cesium-splat / splat types in Add Dataset modal
+- **Potree v1 viewer removed** — the original `public/viewers/potree.html` was deleted as part of this cleanup.
+  - Note (2026-06-07): Potree was later reintroduced in two replacement viewers
+    `potree18.html` (Potree 1.8, WebGL) and `potreenext.html` (Potree-Next, WebGPU
+    experimental), both vendored under `public/libs/`. The Add Dataset modal now
+    supports `potree` and the Compare viewer offers Cesium vs Potree side-by-side.
+  - Compare viewer defaults to Cesium vs Cesium for the symmetric case; Cesium vs Potree
+    is one click away.
 - **Scan station visibility toggle** (`public/viewers/cesium.html`)
   - Checkbox in left panel (between Layers and Measurement Tools) toggles all scan position billboards
   - Also hides/shows Pannellum navigation hotspots in the panorama overlay
@@ -746,6 +749,67 @@ When opening a panorama from a scan marker, the panorama now initializes facing 
 
 - Cesium `camera.heading` and Pannellum `yaw` share the same convention (0 = N, positive = E), and `camera.pitch` matches Pannellum `pitch` (0 = horizon, positive = up). The only adapter needed is the per-scan `northOffset` to translate between compass bearing and the panorama's local frame.
 - Cesium occasionally reports `camera.pitch` slightly outside ±π/2 when the camera is tilted past vertical. Clamping the converted value to ±85° avoids edge-case Pannellum errors without visibly affecting the typical case.
+
+---
+
+## 2026-06-11 — Minimal mobile viewer (`public/viewers/mobile.html`)
+
+### Completed
+
+A stripped, touch-first Cesium viewer covering the three demo use cases on a
+phone, with no measurement/clip/profile/Helmert tooling. Splash routes to
+`?demo=eggiwil | phases | tragwerk`. Model-only and (for Eggiwil/phases)
+GLB-only, so the heaviest asset is a 16 MB model tileset instead of the 72 MB
+point cloud.
+
+- **Eggiwil — Standort** (`?demo=eggiwil`): building 351 model toggled between
+  Ballenberg and its Originalstandort (24.7 km, yaw 170°). The historical
+  placement is anchored to the **point cloud's LV95 centroid** (2648855,
+  1177528, 649), read from the cloud's `tileset.json` — *not* its 72 MB payload
+  — so the position matches the desktop viewer exactly. Falling back to the
+  model's own bbox centre (the first attempt) put the building in the wrong
+  spot at the old site.
+- **swisstopo Zeitreise on mobile**: a Karte/Luftbild switch + year slider
+  (ports the WMTS endpoints and year tables from `cesium.html`), a green band
+  under the slider marking the timeframe the building was/is at the shown
+  location (original site → relocation 1988; Ballenberg 1988 → present), and
+  position-aware defaults (old site → 1988, Ballenberg → most recent). Imagery
+  crossfades (add-on-top, retire-old-late) so reloads never flash grey.
+- **Phases** (`?demo=phases`): Stallscheune Meggen (752), switch
+  1. ↔ 2. Bauphase via tileset `show`.
+- **Tragwerk** (`?demo=tragwerk`): per-element load colours via the runtime
+  `CustomShader` (ported from `cesium.html`).
+
+### Lessons
+
+- **The served LOD ladder is decorative.** Every building's `_lod0/1/2.glb` are
+  byte-identical copies (`generate_3dtiles.py` fell back to `shutil.copy`
+  because gltfpack's `-tc` path failed at export). So there is no cheap coarse
+  level: the model is a hard 16 MB and Tragwerk is a hard ~175 MB (7×25 MB).
+  This also contradicts the thesis's 100/30/5 % LOD claim — logged in
+  `documentation/review_3.txt` / `MOBILE_VIEWER_PLAN.md`. gltfpack `-si 0.05`
+  only gets Tragwerk 25→17 MB (textures dominate); a real mobile re-export
+  needs working KTX2 (`-tc`) + quantization.
+- **Draped imagery is only as sharp as the terrain tiles loaded so far.** A
+  fly's `complete` callback is unreliable on mobile (a screen touch cancels the
+  fly and suppresses it). The robust trigger is re-requesting imagery once the
+  terrain **tile queue drains** (`globe.tilesLoaded` / `tileLoadProgressEvent`)
+  after `camera.moveEnd` — the same settled state a manual slider touch hits.
+- **Two representations of one building need a shared anchor.** Confirmed again:
+  the historical coordinate was authored against the point-cloud centroid, so
+  any model-only placement must reuse that centroid, not its own centre.
+- Mobile cache must be tiny (256 MB / 64 MB; desktop's 4 GB / 2 GB OOMs mobile
+  Safari). Coordinate/matrix helpers were copied verbatim from `cesium.html` —
+  candidates for extraction into a shared `/js/lv95.js`.
+
+### Pending
+
+- [ ] Real-device pass (iOS + Android): touch nav, terrain, and especially the
+  Tragwerk `CustomShader` path on mobile GPUs.
+- [ ] Tragwerk mobile weight: re-export the 7 elements with working KTX2 + mesh
+  quantization, confirm the size drop, re-test on cellular.
+- [ ] Extract the shared LV95/matrix helpers into `/js/lv95.js`, import from
+  both `cesium.html` and `mobile.html`.
 
 ---
 
