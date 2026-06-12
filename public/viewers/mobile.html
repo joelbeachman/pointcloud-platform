@@ -189,6 +189,13 @@
   // Soften DPI on very high-density screens to keep fill-rate sane.
   if (window.devicePixelRatio > 2) viewer.resolutionScale = 2 / window.devicePixelRatio;
 
+  // Touch navigation = turntable: no panning, one-finger orbit, pinch zoom, and
+  // the model stays centred. The orbit is enforced by locking the camera's
+  // reference frame onto the model centre (lookAtTransform) in frameOrbit();
+  // disabling translate/look here is belt-and-braces so there is never a pan.
+  scene.screenSpaceCameraController.enableTranslate = false;
+  scene.screenSpaceCameraController.enableLook = false;
+
   // ── swisstopo terrain (verbatim from cesium.html) ────────────────────────
   Cesium.CesiumTerrainProvider.fromUrl(
     'https://3d.geo.admin.ch/ch.swisstopo.terrain.3d/v1/',
@@ -286,11 +293,28 @@
     if (imgSlider && imgNeedsRefine && queued === 0) { imgNeedsRefine = false; reapplyImagery(); }
   });
 
-  function flyTo(ts) {
-    viewer.camera.flyToBoundingSphere(ts.boundingSphere,
-      { offset: new Cesium.HeadingPitchRange(Cesium.Math.toRadians(35), Cesium.Math.toRadians(-28),
-        ts.boundingSphere.radius * 3.2), duration: 1.4 });
+  // Camera framing as a locked turntable orbit around the model centre.
+  const ORBIT_HEADING = Cesium.Math.toRadians(35);
+  const ORBIT_PITCH   = Cesium.Math.toRadians(-28);
+
+  function lockOrbit(sphere) {
+    // Lock the camera frame to the model centre: one finger now orbits, pinch
+    // zooms, there is no pan, and the centre stays put.
+    viewer.camera.lookAtTransform(
+      Cesium.Transforms.eastNorthUpToFixedFrame(sphere.center),
+      new Cesium.HeadingPitchRange(ORBIT_HEADING, ORBIT_PITCH, sphere.radius * 3.2));
   }
+  function frameOrbit(sphere) {
+    // Unlock before flying (flyTo can't run inside a locked frame), animate in,
+    // then re-lock onto the (possibly moved) centre once the flight completes.
+    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    viewer.camera.flyToBoundingSphere(sphere, {
+      offset: new Cesium.HeadingPitchRange(ORBIT_HEADING, ORBIT_PITCH, sphere.radius * 3.2),
+      duration: 1.4,
+      complete: () => lockOrbit(sphere),
+    });
+  }
+  function flyTo(ts) { frameOrbit(ts.boundingSphere); }
 
   // ── Catalog (fetch once, run the same propagate as production) ────────────
   let catalog = [];
@@ -435,8 +459,7 @@
         const [lon, lat, h] = lv95ToWgs84(E, N, H);
         const ctr = Cesium.Cartesian3.fromDegrees(lon, lat, h);
         const r = ts.boundingSphere.radius;
-        viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(ctr, r),
-          { offset: new Cesium.HeadingPitchRange(Cesium.Math.toRadians(35), Cesium.Math.toRadians(-28), r * 3.2), duration: 1.5 });
+        frameOrbit(new Cesium.BoundingSphere(ctr, r));
       } else { flyTo(ts); }
       paint();
       imgSetYearForPosition(atHist);   // old → built year (oldest), new → most recent
