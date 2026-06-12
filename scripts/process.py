@@ -13,11 +13,12 @@ Output
   Gaussian splats        →  <data-dir>/splats/<id>.splat          (type: "splat")
   E57 panoramas       →  <data-dir>/panoramas/<id>/metadata.json (type: "e57")
 
-LOD Support:
-  --lod-levels N      LOD levels to generate (default: 3: high, medium, low)
-  --lod-ratios R      Comma-separated ratios (e.g., "1.0,0.2,0.05")
-  --sample-method METHOD Sampling method: poisson|uniform|voxel (default: poisson)
-  --max-points N      Maximum points after downsampling
+Decimation:
+  --max-points N      Randomly downsample a point cloud to at most N points
+                      before tiling (default: no limit — every point is kept).
+                      NOTE: produces a single .pnts tile with no LOD, so the
+                      result must still fit in a browser; for very large clouds
+                      use the out-of-core LOD tiling pipeline instead.
 
 Usage
   # Single file processing
@@ -37,11 +38,10 @@ Options
   --extract-panoramas   Extract E57 panoramas to output directory
   --helmert FILE        Apply Helmert transformation from JSON file
 
-LOD Options:
-  --lod-levels N      LOD levels to generate (default: 3)
-  --lod-ratios R      Comma-separated LOD ratios (e.g., "1.0,0.2,0.05")
-  --sample-method METHOD Sampling method: poisson|uniform|voxel (default: poisson)
-  --max-points N      Maximum points after downsampling
+Decimation options:
+  --max-points N      Randomly downsample point clouds to at most N points
+                      (deterministic given --seed; default: no decimation)
+  --seed N            RNG seed for --max-points subsampling (default: 0)
 
 Metadata options (all optional):
   --building-id ID      Ballenberg building identifier (required for real datasets)
@@ -223,6 +223,32 @@ def write_tileset(center, radius, content_uri, out_path):
         json.dump(ts, f, indent=2)
     print(f"    wrote {out_path}")
 
+
+# ── Decimation ────────────────────────────────────────────────────────────────
+
+def subsample_points(xyz, rgb, max_points, seed=0):
+    """Randomly downsample to at most ``max_points`` points (no replacement).
+
+    Returns ``(xyz, rgb)`` unchanged when ``max_points`` is falsy or the cloud
+    is already within budget. Selected indices are sorted so the output keeps
+    input point order, making runs with the same ``seed`` byte-for-byte
+    reproducible.
+
+    Operates in memory — the full cloud must already fit in RAM (read_las loads
+    it entirely). For clouds too large to load as a single tile, use the
+    out-of-core LOD tiling pipeline instead.
+
+    xyz : (N, 3) positions
+    rgb : (N, 3) uint8 colours, or None
+    """
+    n = len(xyz)
+    if not max_points or n <= max_points:
+        return xyz, rgb
+    rng = np.random.default_rng(seed)
+    idx = np.sort(rng.choice(n, size=int(max_points), replace=False))
+    print(f"    decimated {n:,} → {int(max_points):,} points "
+          f"(random, seed={seed})")
+    return xyz[idx], (rgb[idx] if rgb is not None else None)
 
 
 # ── Point-cloud readers ───────────────────────────────────────────────────────
@@ -584,7 +610,8 @@ def load_helmert_params(helmert_path):
 # ── Processor: point cloud → 3D Tiles ────────────────────────────────────────
 
 def process_pointcloud(input_path, out_dir, name, ds_id, data_dir, register,
-                      extract_panoramas=False, helmert_params=None, **kwargs):
+                      extract_panoramas=False, helmert_params=None,
+                      max_points=None, seed=0, **kwargs):
     """Convert a point cloud to a single-tile 3D Tiles tileset under out_dir.
 
     For E57 inputs with extract_panoramas=True, additionally renders
@@ -626,6 +653,9 @@ def process_pointcloud(input_path, out_dir, name, ds_id, data_dir, register,
         else:
             kwargs['crs'] = 'EPSG:2056'
             print(f"    Using default CRS: {kwargs['crs']}")
+
+    # Optional decimation to a point budget (before tiling)
+    xyz, rgb = subsample_points(xyz, rgb, max_points, seed)
 
     # Write output files
     pnts_dir  = os.path.join(out_dir, '0')
@@ -917,7 +947,7 @@ def get_batch_files(directory, config=None):
     return sorted(files_to_process)
 
 
-def process_batch(directory, data_dir, register, extract_panoramas=False, helmert_path=None, config=None, global_metadata=None):
+def process_batch(directory, data_dir, register, extract_panoramas=False, helmert_path=None, config=None, global_metadata=None, max_points=None, seed=0):
     """
     Process multiple files in directory.
 
@@ -959,7 +989,8 @@ def process_batch(directory, data_dir, register, extract_panoramas=False, helmer
             if fmt == 'pointcloud':
                 out_dir = os.path.join(data_dir, 'cesium', ds_id)
                 ds = process_pointcloud(input_path, out_dir, name, ds_id, data_dir, register,
-                                       extract_panoramas, helmert_params, **metadata)
+                                       extract_panoramas, helmert_params,
+                                       max_points=max_points, seed=seed, **metadata)
             elif fmt == 'mesh':
                 out_dir = os.path.join(data_dir, 'cesium', ds_id)
                 ds = process_mesh(input_path, out_dir, name, ds_id, data_dir, register,
@@ -1053,6 +1084,13 @@ def main():
                    help='Extract E57 panoramas to output directory')
     p.add_argument('--helmert', help='Apply Helmert transformation from JSON file')
 
+    # Decimation
+    p.add_argument('--max-points', type=int, default=None,
+                   help='Randomly downsample point clouds to at most N points '
+                        '(default: no limit)')
+    p.add_argument('--seed', type=int, default=0,
+                   help='RNG seed for --max-points subsampling (default: 0)')
+
     # Metadata options
     p.add_argument('--building-id',        help='Ballenberg building identifier')
     p.add_argument('--capture-date',        help='Date of capture (YYYY-MM-DD)')
@@ -1128,7 +1166,9 @@ def main():
                            args.extract_panoramas,
                            args.helmert,
                            args.config,
-                           metadata_kwargs)
+                           metadata_kwargs,
+                           max_points=args.max_points,
+                           seed=args.seed)
 
         print(f"\n{'='*60}")
         print("BATCH SUMMARY")
@@ -1165,7 +1205,9 @@ def main():
     if fmt == 'pointcloud':
         out_dir = os.path.join(data_dir, 'cesium', ds_id)
         ds = process_pointcloud(input_path, out_dir, name, ds_id, data_dir, register,
-                               args.extract_panoramas, helmert_params, **metadata_kwargs)
+                               args.extract_panoramas, helmert_params,
+                               max_points=args.max_points, seed=args.seed,
+                               **metadata_kwargs)
 
     elif fmt == 'mesh':
         out_dir = os.path.join(data_dir, 'cesium', ds_id)
