@@ -813,6 +813,75 @@ point cloud.
 
 ---
 
+## 2026-06-12 — Point-cloud decimation, LOD tiler + viewer polish
+
+### Completed — Cleanup & documentation pass
+- Behaviour-preserving cleanup + docs across `scripts/`, `server.js`, and all
+  viewers; added `scripts/README.md` and `public/viewers/README.md`.
+- Removed long-dead LOD/sampling code in `process.py` whose flags
+  (`--lod-*`, `--sample-method`) were documented but never wired into the
+  active path.
+
+### Completed — Real decimation in `process.py`
+- Added working `--max-points N` / `--seed` random downsampling before
+  `write_pnts` (single + batch mode); `pointCount` metadata reflects the result.
+  NOTE: `process.py` still writes a single `.pnts` tile **with no LOD** — for
+  very large clouds use the new Pipeline 3 below.
+
+### Completed — Out-of-core LOD 3D Tiles pipeline (`scripts/generate_pointcloud_tiles.py`)
+- New script wrapping **py3dtiles** to build a streaming 3D Tiles octree (LOD)
+  for clouds too large for a single tile. Keeps input coords (no reprojection),
+  registers as `type: cesium`. Flags: `--jobs`, `--cache-size`, `--srs-in`,
+  `--no-rgb`, `--overwrite`. Documented as "Pipeline 3" in `scripts/README.md`.
+- **Finding**: full-res 251M-point Eggiwil **OOMs a 7.7 GB host** (py3dtiles
+  keeps the octree node index in RAM; 12 workers blew the budget and left
+  orphaned worker processes that had to be reaped). Workaround: stream-decimate
+  the LAS (chunked laspy, every 8th point) to ~31M, then tile with
+  `--jobs 4 --cache-size 256` → 4,588-tile LOD octree, ~460 MB, ~48 s total.
+  Registered as `haus-eggiwil-massive` (runtime data under `data/`, not in git).
+
+### Forensic note — where the existing decimation came from
+- The current `haus-eggiwil` (5M) and Potree (~9.7M) outputs were **not** made
+  by the in-repo pipeline (which writes every point). They came from an external
+  "haus-eggiwil-10M" decimation step that no longer exists in the repo; the raw
+  6.1 GB / 251M-point LAS is the only surviving source. `process.py`'s old
+  sampling functions were dead before the cleanup removed them.
+
+### Completed — Cesium viewer: point-size slider
+- "Punktgröße" range slider (1–8 px) with a live px readout, below Zeitreise.
+  Sets `Cesium3DTileStyle.pointSize` on every point-cloud tileset (mesh tilesets
+  ignore it). Default 3 px (Cesium's 1 px looked too small); `addLayer()`
+  re-applies the current size to freshly-loaded layers.
+
+### Completed — Mobile viewer: turntable touch navigation
+- `mobile.html` locks the camera frame onto the model centre via
+  `lookAtTransform` after framing: **one-finger orbit, two-finger pinch zoom, no
+  pan, model stays centred**. Re-locks after every fly-in incl. the Eggiwil
+  today↔1684 toggle. Confirmed working on a real phone.
+
+### Pending — mobile model loading (deferred, to address in future work)
+- [ ] **Tragwerk** on mobile: long load, renders only partially, sometimes
+  errors — the 7 per-element `CustomShader` tilesets overload the phone GPU.
+  Fix ideas: bake per-element colours into the GLBs (vertex colours) for the
+  mobile path, load fewer elements, add LOD.
+- [ ] **Bauphase 2 (Stallscheune Meggen)** does not load on mobile — heavier GLB
+  than Bauphase 1. Decimate/LOD the GLB or ship a lighter mobile variant.
+- [ ] General mobile slowness: gesamtmodell GLB tilesets aren't LOD-optimised
+  for mobile (Eggiwil works but is slow to first load). Capture exact
+  phone-console error text, or add on-screen error logging to `mobile.html`.
+- [ ] Full-res point-cloud LOD build: run `generate_pointcloud_tiles.py` on a
+  larger-RAM host (or very low `--jobs`/`--cache-size`) to tile the full 251M.
+
+### Pending — code clean-ups flagged during the cleanup pass (low priority)
+- [ ] `server.js`: `/cesium-proxy/debug/:line` is shadowed by the earlier
+  `/cesium-proxy/*` wildcard route (unreachable).
+- [ ] `panorama.html`: dead link to `/viewers/potree.html` (removed viewer).
+- [ ] `potreenext.html`: null-deref on `#viewer-label` in the no-WebGPU path,
+  plus an unused `Points` import.
+- [ ] `regen_northoffset.pl`: suspicious `use POSIX qw(atan2)`.
+
+---
+
 ## Pending / Planned
 
 ### High priority
