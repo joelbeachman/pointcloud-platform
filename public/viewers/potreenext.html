@@ -1,4 +1,33 @@
 <!DOCTYPE html>
+<!--
+  potreenext.html — Potree "next" (WebGPU) point-cloud viewer
+
+  Experimental TU Wien Potree rewrite. Requires a WebGPU browser (Chrome 113+);
+  shows an error box with a fallback link to potree18.html otherwise.
+  Platform extensions on top of the stock viewer/toolbar/sidebar:
+    - Datasets panel (header button): loads type "potree" clouds via
+      PotreeLoader and type "cesium" 3D-Tiles via TDTilesLoader, reprojecting
+      the tileset's ECEF root transform into LV95 with proj4 so zoomTo works.
+    - Scan-position sphere markers; clicking one opens a Pannellum panorama
+      overlay with scan-to-scan hotspots (same UX as potree18.html).
+    - Panorama measurement tools that raycast the loaded octree nodes
+      (floor-plane fallback) and bridge results into the viewer's native
+      Point/DistanceMeasure objects.
+
+  Input:
+    ?id=<datasetId>   optional — resolved via GET /api/datasets/:id; defaults
+                      to the Haus Eggiwil cloud. If the dataset is type
+                      "cesium" it is loaded as 3D Tiles, otherwise as Potree.
+                      `panoramasPath` provides the scan/panorama metadata.
+    ?splat=<url>      optional — additionally loads a 3DGS .ply via GSLoader.
+
+  Coordinates: viewer scene is raw LV95 (EPSG:2056) world metres.
+
+  Routing: portal.js links dataset types "potree" and "cesium" here
+  ("Potree-Next" / building point-cloud links); also in the header nav.
+  External libs: potree-next ES modules from /libs/potreenext/ (see importmap:
+  laz-perf, tween, proj4, json5, webgpu-radix-sort, …), Pannellum 2.5.6 (CDN).
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -254,6 +283,7 @@
 	// ── Dataset helpers ──────────────────────────────────────────────────────
 	function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+	// Load an additional Potree point cloud from the datasets panel.
 	window.loadPotreeDataset = async function(path, name) {
 		const pc = await PotreeLoader.load(path);
 		scene.root.children.push(pc);
@@ -262,6 +292,10 @@
 		document.getElementById('datasets-panel').style.display = 'none';
 	};
 
+	// Load a "cesium" 3D-Tiles dataset. The tileset's vertices are tile-local;
+	// its root transform maps them to ECEF, so we chain rootTransform → ECEF →
+	// LV95 (proj4) to bring tiles into the LV95 viewer space, and rewrite the
+	// bounding box around the reprojected centre so controls.zoomTo() lands right.
 	window.loadCesiumDataset = async function(dataset) {
 		const list = document.getElementById('dp-list');
 		list.innerHTML = `<div style="padding:0.5rem 0.75rem;color:#8b949e">Loading ${escHtml(dataset.name)}&hellip;</div>`;
@@ -295,6 +329,8 @@
 		}
 	};
 
+	// ── Datasets panel (header button) ─────────────────────────────────────────
+	// Lists "potree" and "cesium" datasets from the API with a Load button each.
 	window.toggleDatasetsPanel = async function() {
 		const panel = document.getElementById('datasets-panel');
 		if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
@@ -346,13 +382,17 @@
 		} catch(e) { console.warn('Failed to resolve dataset', _dsId, e); }
 	}
 
-	// WebGPU availability check
+	// WebGPU availability check — show the error box and halt module evaluation.
+	// (#viewer-label is a leftover from an older layout and no longer exists;
+	// the resulting TypeError aborts the script just like the throw would.)
 	if (!navigator.gpu) {
 		document.getElementById("webgpu-error").style.display = "block";
 		document.getElementById("viewer-label").textContent = "Potree-Next — WebGPU (unavailable)";
 		throw new Error("WebGPU not supported");
 	}
 
+	// NOTE: static imports are hoisted — they load before the WebGPU check above
+	// actually runs, the check just stops the rest of this module.
 	import {Potree} from "potree";
 	import {Vector3, Vector4, Matrix4, Points, Mesh, geometries} from "potree";
 	import {DistanceMeasure, PointMeasure} from "../libs/potreenext/src/interaction/measure.js";
@@ -365,10 +405,12 @@
 	import { proj4 } from 'proj4';
 	import {TDTilesLoader} from '../libs/potreenext/src/modules/3DTiles/3DTilesLoader.js';
 
+	// proj4 pipeline used by loadCesiumDataset: ECEF (geocentric WGS84) → LV95.
 	const _ECEF = '+proj=geocent +datum=WGS84 +units=m';
 	const _LV95 = '+proj=somerc +lat_0=46.9524055555556 +lon_0=7.43958333333333 +k_0=1 +x_0=2600000 +y_0=1200000 +ellps=bessel +towgs84=674.374,15.056,405.346,0,0,0,0 +units=m +no_defs';
 	const _ecefToLv95 = proj4(_ECEF, _LV95);
 
+	// ── Viewer init: WebGPU renderer, toolbar, sidebar ─────────────────────────
 	let canvas = document.getElementById("canvas");
 	let elPotree = document.getElementById("potree");
 	let potree = await Potree.init(canvas);
@@ -538,13 +580,15 @@
 		horizontal: { hex: '#3fb950', label: 'Horiz.' },
 		area:       { hex: '#a371f7', label: 'Area' },
 	};
-	let activeMeasTool = null;
-	let curMeasPts = [];
-	let measurements = [];
-	let measureCount = 0;
-	let measRafRunning = false;
-	let bridgedNextMeasures = [];
+	let activeMeasTool = null;       // 'point' | 'distance' | 'horizontal' | 'area' | null
+	let curMeasPts = [];             // in-progress LV95 points for the active tool
+	let measurements = [];           // committed: {id, num, tool, display, pts}
+	let measureCount = 0;            // running label number shown on the canvas
+	let measRafRunning = false;      // guards the overlay rAF loop
+	let bridgedNextMeasures = [];    // native measure objects created from pano tools
 
+	// Mirror a committed pano measurement into the 3D scene using the viewer's
+	// native Point/DistanceMeasure classes, and reveal the measurements tab.
 	function bridgeToPotreeNext(tool, pts) {
 		if (!pts.length) return;
 		const m = tool === 'point' ? new PointMeasure() : new DistanceMeasure();
@@ -558,6 +602,9 @@
 		}
 	}
 
+	// CPU raycast against the loaded octree: walk nodes whose AABB the ray hits
+	// (slab test), keep the nearest point inside a narrow distance-scaled cone
+	// (maxCone rad ≈ 0.46°). Brute force over loaded nodes only.
 	function raycastPotreeNext(origin, dir) {
 		const pc = potree.scene.root.children.find(c => c.root != null && c.loader != null);
 		if (!pc) return null;
@@ -599,6 +646,9 @@
 		return bestPt;
 	}
 
+	// Pano click → LV95 point: world ray from the scan position (northOffset
+	// turns view yaw into compass bearing), point cloud first, then a floor
+	// plane at scan Z − #pano-floor-offset as fallback.
 	function panoPick(yawDeg, pitchDeg) {
 		const scan = panos[panoIdx];
 		if (!scan || scan.x == null) return null;
@@ -617,6 +667,8 @@
 		return { x: scan.x + t*dir.x, y: scan.y + t*dir.y, z: scan.z - floorOffset };
 	}
 
+	// Inverse of panoPick's ray: direction from the current scan to an LV95
+	// point, as view-relative yaw/pitch.
 	function lv95ToPanoYawPitch(pt) {
 		const scan = panos[panoIdx];
 		const dx = pt.x - scan.x, dy = pt.y - scan.y, dz = pt.z - scan.z;
@@ -629,6 +681,9 @@
 		return { yaw, pitch };
 	}
 
+	// Perspective-project a yaw/pitch direction into overlay-canvas pixels by
+	// decomposing it onto the camera's right/up/forward basis (matches the
+	// Pannellum view). `behind` marks points >90° from the view direction.
 	function yawPitchToMeasCanvas(yaw, pitch) {
 		if (!panoViewer) return null;
 		const hfov = panoViewer.getHfov();
@@ -688,6 +743,8 @@
 		}
 	}
 
+	// rAF loop while the overlay is open: reprojects committed + in-progress
+	// measurements from LV95 every frame so they track the pano camera.
 	function drawPanoMeasureCanvas() {
 		const canvas = document.getElementById('pano-measure-canvas');
 		const ctx = canvas.getContext('2d');
@@ -768,6 +825,9 @@
 		document.body.classList.remove('pano-measuring');
 	}
 
+	// While the pano overlay is open, hijack clicks on the Potree-Next sidebar/
+	// toolbar measurement buttons (capture phase, matched by title attribute)
+	// and start the matching pano tool instead.
 	let _panoInterceptor = null;
 	function installPanoInterceptor() {
 		if (_panoInterceptor) return;
@@ -819,7 +879,7 @@
 	}
 	function doArea() {
 		if (curMeasPts.length < 3) return;
-		let area = 0;
+		let area = 0;   // shoelace formula on the horizontal (x/y) projection
 		const n = curMeasPts.length;
 		for (let i = 0; i < n; i++) {
 			const a = curMeasPts[i], b = curMeasPts[(i+1) % n];
@@ -861,6 +921,8 @@
 		renderMeasResults();
 	});
 
+	// Pano click → yaw/pitch: unproject the pixel through the camera basis
+	// (inverse of yawPitchToMeasCanvas), then panoPick() resolves it to LV95.
 	document.getElementById('pano-measure-capture').addEventListener('mousedown', e => {
 		if (e.button !== 0 || !activeMeasTool || !panoViewer) return;
 		const div = document.getElementById('pano-div');

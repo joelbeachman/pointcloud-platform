@@ -1,4 +1,29 @@
 <!DOCTYPE html>
+<!--
+  panorama.html — standalone equirectangular panorama viewer
+
+  Renders 360° scan panoramas with Pannellum, plus:
+    - spatial navigation hotspots to neighbouring scans (within 10 m, computed
+      from each scan's LV95 position + northOffset),
+    - prev/next scan navigation,
+    - measurement tools (horizontal distance, angle, polygon area) that
+      intersect click rays with a configurable floor plane and draw results
+      on a canvas overlay reprojected every animation frame.
+
+  Input:
+    ?id=<datasetId>    optional — auto-loads that dataset.
+    ?pos=<panoramaId>  optional — start at this scan within the dataset.
+    Dropdown is filled from GET /api/datasets, filtered to datasets of type
+    "panorama"/"e57" or with a non-empty `panoramas` array. Each panorama
+    entry needs: path (equirectangular image), and optionally x/y/z (LV95),
+    northOffset, label, id.
+
+  Routing: not linked from portal.js (panorama datasets route to cesium.html);
+  reachable directly. Note cesium.html and the Potree viewers embed their own
+  copy of this panorama+measure logic in an overlay.
+
+  External libs: Pannellum 2.5.6 (CDN). Measurements are pure canvas 2D.
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -232,6 +257,7 @@
   </div>
 
   <script>
+    // ── URL params + DOM refs ────────────────────────────────────────────────
     const params     = new URLSearchParams(location.search);
     const datasetId  = params.get('id');
     const posId      = params.get('pos');
@@ -294,6 +320,8 @@
     }
 
     // ── Ray math ─────────────────────────────────────────────────────────────
+    // Convert a mouse click to view-relative yaw/pitch (degrees) using a
+    // pinhole-camera model around Pannellum's current yaw/pitch/hfov.
     function getClickYawPitch(e) {
       const el    = document.getElementById('panorama');
       const rect  = el.getBoundingClientRect();
@@ -307,6 +335,8 @@
       };
     }
 
+    // World-space (LV95) ray from the scanner position. northOffset turns the
+    // view-relative yaw into a compass bearing; x=East, y=North, z=Up.
     function clickRay(yaw, pitch) {
       const scan    = panoramas[currentIdx];
       const bearing = (yaw + (scan.northOffset || 0)) * Math.PI / 180;
@@ -319,6 +349,8 @@
       };
     }
 
+    // Intersect the ray with the horizontal "floor" plane at scan Z + #plane-dz.
+    // There is no point cloud here, so the plane is the only depth reference.
     function rayHitPlane(ray) {
       const scan   = panoramas[currentIdx];
       const planeZ = scan.z + parseFloat(document.getElementById('plane-dz').value || 0);
@@ -328,6 +360,8 @@
       return { x: ray.ox + t*ray.dx, y: ray.oy + t*ray.dy, z: planeZ };
     }
 
+    // Point on the ray at a fixed distance — used to give angle measurements
+    // representative LV95 endpoints (10 m) so they can be redrawn later.
     function lv95AtDist(yaw, pitch, dist) {
       const scan    = panoramas[currentIdx];
       const bearing = (yaw + (scan.northOffset || 0)) * Math.PI / 180;
@@ -339,6 +373,7 @@
       };
     }
 
+    // Great-circle angle between two view directions (dot product of unit vectors).
     function angularDist(yaw1, pitch1, yaw2, pitch2) {
       const no = (panoramas[currentIdx].northOffset || 0) * Math.PI / 180;
       const b1 = yaw1*Math.PI/180 + no,  b2 = yaw2*Math.PI/180 + no;
@@ -378,7 +413,7 @@
 
     function doArea() {
       const pts = measurePts.map(p => p.lv95);
-      let a = 0;
+      let a = 0;   // shoelace formula on the horizontal (x/y) projection
       for (let i = 0; i < pts.length; i++) {
         const j = (i+1) % pts.length;
         a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
@@ -420,6 +455,8 @@
       canvas.height = Math.max(1, Math.round(rect.height));
     }
 
+    // Inverse of clickRay: direction from the current scan to an LV95 point,
+    // as view-relative yaw/pitch — lets committed measurements survive scan moves.
     function lv95ToYawPitch(pt, scan) {
       const dx = pt.x - scan.x, dy = pt.y - scan.y, dz = pt.z - scan.z;
       const horiz   = Math.sqrt(dx*dx + dy*dy);
@@ -430,6 +467,8 @@
       return { yaw, pitch: Math.atan2(dz, horiz) * 180 / Math.PI };
     }
 
+    // Project yaw/pitch to overlay-canvas pixels (perspective, matches Pannellum's
+    // view). Returns null when off-screen/behind (>87° from view centre).
     function yawPitchToCanvas(yaw, pitch) {
       if (!pannellumViewer) return null;
       const hfov = pannellumViewer.getHfov();
@@ -450,6 +489,8 @@
       return { x, y };
     }
 
+    // Self-scheduling rAF loop: redraws all measurements over the panorama every
+    // frame (cheap — a handful of projections) so they track camera movement.
     function drawMeasureCanvas() {
       const canvas = document.getElementById('measure-canvas');
       const ctx    = canvas.getContext('2d');
@@ -597,6 +638,7 @@
     window.addEventListener('resize', resizeCanvas);
 
     // ── Panorama loading ──────────────────────────────────────────────────────
+    // Fill the dropdown with panorama-capable datasets; honour ?id= on boot.
     async function loadDatasets() {
       const res      = await fetch('/api/datasets');
       const datasets = await res.json();
@@ -642,8 +684,11 @@
       scanNav.style.display = 'flex';
       if (ds.type === 'e57' || ds.type === 'pointcloud') {
         potreeLink.style.display = 'inline-block';
+        // NOTE: legacy target — /viewers/potree.html predates the
+        // potree18/potreenext split and no longer exists. Left as-is.
         potreeLink.href = `/viewers/potree.html?id=${ds.id}`;
       }
+      // ?pos= picks the starting scan within the dataset
       const startIdx = posId ? panoramas.findIndex(p => p.id === posId) : 0;
       currentIdx = startIdx >= 0 ? startIdx : 0;
       showPanorama(currentIdx);
@@ -659,6 +704,10 @@
       </svg>`;
     }
 
+    // ── Spatial navigation hotspots ───────────────────────────────────────────
+    // Build a Pannellum hotspot for every other scan within 10 m horizontally:
+    // camera icon sized by distance, tooltip with label/distance, click jumps to
+    // that scan while preserving the current compass heading.
     function computeNeighborHotspots(idx, panoramas) {
       const cur = panoramas[idx];
       if (cur.x == null) return [];
@@ -708,6 +757,8 @@
         });
     }
 
+    // (Re)create the Pannellum viewer for scan idx. Pannellum has no scene-swap
+    // API that re-applies hotspots cleanly, so destroy + recreate each time.
     function showPanorama(idx, initialYaw = 0, initialPitch = 0, initialHfov = 100) {
       currentIdx = idx;
       cancelCurrent();   // clear in-progress points; keep completed measurements

@@ -1,4 +1,19 @@
 <!DOCTYPE html>
+<!--
+  index.html — portal landing page (static shell)
+
+  Markup-only shell for the platform dashboard: header navigation to the main
+  viewers, hero text, viewer cards, a searchable dataset list and the
+  "Add Dataset" modal. All dynamic behaviour (fetching GET /api/datasets,
+  rendering the building-grouped dataset rows, search filtering, POSTing new
+  datasets, routing each dataset type to its viewer) lives in /js/portal.js.
+
+  Input: none (no query params).
+  External libs: none — only /css/portal.css and /js/portal.js.
+
+  Key ids consumed by portal.js: #search-input, #btn-add, #datasets-list,
+  #modal, #add-form, #btn-cancel. Do not rename without updating portal.js.
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -58,6 +73,8 @@
       </div>
     </section>
 
+    <!-- Dataset list — populated by portal.js from GET /api/datasets;
+         #search-input filters live, #btn-add opens the modal below. -->
     <section class="datasets-section">
       <div class="datasets-header">
         <h2>Datasets</h2>
@@ -72,7 +89,7 @@
     </section>
   </main>
 
-  <!-- Add Dataset Modal -->
+  <!-- Add Dataset Modal — portal.js wires #add-form submit to POST /api/datasets -->
   <div id="modal" class="modal hidden">
     <div class="modal-box">
       <h3>Add Dataset</h3>

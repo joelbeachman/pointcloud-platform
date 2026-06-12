@@ -37,7 +37,7 @@ Files: public/viewers/cesium.html
 Deliverable: section the large file with clear comment banners, document the
 data-loading flow (datasets, camera, building navigation), remove dead code.
 
-### Batch D — Other viewers — STATUS: pending (next window)
+### Batch D — Other viewers — STATUS: done (next window) — commit cleanup(batch-d)
 Files: public/viewers/{potree18,potreenext,panorama,mobile,splat,compare,pdf,video}.html,
 public/index.html
 Deliverable: clean + document each viewer's purpose and inputs; add

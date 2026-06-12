@@ -1,4 +1,18 @@
 <!DOCTYPE html>
+<!--
+  pdf.html — PDF document viewer
+
+  Renders a single PDF dataset in an <iframe> (browser-native PDF rendering),
+  with a slim toolbar showing dataset name/metadata and an "open in new tab" link.
+
+  Input:
+    ?id=<datasetId>   required — resolved via GET /api/datasets/:id.
+                      The dataset's `path` must point to a PDF file; `name`,
+                      `building`, `source` and `description` feed the toolbar.
+
+  Routing: portal.js links datasets of type "document" here.
+  External libs: none (relies on the browser's built-in PDF plugin).
+-->
 <html lang="de">
 <head>
   <meta charset="UTF-8">
@@ -40,6 +54,7 @@
   <iframe id="doc-frame" title="Dokument"></iframe>
 
   <script>
+    // ── Init: resolve ?id= to a dataset, then point the iframe at its PDF ──
     (async () => {
       const params = new URLSearchParams(location.search);
       const id = params.get('id');
@@ -63,7 +78,7 @@
         if (ds.description) parts.push(ds.description);
         metaEl.textContent = parts.length ? '· ' + parts.join(' · ') : '';
         const src = encodeURI(ds.path);
-        frame.src = src + '#view=FitH';
+        frame.src = src + '#view=FitH';   // FitH = fit page width (PDF open parameter)
         openTab.href = src;
       } catch (e) {
         document.body.innerHTML = '<div class="error">' + e.message + '</div>';

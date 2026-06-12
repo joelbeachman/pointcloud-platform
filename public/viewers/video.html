@@ -1,4 +1,19 @@
 <!DOCTYPE html>
+<!--
+  video.html — video dataset viewer
+
+  Plays a single video dataset: either a YouTube embed (if the dataset has a
+  `youtubeId`) or a plain HTML5 <video> element pointed at the dataset's `path`.
+
+  Input:
+    ?id=<datasetId>   required — resolved via GET /api/datasets/:id.
+                      Dataset fields used: `name`, `building`, `description`,
+                      `path` (file URL), `youtubeId`, `start`/`end` (seconds,
+                      optional clip range for the YouTube embed).
+
+  Routing: portal.js links datasets of type "video" here.
+  External libs: none (YouTube iframe API is loaded by the embed itself).
+-->
 <html lang="de">
 <head>
   <meta charset="UTF-8">
@@ -40,6 +55,7 @@
   <div class="vid-stage" id="vid-stage"></div>
 
   <script>
+    // ── Init: resolve ?id= to a dataset, then mount YouTube embed or <video> ──
     (async () => {
       const id = new URLSearchParams(location.search).get('id');
       const titleEl = document.getElementById('vid-title');
@@ -59,6 +75,8 @@
         metaEl.textContent = parts.length ? '· ' + parts.join(' · ') : '';
         openTab.href = ds.path || '#';
 
+        // YouTube datasets get an embed (optionally clipped to start/end seconds);
+        // everything else is treated as a directly playable video file.
         if (ds.youtubeId) {
           const p = new URLSearchParams({ autoplay: '1', rel: '0' });
           if (ds.start != null) p.set('start', ds.start);

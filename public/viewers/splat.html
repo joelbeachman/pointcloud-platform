@@ -1,4 +1,23 @@
 <!DOCTYPE html>
+<!--
+  splat.html — Gaussian splat viewer
+
+  Renders 3D Gaussian splat reconstructions (.splat / .ksplat / 3DGS .ply)
+  using the GaussianSplats3D library, with custom quaternion trackball
+  controls (no gimbal lock) instead of the library's built-in controls.
+
+  Input:
+    ?id=<datasetId>   optional — auto-loads that dataset on open.
+    Dataset dropdown is filled from GET /api/datasets, filtered to
+    type === "splat"; the selected dataset's `path` is fed to addSplatScene().
+
+  Routing: portal.js links datasets of type "splat" here; also in the header nav.
+  External libs (local copies in /libs, NOT modules):
+    - /libs/three.min.js            Three.js r149 (last UMD build that works
+                                    with the GaussianSplats3D global bundle)
+    - /libs/gaussian-splats-3d.umd.js  mkkellogg/GaussianSplats3D UMD build,
+                                    exposed as window["Gaussian Splats 3D"]
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -75,6 +94,7 @@
   <script>const GaussianSplats3D = window["Gaussian Splats 3D"];</script>
 
   <script>
+    // ── DOM refs + state ─────────────────────────────────────────────────────
     const select = document.getElementById('dataset-select');
     const overlay = document.getElementById('overlay');
     const overlayTitle = document.getElementById('overlay-title');
@@ -85,8 +105,8 @@
     const params = new URLSearchParams(location.search);
     const datasetId = params.get('id');
 
-    let currentViewer = null;
-    let tbCleanup = null;
+    let currentViewer = null;   // active GaussianSplats3D.Viewer (disposed on reload)
+    let tbCleanup = null;       // removes trackball listeners from the previous load
 
     function showOverlay(title, msg, pct) {
       overlay.style.display = 'flex';
@@ -188,6 +208,8 @@
     }
     // ────────────────────────────────────────────────────────────────────────
 
+    // ── Dataset loading ──────────────────────────────────────────────────────
+    // Fill the dropdown with splat-type datasets; auto-load if ?id= was given.
     async function loadDatasets() {
       const res = await fetch('/api/datasets');
       const datasets = await res.json();
@@ -209,6 +231,8 @@
       loadSplat(ds);
     });
 
+    // Tear down any existing viewer, then create a fresh one and stream the
+    // splat scene from ds.path. Overlay reports coarse progress milestones.
     async function loadSplat(ds) {
       if (currentViewer) {
         try { currentViewer.dispose(); } catch(e) {}

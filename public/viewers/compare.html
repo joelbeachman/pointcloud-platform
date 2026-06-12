@@ -1,4 +1,16 @@
 <!DOCTYPE html>
+<!--
+  compare.html — side-by-side viewer comparison
+
+  Hosts two of the other viewers (Cesium, Splat, Potree 1.8, Potree-Next) in
+  <iframe>s with a draggable divider. Supports horizontal/vertical split and
+  fullscreening either pane. Each embedded viewer manages its own dataset
+  selection — this page passes no query params into the iframes.
+
+  Input: none (no query params). Defaults: left = Cesium, right = Potree 1.8.
+  Routing: linked from the portal header nav ("Compare").
+  External libs: none on this page (the embedded viewers load their own).
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -125,7 +137,7 @@
     const leftLabel = document.getElementById('left-label');
     const rightLabel = document.getElementById('right-label');
 
-    // Viewer select
+    // ── Viewer selects: swap the iframe src and the floating pane label ──
     document.getElementById('left-viewer').addEventListener('change', e => {
       leftFrame.src = e.target.value;
       leftLabel.textContent = e.target.options[e.target.selectedIndex].text;
@@ -135,7 +147,7 @@
       rightLabel.textContent = e.target.options[e.target.selectedIndex].text;
     });
 
-    // Layout buttons
+    // ── Layout buttons: H/V split or fullscreen one pane (hides the other) ──
     document.getElementById('btn-split-h').addEventListener('click', () => {
       container.style.flexDirection = 'row';
       divider.style.display = 'block';
@@ -173,7 +185,8 @@
       });
     }
 
-    // Drag to resize
+    // ── Drag to resize: divider sets a fixed flex-basis on the left pane ──
+    // (min 200px horizontally / 100px vertically on either side).
     let dragging = false, startX, startY, startLeftW, startLeftH;
     divider.addEventListener('mousedown', e => {
       dragging = true;

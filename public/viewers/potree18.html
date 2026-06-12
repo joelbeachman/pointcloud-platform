@@ -1,4 +1,34 @@
 <!DOCTYPE html>
+<!--
+  potree18.html — Potree 1.8 (WebGL) point-cloud viewer
+
+  Full Potree 1.8 viewer (EDL, sidebar with measurement/clipping tools) plus
+  platform extensions:
+    - Datasets panel (header button) listing type "potree" clouds to load and
+      type "cesium" GLB tilesets to drape into the scene as Three.js overlays.
+    - Scan-position spheres in the cloud; clicking one opens a Pannellum
+      panorama overlay with scan-to-scan navigation hotspots.
+    - Panorama measurement tools (point/distance/horizontal/area) that raycast
+      the visible point cloud nodes (floor-plane fallback) and bridge results
+      back into Potree.Measure objects so they appear in the 3D scene/sidebar.
+
+  Input:
+    ?id=<datasetId>  optional — resolved via GET /api/datasets/:id; defaults to
+                     the Haus Eggiwil cloud (/data/potree/haus-eggiwil/).
+                     Dataset fields used: path (Potree metadata.json), name,
+                     panoramasPath (JSON with panoramas[]: path, x/y/z LV95,
+                     northOffset, label, id).
+    Potree also reads its own view settings from the URL (loadSettingsFromURL).
+
+  Coordinates: the Potree scene works in raw LV95 (EPSG:2056) world metres —
+  scan positions and measurements share that frame directly.
+
+  Routing: portal.js links datasets of type "potree" here; also in header nav.
+  External libs: Potree 1.8 bundle + its vendored deps from /libs/potree18/
+  (jQuery, jQuery-UI, spectrum, OpenLayers, i18next, jstree, proj4, d3, tween,
+  laslaz), Pannellum 2.5.6 (CDN), and Three.js r124 + GLTFLoader (CDN, loaded
+  after potree.js) which provide the window.THREE used by the GLB overlay loader.
+-->
 <html lang="en">
 <head>
 	<meta charset="utf-8">
@@ -192,13 +222,16 @@
 				<button id="pano-btn-prev">&#8592; Prev</button>
 				<span id="pano-scan-label">Scan 1 / 1</span>
 				<button id="pano-btn-next">Next &#8594;</button>
+			</div><!-- /pano-scan-nav -->
 			</div><!-- /pano-inner -->
-			</div><!-- /pano-overlay -->
-		</div><!-- /potree_render_area (pano-overlay closes here) -->
-		</div><!-- closes potree_render_area -->
+		</div><!-- /pano-overlay -->
+		</div><!-- /potree_render_area -->
 		<div id="potree_sidebar_container"></div>
 	</div><!-- /potree_container -->
 
+	<!-- Potree 1.8 vendored dependencies (load order matters — potree.js expects
+	     jQuery & co. to exist). Three.js + GLTFLoader come last and supply the
+	     window.THREE used by the GLB overlay loader below. -->
 	<script src="../libs/potree18/jquery/jquery-3.1.1.min.js"></script>
 	<script src="../libs/potree18/spectrum/spectrum.js"></script>
 	<script src="../libs/potree18/jquery-ui/jquery-ui.min.js"></script>
@@ -219,6 +252,7 @@
 		function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 		function escAttr(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
 
+		// Load an additional Potree point cloud from the datasets panel.
 		window.loadPotreeDataset = function(path, name) {
 			Potree.loadPointCloud(path, name || path, e => {
 				const pc = e.pointcloud;
@@ -233,6 +267,9 @@
 		};
 
 		// ── GLB overlay loader for cesium/3D-Tiles datasets ──────────────────────
+		// Drapes a building model into the Potree scene: fetches the tileset.json,
+		// picks the highest-detail .glb (lod0 preferred), and transforms it from
+		// glTF local space into the LV95 world frame via asset.extras.lv95Origin.
 		const _glbOverlays = new Map(); // tilesetUrl → THREE.Group
 
 		window.loadGlbOverlay = async function(tilesetUrl, name) {
@@ -313,6 +350,8 @@
 			if (group) group.visible = !group.visible;
 		};
 
+		// ── Datasets panel (header button) ───────────────────────────────────────
+		// Lists "potree" clouds (Load) and "cesium" tilesets (Load GLB) from the API.
 		window.toggleDatasetsPanel = async function() {
 			const panel = document.getElementById('datasets-panel');
 			if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
@@ -374,6 +413,7 @@
 			} catch(e) { console.warn('Failed to resolve dataset', _dsId, e); }
 		}
 
+		// ── Potree viewer init ───────────────────────────────────────────────────
 		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
 
 		viewer.setEDLEnabled(true);
@@ -521,13 +561,15 @@
 			horizontal: { hex: '#3fb950', label: 'Horiz.' },
 			area:       { hex: '#a371f7', label: 'Area' },
 		};
-		let activeMeasTool = null;
-		let curMeasPts = [];
-		let measurements = [];
-		let measureCount = 0;
-		let measRafRunning = false;
-		let bridgedMeasures = [];
+		let activeMeasTool = null;    // 'point' | 'distance' | 'horizontal' | 'area' | null
+		let curMeasPts = [];          // in-progress LV95 points for the active tool
+		let measurements = [];        // committed: {id, num, tool, display, pts}
+		let measureCount = 0;         // running label number shown on the canvas
+		let measRafRunning = false;   // guards the overlay rAF loop
+		let bridgedMeasures = [];     // Potree.Measure objects created from pano tools
 
+		// Minimal Vector3 stand-in with just the methods Potree.Measure.addMarker
+		// touches — avoids depending on which THREE build owns the global.
 		function mkVec3(x, y, z) {
 			const v = {
 				x, y, z,
@@ -546,6 +588,8 @@
 			return v;
 		}
 
+		// Mirror a committed pano measurement into the 3D scene as a real
+		// Potree.Measure so it shows up in the viewer and the sidebar list.
 		function bridgeToPotree18(tool, pts) {
 			if (!pts.length) return;
 			const m = new Potree.Measure();
@@ -561,6 +605,10 @@
 			$('#menu_measurements').next().slideDown();
 		}
 
+		// CPU raycast against the currently *visible* (loaded LOD) point cloud
+		// nodes: keep the nearest point inside a narrow cone around the ray
+		// (radius grows with distance, maxCone rad ≈ 0.46°). Brute force, but the
+		// visible-node budget keeps the point count manageable.
 		function raycastPointCloud18(origin, dir) {
 			const pcs = viewer.scene.pointclouds;
 			if (!pcs?.length) return null;
@@ -589,6 +637,9 @@
 			return bestPt;
 		}
 
+		// Pano click → LV95 point: build a world ray from the scan position
+		// (northOffset converts view yaw to compass bearing), try the point cloud
+		// first, otherwise intersect a floor plane at scan Z − #pano-floor-offset.
 		function panoPick(yawDeg, pitchDeg) {
 			const scan = panos[panoIdx];
 			if (!scan || scan.x == null) return null;
@@ -607,6 +658,8 @@
 			return { x: scan.x + t*dir.x, y: scan.y + t*dir.y, z: scan.z - floorOffset };
 		}
 
+		// Inverse of panoPick's ray: direction from the current scan to an LV95
+		// point, as view-relative yaw/pitch.
 		function lv95ToPanoYawPitch(pt) {
 			const scan = panos[panoIdx];
 			const dx = pt.x - scan.x, dy = pt.y - scan.y, dz = pt.z - scan.z;
@@ -619,6 +672,9 @@
 			return { yaw, pitch };
 		}
 
+		// Perspective-project a yaw/pitch direction into overlay-canvas pixels by
+		// decomposing it onto the camera's right/up/forward basis (matches the
+		// Pannellum view). `behind` marks points >90° from the view direction.
 		function yawPitchToMeasCanvas(yaw, pitch) {
 			if (!panoViewer) return null;
 			const hfov = panoViewer.getHfov();
@@ -678,6 +734,8 @@
 			}
 		}
 
+		// rAF loop while the overlay is open: reprojects committed + in-progress
+		// measurements from LV95 every frame so they track the pano camera.
 		function drawPanoMeasureCanvas() {
 			const canvas = document.getElementById('pano-measure-canvas');
 			const ctx = canvas.getContext('2d');
@@ -758,6 +816,9 @@
 			document.body.classList.remove('pano-measuring');
 		}
 
+		// While the pano overlay is open, hijack clicks on the Potree sidebar's
+		// measurement-tool icons (capture phase) and start the matching pano tool
+		// instead — the sidebar stays the single control surface for measuring.
 		let _panoInterceptor = null;
 		function installPanoInterceptor() {
 			if (_panoInterceptor) return;
@@ -809,7 +870,7 @@
 		}
 		function doArea() {
 			if (curMeasPts.length < 3) return;
-			let area = 0;
+			let area = 0;   // shoelace formula on the horizontal (x/y) projection
 			const n = curMeasPts.length;
 			for (let i = 0; i < n; i++) {
 				const a = curMeasPts[i], b = curMeasPts[(i+1) % n];
@@ -852,6 +913,8 @@
 			renderMeasResults();
 		});
 
+		// Pano click → yaw/pitch: unproject the pixel through the camera basis
+		// (inverse of yawPitchToMeasCanvas), then panoPick() resolves it to LV95.
 		document.getElementById('pano-measure-capture').addEventListener('mousedown', e => {
 			if (e.button !== 0 || !activeMeasTool || !panoViewer) return;
 			const div = document.getElementById('pano-div');

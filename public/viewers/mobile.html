@@ -1,4 +1,28 @@
 <!DOCTYPE html>
+<!--
+  mobile.html — minimal mobile Cesium viewer (kiosk demos)
+
+  Touch-first, model-only Cesium globe for showing single-building GLB
+  3D-Tiles demos on phones/tablets. No point clouds, no measurement tools,
+  no UI chrome — just a splash menu and big touch buttons. Three demos:
+    eggiwil  — Haus Eggiwil: toggle between Ballenberg today and its 1684
+               original site, with a swisstopo "Zeitreise" map/orthophoto
+               year slider.
+    phases   — Stallscheune Meggen: switch between two construction phases.
+    tragwerk — timber structure coloured by load zone via CustomShader.
+
+  Input:
+    ?demo=eggiwil|phases|tragwerk   optional — no param shows the splash menu.
+    Datasets are fetched from GET /api/datasets and looked up by hardcoded ids
+    (gesamtmodell_* GLB 3D-Tiles tilesets, haus-eggiwil cloud for anchoring).
+    Dataset fields used: path, building, group, historicalLV95.
+
+  External services/libs:
+    - CesiumJS via the local /cesium-proxy/ (same boot path as cesium.html)
+    - swisstopo 3D terrain + WMTS Zeitreise/swissimage imagery
+  Coordinate helpers (LV95→WGS84 etc.) are copied verbatim from cesium.html;
+  see inline notes — candidates for extraction into a shared module.
+-->
 <html lang="de">
 <head>
   <meta charset="UTF-8">
