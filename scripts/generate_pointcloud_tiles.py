@@ -87,6 +87,9 @@ def main():
     p.add_argument('--name', help='Human-readable name (default: the id)')
     p.add_argument('--data-dir', default=DATA_DIR, help=f'Data root (default: {DATA_DIR})')
     p.add_argument('--jobs', type=int, default=None, help='Parallel workers (default: all CPUs)')
+    p.add_argument('--cache-size', type=int, default=None,
+                   help='py3dtiles in-RAM cache in MB (lower = less memory, more '
+                        'disk I/O; default: available memory / 10)')
     p.add_argument('--srs-in', type=int, default=2056,
                    help='Numeric EPSG of input, stored as CRS (default: 2056)')
     p.add_argument('--no-rgb', action='store_true', help='Drop colour attributes')
@@ -118,6 +121,8 @@ def main():
     cmd = ['py3dtiles', 'convert', input_path, '--out', out_dir, '--overwrite']
     if args.jobs:
         cmd += ['--jobs', str(args.jobs)]
+    if args.cache_size:
+        cmd += ['--cache_size', str(args.cache_size)]
     if args.no_rgb:
         cmd += ['--no-rgb']
     print('  $ ' + ' '.join(cmd))
