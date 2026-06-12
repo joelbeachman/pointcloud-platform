@@ -10,7 +10,7 @@ relative paths.
 
 | Input                                            | Handled by              |
 |--------------------------------------------------|-------------------------|
-| Point clouds: `.las .laz .e57 .xyz .txt .pts .ptx .pcd .ply` | `process.py` |
+| Point clouds: `.las .laz .e57 .xyz .txt .pts .ptx .pcd .ply` | `process.py` (single tile) · `generate_pointcloud_tiles.py` (LOD, large clouds) |
 | Meshes: `.obj .glb .gltf .stl` and mesh `.ply`   | `process.py`            |
 | Gaussian splats: `.splat`, 3DGS `.ply`           | `process.py` (+ `convert_splat.py`) |
 | Blender Gesamtmodell (`Gesamtsmodell_V3.blend`)  | `export_blender_glb.py` chain |
@@ -32,6 +32,10 @@ raw file ──▶ process.py ──▶ data/cesium/<id>/tileset.json   (point c
   invokes via `POST /api/helmert` (Horn/Kabsch SVD fit on user-picked point
   pairs; returns `{R, s, t, residuals, rms}` on stdout).
 - `--batch` processes a whole directory, optionally with a per-file JSON config.
+- `--max-points N` randomly downsamples a point cloud to at most N points before
+  writing (deterministic via `--seed`; default: keep every point). NOTE:
+  `process.py` writes a **single `.pnts` tile with no level-of-detail**, so the
+  result must still fit in a browser — for very large clouds use Pipeline 3.
 
 **`convert_splat.py`** (optional post-step): converts a `.splat` file into a
 3D Tiles directory (`splat.glb` + `tileset.json`) using the
@@ -61,6 +65,41 @@ Run in order:
    `data/datasets.json` that derives `building`, `buildingName`, `phase`,
    `phaseLabel`, and `isGroupMaster` from group/name conventions, plus a few
    hand-maintained mappings.
+
+## Pipeline 3 — massive point clouds → LOD 3D Tiles (`generate_pointcloud_tiles.py`)
+
+`process.py` writes a point cloud as a **single `.pnts` tile** containing every
+point, with no level-of-detail — fine up to ~10–20M points, but the browser
+loads the whole thing at once. For larger clouds, `generate_pointcloud_tiles.py`
+wraps **py3dtiles** to build a streaming **3D Tiles octree**: each zoom level
+loads only the tiles it needs, so tens-to-hundreds of millions of points render
+progressively in the same Cesium viewer.
+
+```
+big.las ──▶ generate_pointcloud_tiles.py ──▶ data/cesium/<id>/tileset.json  (+ N .pnts LOD tiles)
+                                          └──▶ upserts entry in data/datasets.json
+```
+
+```
+python3 scripts/generate_pointcloud_tiles.py INPUT.las --id ID --name "NAME" \
+        [--jobs N] [--cache-size MB] [--srs-in 2056] [--no-rgb] [--overwrite]
+```
+
+- Keeps input coordinates (no reprojection), like `process.py`, and registers a
+  `type: cesium` dataset — the portal and `cesium.html` pick it up unchanged.
+- Requires `py3dtiles` (`pip install py3dtiles`); `.laz` inputs also need
+  `laspy[lazrs]`.
+- **Memory**: py3dtiles peak RAM scales with `--jobs` and `--cache-size`. On
+  small hosts lower both (e.g. `--jobs 4 --cache-size 256`). Full-res conversion
+  of very large clouds (100M+) can exceed a small machine's RAM — if so,
+  decimate first and tile the reduced cloud.
+
+Example — the "massive" Eggiwil set on a 7.7 GB host: the 251M-point source LAS
+OOMs at full resolution, so it was streamed-decimated to ~31M points (every 8th)
+and tiled with `--jobs 4 --cache-size 256`, yielding a 4,588-tile LOD octree
+(~460 MB, registered as `haus-eggiwil-massive`) that streams smoothly. The
+Cesium viewer's **Punktgröße** slider (below Zeitreise) adjusts the rendered
+point size.
 
 ## Utilities
 
