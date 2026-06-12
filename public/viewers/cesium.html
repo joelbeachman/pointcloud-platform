@@ -766,6 +766,16 @@
 
         <div style="font-size:0.6rem;color:#484f58;padding:0.1rem 0.35rem">© swisstopo</div>
       </div>
+
+      <!-- Point size (point-cloud visualisation) -->
+      <div style="padding:0.1rem 0.15rem 0.4rem;border-top:1px solid #21262d">
+        <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.07em;color:#8b949e;padding:0.35rem 0.35rem 0.35rem">
+          Punktgröße<span id="pt-size-val" style="float:right;color:#c9d1d9;letter-spacing:0">3.0&nbsp;px</span>
+        </div>
+        <div style="padding:0.05rem 0.35rem 0.2rem">
+          <input type="range" id="pt-size-slider" class="zt-slider" min="1" max="8" step="0.5" value="3">
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1091,6 +1101,7 @@
     let layers       = [];   // { id, dsId, name, color, tileset, panoEnts, visible }
     let allDatasets  = [];
     let ztApply = null, ztUpdateHighlight = null;   // set by Zeitreise block
+    let applyPointSize = null, pointSize = 3.0;      // set by point-size block
     let colorIdx     = 0;
 
     let gcpLayerId    = null;
@@ -2188,6 +2199,9 @@
         // Init clip origin from first layer; re-apply any active clip box
         if (!cbOriginEcef) initClipOrigin();
         if (clipBoxList.some(x => x.enabled)) applyClipBoxes();
+
+        // Apply the current point size to this freshly-loaded point-cloud layer
+        if (applyPointSize) applyPointSize(pointSize);
       } catch (err) {
         console.error('Layer load error:', err);
         layer.error = err.message || 'Failed to load';
@@ -2860,6 +2874,39 @@
       kartenYear.addEventListener('keydown', e => { if (e.key === 'Enter') kartenYear.blur(); });
 
       ztApply = applyZeitreise;
+    }
+
+    // ====== Point size (point-cloud visualisation) ======
+    // Sets a fixed pixel size on every point-cloud (.pnts) tileset via its
+    // Cesium3DTileStyle. Mesh tilesets (GLB/b3dm) ignore pointSize, so it is
+    // safe to apply to all layers. The slider lives below Zeitreise; addLayer()
+    // re-applies the current size to freshly-loaded layers.
+    {
+      const slider = document.getElementById('pt-size-slider');
+      const valLbl = document.getElementById('pt-size-val');
+
+      function styleTileset(ts, size) {
+        if (ts) ts.style = new Cesium.Cesium3DTileStyle({ pointSize: size });
+      }
+      applyPointSize = function (size) {
+        pointSize = size;
+        for (const l of layers) {
+          styleTileset(l.tileset, size);
+          (l.subTilesets ?? []).forEach(st => styleTileset(st, size));
+        }
+      };
+      function syncLabel() {
+        valLbl.textContent = pointSize.toFixed(1) + ' px';
+      }
+
+      if (slider) {
+        slider.value = pointSize;
+        syncLabel();
+        slider.addEventListener('input', () => {
+          applyPointSize(parseFloat(slider.value));
+          syncLabel();
+        });
+      }
     }
 
     // ====== Camera & navigation ======
