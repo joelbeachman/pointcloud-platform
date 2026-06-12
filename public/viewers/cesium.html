@@ -1,4 +1,50 @@
 <!DOCTYPE html>
+<!--
+  ============================================================================
+  Cesium 3D Viewer - Point Cloud Platform
+  ============================================================================
+  Single-file viewer (HTML + inline JS) that renders 3D Tiles datasets
+  (LiDAR point clouds, splats, textured building models) on a CesiumJS globe
+  draped over swisstopo terrain, with measurement tools, building-centric
+  navigation, clip boxes, historical placement and a panorama hand-off.
+
+  External libraries
+    - CesiumJS  : loaded through the local /cesium-proxy/ (patches decodeSpz.js
+                  for splat decoding; all other resources redirect to the CDN)
+    - Pannellum : equirectangular panorama viewer for the scan-station overlay
+
+  Data sources / endpoints
+    - GET   /api/datasets       dataset catalogue (datasets.json): tileset paths,
+                                building/group metadata, panoramas, historicalLV95,
+                                saved georeferencing (modelMatrix / helmertLV95)
+    - 3D Tiles                  Cesium3DTileset.fromUrl(ds.path), one per layer
+    - swisstopo terrain         quantized-mesh, LN02 orthometric heights
+    - swisstopo WMTS            Zeitreise historical aerial imagery + maps
+    - POST  /api/helmert        server-side Helmert solve for GCP georeferencing
+    - POST  /api/profile        point sampling for the elevation profile panel
+    - PATCH /api/datasets/:id   persist georeferencing & historical positions
+
+  Coordinate / datum conventions (see also scripts/generate_3dtiles.py)
+    - Tileset vertices are either absolute Swiss LV95 (point clouds; an ENU
+      modelMatrix is derived at load time) or positioned by an embedded
+      tileset.json root transform (GLB building models; modelMatrix = identity).
+    - Heights are LN02 orthometric end-to-end (terrain AND tilesets), so no
+      geoid-undulation shift is applied at runtime.
+
+  URL params:  ?id=<datasetId> loads one dataset; ?building=<NNN> loads the
+  whole building bundle.
+
+  Script layout (in order - look for the "======" banners):
+    Initialization | Constants & state | Measurement tools | Scan-station
+    markers | Coordinate systems & georeferencing | Historical placement math |
+    GCP panel | Dataset loading & layer management (incl. Tragwerk coloring) |
+    Historical-position toggle & editor | Layer list UI (Bauphasen groups) |
+    Building selection + documents/media | Zeitreise | Camera & navigation |
+    Dataset catalogue & startup | Add-Layer modal | UI wiring | Keyboard &
+    mouse input | Clip boxes | Panorama overlay & hand-off | Elevation
+    profile | Boot
+  ============================================================================
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -980,6 +1026,8 @@
   </div>
 
   <script>
+    // ====== Initialization: Cesium viewer, terrain & scene setup ======
+
     // ── CesiumJS viewer (open source, Apache 2.0 — no Ion) ────────────────────
     const viewer = new Cesium.Viewer('cesiumContainer', {
       animation: false, baseLayerPicker: false, fullscreenButton: false,
@@ -1005,13 +1053,11 @@
     // Swiss vertical datum). Our building tilesets are also in LN02 orthometric
     // (GEOID_UNDULATION = 0 in generate_3dtiles.py), so they sit ON the terrain
     // directly. No runtime height shift needed.
-    let swissTerrainReady = false;
     Cesium.CesiumTerrainProvider.fromUrl(
       'https://3d.geo.admin.ch/ch.swisstopo.terrain.3d/v1/',
       { requestVertexNormals: true }
     ).then(provider => {
       viewer.terrainProvider = provider;
-      swissTerrainReady = true;
       console.log('[terrain] swisstopo quantized-mesh loaded');
     }).catch(err => {
       console.warn('[terrain] swisstopo load failed — staying on ellipsoid:', err);
@@ -1027,6 +1073,8 @@
     viewer.scene.screenSpaceCameraController.minimumZoomDistance = 0.1;
     // Prevent default double-click zoom from interfering with area measurement
     viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+
+    // ====== Constants & shared state ======
 
     // ── Colour palettes ────────────────────────────────────────────────────────
     const LAYER_COLORS = ['#58a6ff','#3fb950','#f0883e','#a371f7','#e3b341','#79c0ff','#56d364'];
@@ -1066,7 +1114,6 @@
     let profLineEnt   = null; // polyline entity in 3D scene
     let profDotEnts   = [];   // dot entities at waypoints
     let profData      = null; // [{d, z, r?, g?, b?}] last result from server
-    let profLoading   = false;
     let profHalfWidth = 2;
     let profLayerId   = null; // dataset ID to query
 
@@ -1084,6 +1131,8 @@
     let cbCount          = 0;
     let cbMixedShader    = null; // CustomShader instance for mixed inside+outside mode
     let cbPreRenderHandle = null; // removeEventListener fn for scene.preRender uniform update
+
+    // ====== Measurement tools (distance / horizontal / vertical / area / coords) ======
 
     // ── Measurement coordinate helpers (ENU local ↔ ECEF) ─────────────────────
     function getRefMatrix() {
@@ -1358,7 +1407,6 @@
       curEnts.forEach(e => viewer.entities.remove(e));
       curEnts = []; curPts = [];
       previewEnt.show = false; previewPos = [];
-      panoCurPts = [];
       // Clear in-progress profile line drawing
       if (activeTool === 'profile') profClearLine();
     }
@@ -1430,6 +1478,8 @@
       });
     }
 
+    // ====== Scan-station markers (globe billboards that open the panorama) ======
+
     // ── Panorama markers ───────────────────────────────────────────────────────
     function makePanoImg() {
       const s = 128, c = s / 2, cv = document.createElement('canvas');
@@ -1481,7 +1531,7 @@
       });
     }
 
-    // ── Georeferencing helpers ─────────────────────────────────────────────────
+    // ====== Coordinate systems & georeferencing helpers (LV95 ↔ WGS84 ↔ ECEF) ======
 
     // Swiss LV95 (EPSG:2056) → WGS84 decimal degrees + height
     // Swisstopo approximate formulas (Reframe tech. report, ~1 m accuracy)
@@ -1540,14 +1590,6 @@
       return [E, N, H];
     }
 
-    // WGS84 geodetic → ECEF (metres)
-    function wgs84ToEcef(lon, lat, h) {
-      const a  = 6378137.0, f = 1/298.257223563, e2 = 2*f - f*f;
-      const lr = lon * Math.PI/180, pr = lat * Math.PI/180;
-      const Nv = a / Math.sqrt(1 - e2 * Math.sin(pr)**2);
-      return [(Nv+h)*Math.cos(pr)*Math.cos(lr), (Nv+h)*Math.cos(pr)*Math.sin(lr), (Nv*(1-e2)+h)*Math.sin(pr)];
-    }
-
     // True LV95 bounds: E ∈ [2,484,000 … 2,834,000], N ∈ [1,074,000 … 1,299,000]
     function isLv95(x, y) {
       return x > 2484000 && x < 2834000 && y > 1074000 && y < 1299000;
@@ -1564,6 +1606,8 @@
         new Cesium.Cartesian3(-E, -N, -H));
       return Cesium.Matrix4.multiply(enu, shift, new Cesium.Matrix4());
     }
+
+    // ====== Historical placement math (Originalstandort model matrices) ======
 
     // ── Historical placement ───────────────────────────────────────────────────
     // Returns a Cesium3DTileset.modelMatrix that repositions the tileset from FLM
@@ -1639,90 +1683,10 @@
       return Cesium.Matrix4.multiply(R_ecef, T_trans, new Cesium.Matrix4());
     }
 
-    // 3×3 matrix helpers
-    function mm3(A, B) {
-      const R = [[0,0,0],[0,0,0],[0,0,0]];
-      for (let i=0;i<3;i++) for (let j=0;j<3;j++) for (let k=0;k<3;k++) R[i][j]+=A[i][k]*B[k][j];
-      return R;
-    }
-    function mt3(M) { return [[M[0][0],M[1][0],M[2][0]],[M[0][1],M[1][1],M[2][1]],[M[0][2],M[1][2],M[2][2]]]; }
-    function mv3(M, v) { return [0,1,2].map(i=>[0,1,2].reduce((s,k)=>s+M[i][k]*v[k],0)); }
-    function det3(M) {
-      return M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])
-            -M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])
-            +M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
-    }
-
-    // 3×3 SVD via Jacobi eigendecomposition of A^T A
-    // Returns {U, S:[s0,s1,s2], V} with A = U * diag(S) * V^T, singular values descending
-    function svd3(A) {
-      function jacobiSym(M) {
-        let S = M.map(r=>[...r]), V = [[1,0,0],[0,1,0],[0,0,1]];
-        for (let iter=0;iter<100;iter++) {
-          let mx=0, p=0, q=1;
-          for (let i=0;i<3;i++) for (let j=i+1;j<3;j++)
-            if (Math.abs(S[i][j])>mx){ mx=Math.abs(S[i][j]); p=i; q=j; }
-          if (mx < 1e-14) break;
-          const th=(S[q][q]-S[p][p])/(2*S[p][q]);
-          const t=Math.sign(th||1)/(Math.abs(th)+Math.sqrt(1+th*th));
-          const c=1/Math.sqrt(1+t*t), s=t*c;
-          const nS=S.map(r=>[...r]), nV=V.map(r=>[...r]);
-          nS[p][p]=c*c*S[p][p]-2*s*c*S[p][q]+s*s*S[q][q];
-          nS[q][q]=s*s*S[p][p]+2*s*c*S[p][q]+c*c*S[q][q];
-          nS[p][q]=nS[q][p]=0;
-          for (let i=0;i<3;i++) if(i!==p&&i!==q){
-            nS[i][p]=nS[p][i]=c*S[i][p]-s*S[i][q];
-            nS[i][q]=nS[q][i]=s*S[i][p]+c*S[i][q];
-          }
-          for (let i=0;i<3;i++){
-            nV[i][p]=c*V[i][p]-s*V[i][q];
-            nV[i][q]=s*V[i][p]+c*V[i][q];
-          }
-          S=nS; V=nV;
-        }
-        const idx=[0,1,2].sort((a,b)=>S[b][b]-S[a][a]);
-        const evals=idx.map(i=>S[i][i]);
-        const newV=[[0,0,0],[0,0,0],[0,0,0]];
-        for(let j=0;j<3;j++) for(let i=0;i<3;i++) newV[i][j]=V[i][idx[j]];
-        return {evals, V:newV};
-      }
-      const ATA = mm3(mt3(A), A);
-      const {evals, V} = jacobiSym(ATA);
-      const S = evals.map(e=>Math.sqrt(Math.max(0, e)));
-      const AV = mm3(A, V);
-      const U = [[0,0,0],[0,0,0],[0,0,0]];
-      for (let j=0;j<3;j++) for (let i=0;i<3;i++) U[i][j] = S[j]>1e-10 ? AV[i][j]/S[j] : 0;
-      return {U, S, V};
-    }
-
-    // 3D Helmert transformation (Horn/Kabsch SVD approach)
-    // src, dst: arrays of [x,y,z] — at least 4 pairs; useScale: bool
-    // Returns {R, s, t, residuals, rms}
-    function solveHelmert(src, dst, useScale) {
-      const n = src.length;
-      const pBar = [0,1,2].map(i=>src.reduce((a,p)=>a+p[i],0)/n);
-      const qBar = [0,1,2].map(i=>dst.reduce((a,p)=>a+p[i],0)/n);
-      const pc = src.map(p=>[p[0]-pBar[0],p[1]-pBar[1],p[2]-pBar[2]]);
-      const qc = dst.map(p=>[p[0]-qBar[0],p[1]-qBar[1],p[2]-qBar[2]]);
-      const H = [[0,0,0],[0,0,0],[0,0,0]];
-      for (let i=0;i<n;i++) for (let r=0;r<3;r++) for (let c=0;c<3;c++) H[r][c]+=pc[i][r]*qc[i][c];
-      const {U, S, V} = svd3(H);
-      const d = det3(mm3(V, mt3(U)));
-      const D = [[1,0,0],[0,1,0],[0,0,d<0?-1:1]];
-      const R = mm3(V, mm3(D, mt3(U)));
-      const srcVar = pc.reduce((a,p)=>a+p[0]**2+p[1]**2+p[2]**2, 0);
-      const s = (useScale && srcVar > 0) ? (S[0]+S[1]+S[2]) / srcVar : 1.0;
-      const Rp = mv3(R, pBar);
-      const t = [qBar[0]-s*Rp[0], qBar[1]-s*Rp[1], qBar[2]-s*Rp[2]];
-      const residuals = src.map((p,i)=>{
-        const q = mv3(R, p);
-        return Math.sqrt([0,1,2].reduce((a,k)=>{const d=dst[i][k]-(s*q[k]+t[k]);return a+d*d;},0));
-      });
-      const rms = Math.sqrt(residuals.reduce((a,r)=>a+r*r,0)/n);
-      return {R, s, t, residuals, rms};
-    }
-
-    // ── GCP panel functions ────────────────────────────────────────────────────
+    // ====== GCP georeferencing panel ======
+    // Pick ≥4 local↔LV95 point pairs; the Helmert transformation itself is
+    // solved server-side (POST /api/helmert) and the resulting modelMatrix /
+    // helmertLV95 are persisted via PATCH /api/datasets/:id.
 
     function gcpOpen(layerId) {
       gcpLayerId    = layerId;
@@ -2061,7 +2025,12 @@
       gcpClose();
     }
 
+    // ====== Dataset loading & layer management ======
+
     // ── Layer management ───────────────────────────────────────────────────────
+    // addLayer: create a layer entry, stream the 3D tileset, position it
+    // (see priority chain below), then add panorama markers and optional
+    // Tragwerk per-element coloring.
     async function addLayer(ds, opts = {}) {
       const initiallyVisible = opts.initiallyVisible !== false;
       const skipFlyTo        = opts.flyTo === false;
@@ -2101,6 +2070,13 @@
           }
         }
 
+        // Positioning priority chain:
+        //   1. ds.helmertLV95  — saved GCP georeferencing (rebuild matrix below)
+        //   2. ds.modelMatrix  — explicitly saved 4×4 matrix
+        //   3. near-origin geometry (|center| < 1000 m) — park at (0°, 0°) ENU
+        //   4. absolute LV95 vertices — anchor an ENU frame at the centroid
+        //   5. none of the above — leave identity (tileset.json root transform
+        //      already places the model, e.g. gesamtmodell GLB tilesets)
         if (ds.helmertLV95) {
           // Rebuild modelMatrix from Helmert: M_lv95 * M_helmert
           const { R, s, t, center } = ds.helmertLV95;
@@ -2218,6 +2194,8 @@
         renderLayerList();
       }
     }
+
+    // ====== Historical-position toggle & editor (per-building Originalstandort) ======
 
     // Returns every layer that belongs to the same building as the given layer
     // AND has a historicalModelMatrix prepared. Falls back to just the clicked
@@ -2405,6 +2383,8 @@
       e.preventDefault();
     });
 
+    // ====== Layer list UI & visibility (building groups / Bauphasen) ======
+
     function removeLayer(layerId) {
       const idx = layers.findIndex(l => l.id === layerId);
       if (idx < 0) return;
@@ -2577,6 +2557,11 @@
       updateActiveBuildingFromLayers();
     }
 
+    // ====== Building selection & documents/media panel ======
+    // "Active building" drives the right-hand Dokumente & Medien panel: either
+    // pinned explicitly (?building=NNN / "Ganzes Gebäude" bulk load) or derived
+    // from the most recently added visible layer that has a building id.
+
     // ── Dokumente & Medien panel ───────────────────────────────────────────────
     let activeBuilding       = null;
     let activeBuildingPinned = null;  // set when user explicitly chose a building (?building=NNN)
@@ -2723,6 +2708,8 @@
 
     document.getElementById('doc-overlay-close').addEventListener('click', closeDocOverlay);
     document.getElementById('video-pip-close').addEventListener('click', closeVideoPip);
+
+    // ====== Zeitreise: swisstopo historical imagery & terrain toggles ======
 
     // ── Swisstopo Zeitreise ────────────────────────────────────────────────────
     {
@@ -2875,6 +2862,10 @@
       ztApply = applyZeitreise;
     }
 
+    // ====== Camera & navigation ======
+    // Home button and 2D/3D morph re-target the first loaded layer instead of
+    // Cesium's default whole-globe view.
+
     // ── Cesium home / mode-switch ──────────────────────────────────────────────
     viewer.homeButton.viewModel.command.beforeExecute.addEventListener(e => {
       if (layers.length) { e.cancel = true; flyToLayer(layers[0]); }
@@ -2882,6 +2873,8 @@
     viewer.scene.morphComplete.addEventListener(() => {
       if (layers.length) setTimeout(() => flyToLayer(layers[0]), 300);
     });
+
+    // ====== Dataset catalogue & startup loading ======
 
     // ── Dataset catalogue ──────────────────────────────────────────────────────
     const urlParams       = new URLSearchParams(location.search);
@@ -2941,6 +2934,15 @@
       }
     }
 
+    // Startup data-loading flow:
+    //   loadDatasets()  →  GET /api/datasets
+    //     → propagateHistoricalLV95()   share historicalLV95 across each building
+    //     → ?building=NNN               loadBuildingBundle(): every compatible
+    //                                   dataset of that building (point cloud
+    //                                   visible, models hidden by default)
+    //     → ?id=<datasetId>             addLayer() for that single dataset
+    //     → default                     the "gesamtmodell" dataset (or first)
+    //   addLayer(ds)    →  Cesium3DTileset.fromUrl(ds.path) + positioning chain
     async function loadDatasets() {
       allDatasets = await fetch('/api/datasets').then(r => r.json());
       propagateHistoricalLV95();
@@ -2962,6 +2964,8 @@
       if (gesamt) { addLayer(gesamt); return; }
       if (compat.length) addLayer(compat[0]);
     }
+
+    // ====== Add-Layer modal (dataset picker, grouped by building) ======
 
     // ── Modal ──────────────────────────────────────────────────────────────────
     function renderModalItem(ds, loadedIds) {
@@ -3054,6 +3058,8 @@
       if (e.target.id === 'modal-bg') closeModal();
     });
 
+    // ====== UI wiring: toolbar, tool buttons & clip-box panel ======
+
     // ── Tool buttons ───────────────────────────────────────────────────────────
     document.getElementById('scan-stations-toggle').addEventListener('change', function () {
       allPanoEnts.forEach(e => { e.show = this.checked; });
@@ -3127,6 +3133,8 @@
       });
     });
 
+    // ====== Keyboard & mouse input ======
+
     // ── Keyboard shortcuts ─────────────────────────────────────────────────────
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
@@ -3145,6 +3153,9 @@
     });
 
     // ── Input handler ──────────────────────────────────────────────────────────
+    // Central pick dispatcher for the 3D scene. LEFT_CLICK priority:
+    //   GCP point picking → clip-box gizmo guard → panorama-marker open
+    //   (no tool active) → measurement tools (coords / profile / dist / area).
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
 
     handler.setInputAction(ev => {
@@ -3285,7 +3296,7 @@
       if (cbDragState) cbEndDrag();
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
 
-    // ── Clip Box functions ────────────────────────────────────────────────────
+    // ====== Clip boxes: clipping planes, mixed shader & drag gizmo ======
 
     function initClipOrigin() {
       const ts = layers.find(l => l.tileset)?.tileset;
@@ -3933,11 +3944,16 @@
       renderClipBoxList();
     }
 
+    // ====== Panorama overlay & hand-off (Pannellum) ======
+    // Clicking a scan-station marker opens the equirectangular panorama in an
+    // overlay. The current Cesium camera heading/pitch is carried over so the
+    // view direction is preserved, and measurements are projected onto a 2D
+    // canvas on top of the panorama.
+
     // ── Panorama overlay ──────────────────────────────────────────────────────
     let panoDS      = null;
     let panoScanIdx = 0;
     let panoViewer  = null;
-    let panoCurPts  = [];   // {yaw, pitch, color} — in-progress measurement clicks in panorama
 
     function resizePanoCanvas() {
       const inner  = document.getElementById('pano-inner');
@@ -4184,13 +4200,11 @@
       if (panoViewer) { panoViewer.destroy(); panoViewer = null; }
       document.getElementById('pano-overlay').classList.remove('open');
       panoDS = null;
-      panoCurPts = [];
     }
 
     function loadPanoScan(idx, initYaw = 0, initPitch = 0) {
       if (!panoDS) return;
       panoScanIdx = idx;
-      panoCurPts = [];
       const panos = panoDS.panoramas;
       const p = panos[idx];
       document.getElementById('pano-overlay-title').textContent = p.label || `Scan ${idx + 1}`;
@@ -4375,7 +4389,7 @@
 
     window.addEventListener('resize', resizePanoCanvas);
 
-    // ── Elevation Profile ──────────────────────────────────────────────────────
+    // ====== Elevation profile (waypoints → POST /api/profile → 2D canvas) ======
 
     // Viridis-like colormap: t ∈ [0,1] → [r,g,b]
     function profElevColor(t) {
@@ -4466,7 +4480,6 @@
 
       document.getElementById('profile-status').textContent = 'Computing profile…';
       document.getElementById('profile-status').style.display = 'block';
-      profLoading = true;
       profData = null;
       drawProfileCanvas();
 
@@ -4495,7 +4508,6 @@
         document.getElementById('profile-status').textContent = 'Error: ' + e.message;
         document.getElementById('profile-status').style.display = 'block';
       } finally {
-        profLoading = false;
         drawProfileCanvas();
       }
     }
@@ -4655,7 +4667,7 @@
       profFetch();
     });
 
-    // ── Boot ───────────────────────────────────────────────────────────────────
+    // ====== Boot ======
     loadDatasets();
   </script>
 

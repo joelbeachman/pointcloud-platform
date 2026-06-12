@@ -32,7 +32,7 @@ scripts/regen_northoffset.pl
 Deliverable: clean + document; document server.js routes/endpoints and how the
 portal front-end talks to it.
 
-### Batch C — Main Cesium viewer — STATUS: pending (next window)
+### Batch C — Main Cesium viewer — STATUS: done (next window) — commit cleanup(batch-c)
 Files: public/viewers/cesium.html
 Deliverable: section the large file with clear comment banners, document the
 data-loading flow (datasets, camera, building navigation), remove dead code.
